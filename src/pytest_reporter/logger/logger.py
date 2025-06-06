@@ -139,11 +139,15 @@ class PytestLogger:
         self.__cmd_handler.setFormatter(ColorFormatter(fmt=fmt, datefmt=datefmt))
         self.__logger.addHandler(self.__cmd_handler)
     
-    def configure_global_handler(self, filename: str, level: int = logging.INFO, fmt: str = "%(asctime)s [%(levelname)s] - %(message)s"):
-        if not os.path.exists(filename):
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
+    def configure_global_handler(self, level: int = logging.INFO, fmt: str = "%(asctime)s [%(levelname)s] - %(message)s"):
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         
-        self.global_handler = logging.FileHandler(filename)
+        filepath = os.path.join(self.report_path, f"{now}_all.log")
+
+        if not os.path.exists(filepath):
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        self.global_handler = logging.FileHandler(filepath)
         self.global_handler.setLevel(level)
         self.global_handler.setFormatter(logging.Formatter(fmt))
         self.__logger.addHandler(self.global_handler)
