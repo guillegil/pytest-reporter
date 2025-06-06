@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Results Dashboard</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f7f8fa;
+      margin: 0;
+      color: #222;
+    }
+    .dashboard {
+      display: flex;
+      min-height: 100vh;
+    }
+    .sidebar {
+      width: 220px;
+      background: #232946;
+      color: #fff;
+      padding: 24px 0 0 0;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.2s;
+      overflow: hidden;
+    }
+    .sidebar.collapsed {
+      width: 56px;
+    }
+    .sidebar-toggle {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.5em;
+      cursor: pointer;
+      margin: 0 0 24px 0;
+      align-self: center;
+      transition: color 0.2s;
+      padding: 8px;
+    }
+    .sidebar-toggle:hover {
+      color: #eebf63;
+    }
+    .nav-section {
+      margin-bottom: 24px;
+    }
+    .nav-section-title {
+      font-size: 0.85em;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0 24px 12px 24px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #394867;
+      white-space: nowrap;
+      opacity: 1;
+      transition: opacity 0.2s;
+    }
+    .sidebar.collapsed .nav-section-title {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .nav-list, .folder-list {
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    .nav-item, .folder-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 24px;
+      cursor: pointer;
+      transition: background 0.15s;
+      position: relative;
+      white-space: nowrap;
+    }
+    .nav-item.active, .nav-item:hover, .folder-item.active, .folder-item:hover {
+      background: #394867;
+    }
+    .nav-item .tooltip, .folder-item .tooltip {
+      visibility: hidden;
+      background: #232946;
+      color: #fff;
+      text-align: center;
+      border-radius: 4px;
+      padding: 4px 8px;
+      position: absolute;
+      left: 110%;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.2s;
+      font-size: 0.95em;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .sidebar.collapsed .nav-item:hover .tooltip, 
+    .sidebar.collapsed .folder-item:hover .tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+    .sidebar.collapsed .nav-item span.nav-name, 
+    .sidebar.collapsed .folder-item span.folder-name {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .nav-name, .folder-name {
+      transition: opacity 0.2s;
+    }
+    .nav-badge, .folder-badge {
+      background: #eebf63;
+      color: #232946;
+      border-radius: 12px;
+      font-size: 0.85em;
+      padding: 2px 8px;
+      margin-left: auto;
+      margin-right: 0;
+      min-width: 28px;
+      text-align: center;
+      transition: opacity 0.2s;
+    }
+    .sidebar.collapsed .nav-badge,
+    .sidebar.collapsed .folder-badge {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .main {
+      flex: 1;
+      padding: 32px 32px 32px 32px;
+      min-width: 0;
+    }
+    .section {
+      margin-bottom: 40px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px #0001;
+      padding: 28px 32px 32px 32px;
+    }
+    .section-title {
+      font-size: 1.35em;
+      font-weight: 600;
+      margin-bottom: 18px;
+      color: #232946;
+    }
+    .summary-table, .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 0;
+    }
+    .summary-table th, .summary-table td, .file-table th, .file-table td {
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .summary-table th, .file-table th {
+      background: #f0f1f6;
+      font-weight: 600;
+      border-bottom: 2px solid #e3e4ea;
+    }
+    .summary-table tr:not(:last-child) td, .file-table tr:not(:last-child) td {
+      border-bottom: 1px solid #e3e4ea;
+    }
+    .status-pass {
+      color: #2e7d32;
+      font-weight: 600;
+    }
+    .status-fail {
+      color: #c62828;
+      font-weight: 600;
+    }
+    .status-skipped {
+      color: #bfa700;
+      font-weight: 600;
+    }
+    .folder-section {
+      margin-bottom: 36px;
+      border: 1px solid #e3e4ea;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 1px 4px #0001;
+      padding: 0;
+    }
+    .folder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 32px 10px 32px;
+      border-bottom: 1px solid #e3e4ea;
+      background: #f7f8fa;
+      border-radius: 10px 10px 0 0;
+    }
+    .folder-title {
+      font-size: 1.15em;
+      font-weight: 600;
+      color: #232946;
+    }
+    .folder-badges {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .badge {
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 0.95em;
+      font-weight: 500;
+      display: inline-block;
+      min-width: 36px;
+      text-align: center;
+    }
+    .badge.pass {
+      background: #e6f4ea;
+      color: #2e7d32;
+      border: 1px solid #b2dfdb;
+    }
+    .badge.fail {
+      background: #fdeaea;
+      color: #c62828;
+      border: 1px solid #f8bbba;
+    }
+    .badge.skipped {
+      background: #fffbe6;
+      color: #bfa700;
+      border: 1px solid #ffe082;
+    }
+    .folder-summary {
+      padding: 20px 32px;
+      border-bottom: 1px solid #e3e4ea;
+      background: #fafbfc;
+    }
+    .folder-summary-title {
+      font-size: 1.1em;
+      font-weight: 600;
+      color: #232946;
+      margin-bottom: 12px;
+    }
+    .folder-summary-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .folder-summary-table th, .folder-summary-table td {
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 0.95em;
+    }
+    .folder-summary-table th {
+      background: #f0f1f6;
+      font-weight: 600;
+      border-bottom: 2px solid #e3e4ea;
+    }
+    .folder-summary-table tr:not(:last-child) td {
+      border-bottom: 1px solid #e3e4ea;
+    }
+    .global-filter {
+      display: flex;
+      gap: 8px;
+      margin: 18px 32px 10px 32px;
+      align-items: center;
+    }
+    .global-filter-label {
+      font-size: 1em;
+      margin-right: 8px;
+      color: #232946;
+      font-weight: 500;
+    }
+    .filter-btn-group {
+      display: flex;
+      gap: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #e3e4ea;
+      background: #f0f1f6;
+    }
+    .filter-btn {
+      padding: 7px 22px;
+      border: none;
+      background: none;
+      color: #232946;
+      font-size: 1em;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      outline: none;
+    }
+    .filter-btn.active {
+      background: #232946;
+      color: #fff;
+      font-weight: 600;
+    }
+    .file-container {
+      margin: 0 32px 24px 32px;
+      border: 1px solid #e3e4ea;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .file-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      cursor: pointer;
+      user-select: none;
+      background: #f9fafb;
+      border-bottom: 1px solid #e3e4ea;
+      border-radius: 8px 8px 0 0;
+    }
+    .file-header:hover {
+      background: #f0f1f6;
+    }
+    .file-title {
+      font-size: 1.05em;
+      font-weight: 500;
+      color: #232946;
+    }
+    .file-header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .file-badges {
+      display: flex;
+      gap: 8px;
+    }
+    .collapse-icon {
+      font-size: 1.2em;
+      color: #232946;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #e3e4ea;
+      transition: background 0.15s;
+    }
+    .file-header:hover .collapse-icon {
+      background: #d1d5db;
+    }
+    .file-content {
+      padding: 16px 20px 20px 20px;
+    }
+    .file-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .file-filter select {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid #e3e4ea;
+      background: #f7f8fa;
+      font-size: 1em;
+      color: #232946;
+    }
+    .file-table {
+      margin-bottom: 0;
+    }
+    .hidden {
+      display: none !important;
+    }
+    @media (max-width: 900px) {
+      .dashboard {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        flex-direction: row;
+        padding: 0;
+        min-height: 56px;
+      }
+      .sidebar.collapsed {
+        width: 100%;
+      }
+      .main {
+        padding: 16px 4vw;
+      }
+      .folder-section {
+        margin-bottom: 24px;
+      }
+      .file-container {
+        margin: 0 0 16px 0;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="dashboard">
+  <nav class="sidebar" id="sidebar">
+    <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar">☰</button>
+    <div class="nav-section">
+      <div class="nav-section-title">Overview</div>
+      <ul class="nav-list">
+        <li class="nav-item active" data-target="summarySection">
+          <span class="nav-name">Summary</span>
+          <span class="nav-badge">41</span>
+          <span class="tooltip">Test Results Summary</span>
+        </li>
+      </ul>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-title">Test Folders</div>
+      <ul class="folder-list" id="folderList">
+        <li class="folder-item" data-folder="folder1">
+          <span class="folder-name">auth/</span>
+          <span class="folder-badge">12</span>
+          <span class="tooltip">auth/</span>
+        </li>
+        <li class="folder-item" data-folder="folder2">
+          <span class="folder-name">payments/</span>
+          <span class="folder-badge">8</span>
+          <span class="tooltip">payments/</span>
+        </li>
+        <li class="folder-item" data-folder="folder3">
+          <span class="folder-name">orders/</span>
+          <span class="folder-badge">15</span>
+          <span class="tooltip">orders/</span>
+        </li>
+        <li class="folder-item" data-folder="folder4">
+          <span class="folder-name">notifications/</span>
+          <span class="folder-badge">6</span>
+          <span class="tooltip">notifications/</span>
+        </li>
+      </ul>
+    </div>
+  </nav>
+  <main class="main">
+    <section class="section" id="summarySection">
+      <div class="section-title">Test Results Summary</div>
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Folder</th>
+            <th>Total</th>
+            <th>Passed</th>
+            <th>Failed</th>
+            <th>Skipped</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>auth/</td>
+            <td>12</td>
+            <td class="status-pass">10</td>
+            <td class="status-fail">1</td>
+            <td class="status-skipped">1</td>
+          </tr>
+          <tr>
+            <td>payments/</td>
+            <td>8</td>
+            <td class="status-pass">6</td>
+            <td class="status-fail">2</td>
+            <td class="status-skipped">0</td>
+          </tr>
+          <tr>
+            <td>orders/</td>
+            <td>15</td>
+            <td class="status-pass">13</td>
+            <td class="status-fail">1</td>
+            <td class="status-skipped">1</td>
+          </tr>
+          <tr>
+            <td>notifications/</td>
+            <td>6</td>
+            <td class="status-pass">5</td>
+            <td class="status-fail">0</td>
+            <td class="status-skipped">1</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    
+    <!-- Auth Folder Section -->
+    <section class="folder-section" id="folder1" style="display:none;">
+      <div class="folder-header">
+        <span class="folder-title">auth/</span>
+        <div class="folder-badges">
+          <span class="badge pass">10 Passed</span>
+          <span class="badge fail">1 Failed</span>
+          <span class="badge skipped">1 Skipped</span>
+        </div>
+      </div>
+      
+      <div class="folder-summary">
+        <div class="folder-summary-title">Folder Summary</div>
+        <table class="folder-summary-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Total</th>
+              <th>Passed</th>
+              <th>Failed</th>
+              <th>Skipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>test_login.py</td>
+              <td>5</td>
+              <td class="status-pass">4</td>
+              <td class="status-fail">1</td>
+              <td class="status-skipped">0</td>
+            </tr>
+            <tr>
+              <td>test_registration.py</td>
+              <td>7</td>
+              <td class="status-pass">6</td>
+              <td class="status-fail">0</td>
+              <td class="status-skipped">1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="global-filter" data-folder="folder1">
+        <span class="global-filter-label">Show:</span>
+        <div class="filter-btn-group">
+          <button class="filter-btn active" data-value="all">All</button>
+          <button class="filter-btn" data-value="pass">Passed</button>
+          <button class="filter-btn" data-value="fail">Failed</button>
+          <button class="filter-btn" data-value="skipped">Skipped</button>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file1-1')">
+          <span class="file-title">test_login.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">4</span>
+              <span class="badge fail">1</span>
+              <span class="badge skipped">0</span>
+            </div>
+            <span class="collapse-icon" id="icon-file1-1">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file1-1">
+          <div class="file-filter" id="filter-file1-1">
+            <label for="file1-1-select">Filter:</label>
+            <select id="file1-1-select" onchange="filterTable('file1-1')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file1-1">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_valid_login</td><td class="status-pass">Passed</td><td>0.12s</td></tr>
+              <tr data-status="pass"><td>test_logout</td><td class="status-pass">Passed</td><td>0.09s</td></tr>
+              <tr data-status="fail"><td>test_invalid_login</td><td class="status-fail">Failed</td><td>0.15s</td></tr>
+              <tr data-status="pass"><td>test_remember_me</td><td class="status-pass">Passed</td><td>0.11s</td></tr>
+              <tr data-status="pass"><td>test_password_reset</td><td class="status-pass">Passed</td><td>0.13s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file1-2')">
+          <span class="file-title">test_registration.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">6</span>
+              <span class="badge fail">0</span>
+              <span class="badge skipped">1</span>
+            </div>
+            <span class="collapse-icon" id="icon-file1-2">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file1-2">
+          <div class="file-filter" id="filter-file1-2">
+            <label for="file1-2-select">Filter:</label>
+            <select id="file1-2-select" onchange="filterTable('file1-2')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file1-2">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_valid_registration</td><td class="status-pass">Passed</td><td>0.18s</td></tr>
+              <tr data-status="pass"><td>test_duplicate_email</td><td class="status-pass">Passed</td><td>0.14s</td></tr>
+              <tr data-status="pass"><td>test_weak_password</td><td class="status-pass">Passed</td><td>0.13s</td></tr>
+              <tr data-status="pass"><td>test_email_verification</td><td class="status-pass">Passed</td><td>0.16s</td></tr>
+              <tr data-status="pass"><td>test_username_taken</td><td class="status-pass">Passed</td><td>0.12s</td></tr>
+              <tr data-status="pass"><td>test_password_policy</td><td class="status-pass">Passed</td><td>0.15s</td></tr>
+              <tr data-status="skipped"><td>test_optional_field</td><td class="status-skipped">Skipped</td><td>0.00s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Payments Folder Section -->
+    <section class="folder-section" id="folder2" style="display:none;">
+      <div class="folder-header">
+        <span class="folder-title">payments/</span>
+        <div class="folder-badges">
+          <span class="badge pass">6 Passed</span>
+          <span class="badge fail">2 Failed</span>
+          <span class="badge skipped">0 Skipped</span>
+        </div>
+      </div>
+      
+      <div class="folder-summary">
+        <div class="folder-summary-title">Folder Summary</div>
+        <table class="folder-summary-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Total</th>
+              <th>Passed</th>
+              <th>Failed</th>
+              <th>Skipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>test_checkout.py</td>
+              <td>4</td>
+              <td class="status-pass">3</td>
+              <td class="status-fail">1</td>
+              <td class="status-skipped">0</td>
+            </tr>
+            <tr>
+              <td>test_refund.py</td>
+              <td>4</td>
+              <td class="status-pass">3</td>
+              <td class="status-fail">1</td>
+              <td class="status-skipped">0</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="global-filter" data-folder="folder2">
+        <span class="global-filter-label">Show:</span>
+        <div class="filter-btn-group">
+          <button class="filter-btn active" data-value="all">All</button>
+          <button class="filter-btn" data-value="pass">Passed</button>
+          <button class="filter-btn" data-value="fail">Failed</button>
+          <button class="filter-btn" data-value="skipped">Skipped</button>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file2-1')">
+          <span class="file-title">test_checkout.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">3</span>
+              <span class="badge fail">1</span>
+              <span class="badge skipped">0</span>
+            </div>
+            <span class="collapse-icon" id="icon-file2-1">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file2-1">
+          <div class="file-filter" id="filter-file2-1">
+            <label for="file2-1-select">Filter:</label>
+            <select id="file2-1-select" onchange="filterTable('file2-1')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file2-1">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_card_payment</td><td class="status-pass">Passed</td><td>0.22s</td></tr>
+              <tr data-status="fail"><td>test_invalid_card</td><td class="status-fail">Failed</td><td>0.19s</td></tr>
+              <tr data-status="pass"><td>test_paypal</td><td class="status-pass">Passed</td><td>0.17s</td></tr>
+              <tr data-status="pass"><td>test_discount_code</td><td class="status-pass">Passed</td><td>0.15s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file2-2')">
+          <span class="file-title">test_refund.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">3</span>
+              <span class="badge fail">1</span>
+              <span class="badge skipped">0</span>
+            </div>
+            <span class="collapse-icon" id="icon-file2-2">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file2-2">
+          <div class="file-filter" id="filter-file2-2">
+            <label for="file2-2-select">Filter:</label>
+            <select id="file2-2-select" onchange="filterTable('file2-2')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file2-2">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_full_refund</td><td class="status-pass">Passed</td><td>0.21s</td></tr>
+              <tr data-status="fail"><td>test_partial_refund</td><td class="status-fail">Failed</td><td>0.18s</td></tr>
+              <tr data-status="pass"><td>test_refund_notification</td><td class="status-pass">Passed</td><td>0.16s</td></tr>
+              <tr data-status="pass"><td>test_refund_fee</td><td class="status-pass">Passed</td><td>0.14s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Orders Folder Section -->
+    <section class="folder-section" id="folder3" style="display:none;">
+      <div class="folder-header">
+        <span class="folder-title">orders/</span>
+        <div class="folder-badges">
+          <span class="badge pass">13 Passed</span>
+          <span class="badge fail">1 Failed</span>
+          <span class="badge skipped">1 Skipped</span>
+        </div>
+      </div>
+      
+      <div class="folder-summary">
+        <div class="folder-summary-title">Folder Summary</div>
+        <table class="folder-summary-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Total</th>
+              <th>Passed</th>
+              <th>Failed</th>
+              <th>Skipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>test_create_order.py</td>
+              <td>6</td>
+              <td class="status-pass">5</td>
+              <td class="status-fail">0</td>
+              <td class="status-skipped">1</td>
+            </tr>
+            <tr>
+              <td>test_cancel_order.py</td>
+              <td>9</td>
+              <td class="status-pass">8</td>
+              <td class="status-fail">1</td>
+              <td class="status-skipped">0</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="global-filter" data-folder="folder3">
+        <span class="global-filter-label">Show:</span>
+        <div class="filter-btn-group">
+          <button class="filter-btn active" data-value="all">All</button>
+          <button class="filter-btn" data-value="pass">Passed</button>
+          <button class="filter-btn" data-value="fail">Failed</button>
+          <button class="filter-btn" data-value="skipped">Skipped</button>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file3-1')">
+          <span class="file-title">test_create_order.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">5</span>
+              <span class="badge fail">0</span>
+              <span class="badge skipped">1</span>
+            </div>
+            <span class="collapse-icon" id="icon-file3-1">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file3-1">
+          <div class="file-filter" id="filter-file3-1">
+            <label for="file3-1-select">Filter:</label>
+            <select id="file3-1-select" onchange="filterTable('file3-1')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file3-1">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_create_valid</td><td class="status-pass">Passed</td><td>0.19s</td></tr>
+              <tr data-status="pass"><td>test_create_duplicate</td><td class="status-pass">Passed</td><td>0.17s</td></tr>
+              <tr data-status="pass"><td>test_create_with_discount</td><td class="status-pass">Passed</td><td>0.15s</td></tr>
+              <tr data-status="pass"><td>test_create_with_note</td><td class="status-pass">Passed</td><td>0.13s</td></tr>
+              <tr data-status="pass"><td>test_create_with_gift</td><td class="status-pass">Passed</td><td>0.14s</td></tr>
+              <tr data-status="skipped"><td>test_create_with_invalid_coupon</td><td class="status-skipped">Skipped</td><td>0.00s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file3-2')">
+          <span class="file-title">test_cancel_order.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">8</span>
+              <span class="badge fail">1</span>
+              <span class="badge skipped">0</span>
+            </div>
+            <span class="collapse-icon" id="icon-file3-2">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file3-2">
+          <div class="file-filter" id="filter-file3-2">
+            <label for="file3-2-select">Filter:</label>
+            <select id="file3-2-select" onchange="filterTable('file3-2')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file3-2">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_cancel_valid</td><td class="status-pass">Passed</td><td>0.12s</td></tr>
+              <tr data-status="fail"><td>test_cancel_invalid</td><td class="status-fail">Failed</td><td>0.16s</td></tr>
+              <tr data-status="pass"><td>test_cancel_refund</td><td class="status-pass">Passed</td><td>0.13s</td></tr>
+              <tr data-status="pass"><td>test_cancel_notification</td><td class="status-pass">Passed</td><td>0.11s</td></tr>
+              <tr data-status="pass"><td>test_cancel_with_note</td><td class="status-pass">Passed</td><td>0.10s</td></tr>
+              <tr data-status="pass"><td>test_cancel_with_gift</td><td class="status-pass">Passed</td><td>0.09s</td></tr>
+              <tr data-status="pass"><td>test_cancel_with_discount</td><td class="status-pass">Passed</td><td>0.08s</td></tr>
+              <tr data-status="pass"><td>test_cancel_with_coupon</td><td class="status-pass">Passed</td><td>0.07s</td></tr>
+              <tr data-status="pass"><td>test_cancel_with_invalid_coupon</td><td class="status-pass">Passed</td><td>0.06s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Notifications Folder Section -->
+    <section class="folder-section" id="folder4" style="display:none;">
+      <div class="folder-header">
+        <span class="folder-title">notifications/</span>
+        <div class="folder-badges">
+          <span class="badge pass">5 Passed</span>
+          <span class="badge fail">0 Failed</span>
+          <span class="badge skipped">1 Skipped</span>
+        </div>
+      </div>
+      
+      <div class="folder-summary">
+        <div class="folder-summary-title">Folder Summary</div>
+        <table class="folder-summary-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Total</th>
+              <th>Passed</th>
+              <th>Failed</th>
+              <th>Skipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>test_email.py</td>
+              <td>4</td>
+              <td class="status-pass">3</td>
+              <td class="status-fail">0</td>
+              <td class="status-skipped">1</td>
+            </tr>
+            <tr>
+              <td>test_sms.py</td>
+              <td>2</td>
+              <td class="status-pass">2</td>
+              <td class="status-fail">0</td>
+              <td class="status-skipped">0</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="global-filter" data-folder="folder4">
+        <span class="global-filter-label">Show:</span>
+        <div class="filter-btn-group">
+          <button class="filter-btn active" data-value="all">All</button>
+          <button class="filter-btn" data-value="pass">Passed</button>
+          <button class="filter-btn" data-value="fail">Failed</button>
+          <button class="filter-btn" data-value="skipped">Skipped</button>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file4-1')">
+          <span class="file-title">test_email.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">3</span>
+              <span class="badge fail">0</span>
+              <span class="badge skipped">1</span>
+            </div>
+            <span class="collapse-icon" id="icon-file4-1">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file4-1">
+          <div class="file-filter" id="filter-file4-1">
+            <label for="file4-1-select">Filter:</label>
+            <select id="file4-1-select" onchange="filterTable('file4-1')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file4-1">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_send_email</td><td class="status-pass">Passed</td><td>0.13s</td></tr>
+              <tr data-status="pass"><td>test_send_bulk_email</td><td class="status-pass">Passed</td><td>0.12s</td></tr>
+              <tr data-status="pass"><td>test_send_notification</td><td class="status-pass">Passed</td><td>0.11s</td></tr>
+              <tr data-status="skipped"><td>test_send_invalid_email</td><td class="status-skipped">Skipped</td><td>0.00s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="file-container">
+        <div class="file-header" onclick="toggleCollapse('file4-2')">
+          <span class="file-title">test_sms.py</span>
+          <div class="file-header-right">
+            <div class="file-badges">
+              <span class="badge pass">2</span>
+              <span class="badge fail">0</span>
+              <span class="badge skipped">0</span>
+            </div>
+            <span class="collapse-icon" id="icon-file4-2">▼</span>
+          </div>
+        </div>
+        <div class="file-content" id="content-file4-2">
+          <div class="file-filter" id="filter-file4-2">
+            <label for="file4-2-select">Filter:</label>
+            <select id="file4-2-select" onchange="filterTable('file4-2')">
+              <option value="all">All</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <table class="file-table" id="table-file4-2">
+            <thead>
+              <tr><th>Test</th><th>Status</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr data-status="pass"><td>test_send_sms</td><td class="status-pass">Passed</td><td>0.10s</td></tr>
+              <tr data-status="pass"><td>test_send_bulk_sms</td><td class="status-pass">Passed</td><td>0.09s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+// Get elements
+const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebarToggle');
+const navItems = document.querySelectorAll('.nav-item');
+const folderItems = document.querySelectorAll('.folder-item');
+const summarySection = document.getElementById('summarySection');
+const folderSections = document.querySelectorAll('.folder-section');
+
+// Sidebar toggle
+sidebarToggle.onclick = function() {
+  sidebar.classList.toggle('collapsed');
+};
+
+// Summary navigation
+navItems.forEach(item => {
+  item.onclick = function() {
+    // Clear all active states
+    navItems.forEach(i => i.classList.remove('active'));
+    folderItems.forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    
+    // Show summary, hide folders
+    summarySection.style.display = '';
+    folderSections.forEach(sec => sec.style.display = 'none');
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  };
+});
+
+// Folder navigation
+folderItems.forEach(item => {
+  item.onclick = function() {
+    // Clear all active states
+    navItems.forEach(i => i.classList.remove('active'));
+    folderItems.forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    
+    // Hide summary, show selected folder
+    summarySection.style.display = 'none';
+    folderSections.forEach(sec => sec.style.display = 'none');
+    const targetFolder = document.getElementById(item.dataset.folder);
+    if (targetFolder) {
+      targetFolder.style.display = '';
+    }
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  };
+});
+
+// Collapse/expand file sections
+function toggleCollapse(fileId) {
+  const content = document.getElementById('content-' + fileId);
+  const icon = document.getElementById('icon-' + fileId);
+  if (content && icon) {
+    if (content.style.display === 'none') {
+      content.style.display = '';
+      icon.textContent = '▼';
+    } else {
+      content.style.display = 'none';
+      icon.textContent = '▲';
+    }
+  }
+}
+
+// Filtering logic
+function filterTable(fileId) {
+  const select = document.getElementById(fileId + '-select');
+  if (!select) return;
+  
+  const value = select.value;
+  const table = document.getElementById('table-' + fileId);
+  if (!table) return;
+  
+  Array.from(table.querySelectorAll('tbody tr')).forEach(row => {
+    if (value === 'all' || row.dataset.status === value) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+
+// Global filter logic
+const globalFilters = document.querySelectorAll('.global-filter');
+globalFilters.forEach(gf => {
+  const folderId = gf.dataset.folder;
+  const btns = gf.querySelectorAll('.filter-btn');
+  btns.forEach(btn => {
+    btn.onclick = function() {
+      btns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const value = btn.dataset.value;
+      
+      // Hide/show per-file filters
+      const fileContainers = document.querySelectorAll(`#${folderId} .file-container`);
+      fileContainers.forEach(fc => {
+        const fileFilter = fc.querySelector('.file-filter');
+        if (fileFilter) fileFilter.style.display = (value === 'all') ? '' : 'none';
+        
+        // Set all file selects to 'all' if global is 'all'
+        if (value === 'all') {
+          const select = fc.querySelector('select');
+          if (select) {
+            select.value = 'all';
+            const fileId = select.id.replace('-select','');
+            filterTable(fileId);
+          }
+        } else {
+          // Hide/show rows in all tables in this folder
+          const table = fc.querySelector('table');
+          if (table) {
+            Array.from(table.querySelectorAll('tbody tr')).forEach(row => {
+              if (row.dataset.status === value) {
+                row.style.display = '';
+              } else {
+                row.style.display = 'none';
+              }
+            });
+          }
+        }
+      });
+    };
+  });
+});
+</script>
+</body>
+</html>

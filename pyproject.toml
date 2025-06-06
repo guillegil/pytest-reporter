@@ -1,0 +1,21 @@
+[project]
+authors = [{name = "Guillermo Gil", email = "guillegil@proton.me"}]
+dependencies = ["pytest>=7"]
+description = "A pytest plugin that provides enhanced reporting capabilities, making test results easier to read and analyze."
+dynamic = ["version"]
+license = "Apache-2.0"
+name = "pytest-reporter"
+readme = "README.md"
+requires-python = ">=3.9"
+urls = {homepage = "https://google.es", repository = "https://google.es"}
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.entry-points."pytest11"]
+rgc = "pytest_reporter.plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pytest_reporter*"]
