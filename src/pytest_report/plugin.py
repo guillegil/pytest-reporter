@@ -3,8 +3,13 @@ import os
 import pytest
 from .logger.logger import *
 from .logger.logger import log
+from .test_summary import TestResultTracker, TestSummaryDisplay
 
 from pytest import Session, Config, Item, CallInfo, Metafunc
+
+# Global tracker and display instances
+test_tracker = TestResultTracker()
+test_summary_display = TestSummaryDisplay(test_tracker)
 
 
 def __normalize_str(s: str) -> str:
@@ -98,6 +103,9 @@ def pytest_addoption(parser):
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: Config):
     """Configure plugin and suppress pytest output early."""
+    global test_tracker
+    test_tracker.reset()  # Reset tracker for new session
+    
     # Configure logging
     log_level = _get_log_level(config.getoption("--reporter-log-level"))
     log.set_level(log_level)
@@ -195,8 +203,11 @@ def pytest_runtest_setup(item):
 
 
 def pytest_runtest_makereport(item: Item, call: CallInfo):
-    """Hook for creating test reports (currently unused)."""
-    pass
+    """Capture test results for summary table."""
+    if call.when == "call":  # Only capture the main test execution, not setup/teardown
+        outcome = "passed" if call.excinfo is None else "failed"
+        test_name = item.name
+        test_tracker.add_result(test_name, outcome)
 
 
 @pytest.hookimpl(trylast=True)
@@ -213,7 +224,7 @@ def pytest_sessionfinish(session: Session, exitstatus):
     pass
 
 
-@pytest.hookimpl(tryfirst=True)
+@pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Provide minimal terminal summary."""
-    terminalreporter._tw.line("")
+    """Display custom results table."""
+    test_summary_display.display_table(terminalreporter)
