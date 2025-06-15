@@ -1,15 +1,9 @@
 # logger/logger.py
 from datetime import datetime
-import logging
-from logging.handlers import RotatingFileHandler
 import os
-from logging import Logger, LoggerAdapter
+from logging import Logger
 
 import logging
-from functools import wraps
-from re import DEBUG
-
-
 
 datefmt = "%Y-%m-%d %H:%M:%S"
 
@@ -92,6 +86,9 @@ class PytestLogger:
     @file_handler.setter
     def file_handler(self, handler: logging.FileHandler):
         self.__file_handler = handler
+
+    def set_report_path(self, path: str):
+        self.__report_path = path
 
     def set_level(self, level: int):
         self.__logger.setLevel(level)

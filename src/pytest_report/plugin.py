@@ -101,7 +101,10 @@ def pytest_configure(config: Config):
     # Configure logging
     log_level = _get_log_level(config.getoption("--reporter-log-level"))
     log.set_level(log_level)
-    log.report_path = config.getoption("--reporter-log-path", default=os.path.join(".", "logs"))
+
+    if log.report_path == "":
+        log.report_path = "./reports/logs"
+
     log.configure_cmd_handler(level=log_level)
     log.configure_global_handler(level=log_level)
     
