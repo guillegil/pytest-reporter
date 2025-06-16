@@ -243,7 +243,7 @@ class TestSummaryDisplay:
         elif results['fail'] > 0:
             return "❌", "red"
         elif results['skip'] > 0 and results['pass'] == 0:
-            return "⏭️", "yellow"
+            return "⏭️ ", "yellow"
         elif results['pass'] > 0 and (results['fail'] == 0 and results['error'] == 0):
             return "✅", "green"
         else:

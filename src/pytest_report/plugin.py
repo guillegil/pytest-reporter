@@ -1,7 +1,7 @@
 # pytest_reporter.py
 import os
 import pytest
-import time  # Add this import
+import time
 from .logger.logger import *
 from .logger.logger import log
 from .test_summary import TestResultTracker, TestSummaryDisplay, TestSessionInfo
@@ -13,6 +13,7 @@ test_tracker = TestResultTracker()
 session_info = TestSessionInfo()
 test_summary_display = TestSummaryDisplay(test_tracker, session_info)
 
+_log_test_tracker = []
 
 def __normalize_str(s: str) -> str:
     """Normalize string for log level comparison."""
@@ -35,72 +36,6 @@ def _get_log_level(level_str: str):
     normalized = __normalize_str(level_str)
     return level_map.get(normalized, log.INFO)
 
-
-def _silence_terminal_writer(tw):
-    """Apply silent patches to terminal writer."""
-    if hasattr(tw, '_patched'):
-        return
-        
-    tw._patched = True
-    tw._original_write = tw.write
-    tw._original_line = tw.line
-    
-    def silent_write(s, **kwargs):
-        # Only allow test result markers (., F, E, s, x)
-        s_str = str(s).strip()
-        if s_str and not s_str.replace('.', '').replace('F', '').replace('E', '').replace('s', '').replace('x', ''):
-            return tw._original_write(s, **kwargs)
-    
-    def silent_line(s='', **kwargs):
-        # Suppress all line writes
-        pass
-    
-    tw.write = silent_write
-    tw.line = silent_line
-
-
-def _silence_terminal_reporter(terminal):
-    """Apply all patches to terminal reporter."""
-    if not terminal:
-        return
-        
-    # Silence basic output methods
-    terminal.write = lambda *args, **kwargs: None
-    terminal.write_line = lambda *args, **kwargs: None
-    terminal.section = lambda *args, **kwargs: None
-    terminal.write_sep = lambda *args, **kwargs: None
-    
-    # Silence collection-related methods
-    terminal.report_collect = lambda *args, **kwargs: None
-    terminal._printcollecteditems = lambda *args, **kwargs: None
-    
-    # Silence test execution output
-    terminal.write_fspath_result = lambda *args, **kwargs: None
-    terminal._write_progress_information_filling_space = lambda *args, **kwargs: None
-    
-    # Silence the terminal writer if it exists
-    if hasattr(terminal, '_tw'):
-        _silence_terminal_writer(terminal._tw)
-
-@pytest.fixture(autouse=True)
-def setup_test_logging(request):
-    """Auto-fixture that configures logging for each test that actually runs."""
-    
-    # Check if this test function has log config info
-    if hasattr(request.function, '_log_config'):
-        config = request.function._log_config
-        
-        # Configure logging only once per test function (not per parameter)
-        test_key = (config['filename'], config['testname'])
-        if not hasattr(setup_test_logging, '_configured'):
-            setup_test_logging._configured = set()
-        
-        if test_key not in setup_test_logging._configured:
-            log.configure_test_handler(
-                filename=config['filename'], 
-                testname=config['testname']
-            )
-            setup_test_logging._configured.add(test_key)
 
 # ===== CONFIGURATION PHASE =====
 
@@ -136,16 +71,11 @@ def pytest_configure(config: Config):
 
     log.configure_cmd_handler(level=log_level)
     log.configure_global_handler(level=log_level)
-    
-    # Suppress pytest output
-    config.option.tb = 'no'
-    config.option.showlocals = False
-    config.option.verbose = -1  # Quietest mode
-    
-    # Early terminal reporter patching
+
     terminal = config.pluginmanager.get_plugin('terminalreporter')
     if terminal:
-        _silence_terminal_reporter(terminal)
+        # Modify verbosity or other settings
+        terminal.verbosity = 0  # Reduce verbosity
 
 
 # ===== SESSION START PHASE =====
@@ -160,7 +90,6 @@ def pytest_report_header(config):
 def pytest_sessionstart(session: Session):
     """Ensure all output is suppressed at session start."""
     terminal = session.config.pluginmanager.get_plugin('terminalreporter')
-    _silence_terminal_reporter(terminal)
 
 
 # ===== COLLECTION PHASE =====
@@ -169,7 +98,6 @@ def pytest_sessionstart(session: Session):
 def pytest_collection(session):
     """Suppress output during collection phase."""
     terminal = session.config.pluginmanager.get_plugin('terminalreporter')
-    _silence_terminal_reporter(terminal)
 
 
 def pytest_collection_modifyitems(config, items):
@@ -182,49 +110,33 @@ def pytest_collection_finish(session):
     """Display session header after collection and suppress collection finish output."""
     terminal = session.config.pluginmanager.get_plugin('terminalreporter')
     if terminal:
-        terminal.report_collect = lambda *args, **kwargs: None
-        # Display the session header here
         test_summary_display.display_header(terminal)
-
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_report_collectionfinish(config, start_path, items):
     """Suppress collection summary."""
     return []
+    
 
 
 # ===== TEST GENERATION PHASE =====
 
 def pytest_generate_tests(metafunc: Metafunc):
-    """Configure logging setup to be done when test actually executes."""
-    
-    # Your existing parametrization logic here
-    # metafunc.parametrize(...)
-    
-    # Add a fixture that will configure logging when the test runs
-    if not hasattr(metafunc.function, '_log_configured'):
-        # Mark that we've added the log setup to avoid duplicates
-        metafunc.function._log_configured = True
-        
-        # Get test info
-        base_testname = metafunc.function.__name__
-        test_fname = os.path.basename(metafunc.function.__code__.co_filename)
-        
-        # Store the log config info on the function for later use
-        metafunc.function._log_config = {
-            'filename': test_fname,
-            'testname': base_testname
-        }
+    pass
+
+
 # ===== TEST EXECUTION PHASE =====
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_runtest_protocol(item, nextitem):
+def pytest_runtest_protocol(item: Item, nextitem):
     """Suppress per-test output during test protocol."""
-    terminal = item.config.pluginmanager.get_plugin('terminalreporter')
-    if terminal:
-        terminal.write_fspath_result = lambda *args, **kwargs: None
-        terminal._write_progress_information_filling_space = lambda *args, **kwargs: None
+    testname = item.originalname
+    filename = item.fspath.basename
 
+    global _log_test_tracker
+    if testname not in _log_test_tracker:
+        log.configure_test_handler(filename=filename, testname=testname)
+        _log_test_tracker.append(testname)
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_logstart(nodeid, location):
@@ -241,15 +153,17 @@ def pytest_runtest_makereport(item: Item, call: CallInfo):
     """Capture test results for summary table."""
     if call.when == "call":  # Only capture the main test execution, not setup/teardown
         test_name = item.nodeid
-        
+
         # Determine outcome based on call result
         if call.excinfo is None:
             outcome = "passed"
-        elif call.excinfo[0] == pytest.skip.Exception:
+        elif issubclass(call.excinfo.type, pytest.skip.Exception):
             outcome = "skipped"
+        elif issubclass(call.excinfo.type, AssertionError):
+            outcome = "failed"  # Test failure (assertion failed)
         else:
-            outcome = "failed"
-        
+            outcome = "error"   # Test error (unexpected exception)
+
         # Add result with duration calculation
         test_tracker.add_result(test_name, outcome)
 
@@ -259,16 +173,76 @@ def pytest_runtest_teardown(item, nextitem):
     """Hook for test teardown (currently unused)."""
     pass
 
+@pytest.hookimpl
+def pytest_report_teststatus(report, config):
+    """Suppress short status indicators and capture skip reasons."""
+
+    from pprint import pprint
+
+    if report.when == "call":
+        if report.passed:
+            return "passed", "", ""
+        elif report.failed:
+            return "failed", "", ""
+        elif report.skipped:
+            # Get the skip reason
+            skip_reason = ""
+            if hasattr(report, 'longrepr') and report.longrepr:
+                if len(report.longrepr) >= 3:
+                    skip_test_filename = report.longrepr[0]
+                    skip_test_fileline = report.longrepr[1]
+                    skip_test_reason   = report.longrepr[2].replace("Skipped: ", "")
+                else:
+                    skip_test_filename = report.longrepr[0]
+                    skip_test_fileline = report.longrepr[1]
+                    skip_test_reason   = ""
+                
+                print(f"⏭️  \033[1;33mSKIPPED: {skip_test_filename} at line {skip_test_fileline} because: {skip_test_reason}\033[0m", end="")
+
+            elif hasattr(report, 'wasxfail'):
+                # For xfail cases
+                skip_reason = getattr(report, 'wasxfail', '')
+            else:
+                pprint(report.__dict__)
+            
+
+            return "skipped", "", ""
+
+    return None
 
 # ===== SESSION FINISH PHASE =====
 
-@pytest.hookimpl(tryfirst=True)
+@pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: Session, exitstatus):
-    """Hook for session finish (currently unused)."""
+    """Session cleanup - called after all tests complete."""
+    # Just do any necessary cleanup here
     pass
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_logreport(report):
+    """Suppress detailed test failure output."""
+    outcome = yield
+
+    nodeid = report.nodeid
+
+    if report.when == "call" and report.failed:
+        # Get the terminal reporter from the session config
+        # We need to access it differently
+        pass  # Just suppress by not doing anything
+
+
+    return outcome.get_result()
 
 @pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Display custom results table."""
-    test_summary_display.display_table(terminalreporter)
+    """Display custom results table - called for terminal summary."""
+
+    terminalreporter.stats.clear()
+
+    # Display the summary table
+    try:
+        test_summary_display.display_table(terminalreporter)
+    except Exception as e:
+        # Fallback to direct print if there's an issue
+        print(f"Error displaying summary table: {e}")
+        print(f"Test results: {getattr(test_tracker, 'results', 'No results available')}")
