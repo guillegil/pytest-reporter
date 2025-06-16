@@ -249,6 +249,17 @@ class TestSummaryDisplay:
         else:
             return "⚠️", "yellow"
 
+    def _calculate_string_display_width(self, text):
+        """Calculate the actual display width of a string, accounting for emojis and special characters."""
+        # This is a simplified version - emojis typically take 2 display columns
+        width = 0
+        for char in text:
+            if ord(char) > 0x1F000:  # Rough check for emojis
+                width += 2
+            else:
+                width += 1
+        return width
+
     def display_session_header(self, terminalreporter):
         """Display session information at the beginning."""
         tw = terminalreporter._tw
@@ -334,8 +345,9 @@ class TestSummaryDisplay:
         
         # Calculate dimensions
         dimensions = self._calculate_table_dimensions(terminalreporter)
-        total_width = dimensions['total_width']
-        test_col_width = dimensions['test_name_width']
+        terminal_width = dimensions['terminal_width']
+        # Use a safe width that accounts for terminal limitations
+        total_width = min(terminal_width - 2, 100)  # Leave margin for safety
         inner_width = total_width - 2  # Account for outer borders
         
         # Main Header
@@ -352,29 +364,47 @@ class TestSummaryDisplay:
         # Summary Statistics Panel
         tw.write("┌" + "─" * inner_width + "┐", cyan=True)
         tw.line("")
+        
+        # Stats title line
         stats_title = " 📊 EXECUTION STATISTICS"
         tw.write("│", cyan=True)
         tw.write(stats_title.ljust(inner_width), bold=True, cyan=True)
         tw.write("│", cyan=True)
         tw.line("")
+        
         tw.write("├" + "─" * inner_width + "┤", cyan=True)
         tw.line("")
         
         # Statistics content with total time
         total_time_str = self.tracker.format_duration(totals['total_duration'])
-        stats_line = f"Total: {totals['executions']} │ PASSED: {totals['pass']} │ FAILED: {totals['fail']} │ TIME: {total_time_str} │ SUCCESS: {overall_success_rate:.1f}%"
         
-        if len(stats_line) + 4 <= inner_width:
-            # Full stats fit
-            tw.write("│ Total: ", cyan=True)
-            tw.write(f"{totals['executions']:<6}", bold=True)
+        # Build the stats content piece by piece to ensure proper alignment
+        tw.write("│ ", cyan=True)
+        
+        # Calculate the actual content that will be displayed
+        stats_parts = []
+        stats_parts.append(f"Total: {totals['executions']}")
+        stats_parts.append(f"PASSED: {totals['pass']}")
+        stats_parts.append(f"FAILED: {totals['fail']}")
+        stats_parts.append(f"TIME: {total_time_str}")
+        stats_parts.append(f"SUCCESS: {overall_success_rate:.1f}%")
+        
+        # Join with separators
+        stats_content = " │ ".join(stats_parts)
+        
+        # Check if content fits
+        if len(stats_content) <= inner_width - 2:
+            # Display full stats
+            tw.write("Total: ", cyan=True)
+            tw.write(f"{totals['executions']}", bold=True)
             tw.write(" │ PASSED: ", cyan=True)
-            tw.write(f"{totals['pass']:<6}", green=True if totals['pass'] > 0 else False)
+            tw.write(f"{totals['pass']}", green=True if totals['pass'] > 0 else False)
             tw.write(" │ FAILED: ", cyan=True)
-            tw.write(f"{totals['fail']:<6}", red=True if totals['fail'] > 0 else False)
+            tw.write(f"{totals['fail']}", red=True if totals['fail'] > 0 else False)
             tw.write(" │ TIME: ", cyan=True)
-            tw.write(f"{total_time_str:<8}", bold=True)
+            tw.write(f"{total_time_str}", bold=True)
             tw.write(" │ SUCCESS: ", cyan=True)
+            
             if overall_success_rate >= 80:
                 tw.write(f"{overall_success_rate:.1f}%", green=True)
             elif overall_success_rate >= 60:
@@ -382,24 +412,24 @@ class TestSummaryDisplay:
             else:
                 tw.write(f"{overall_success_rate:.1f}%", red=True)
             
-            # Calculate remaining space
-            content_length = len(f"Total: {totals['executions']:<6} │ PASSED: {totals['pass']:<6} │ FAILED: {totals['fail']:<6} │ TIME: {total_time_str:<8} │ SUCCESS: {overall_success_rate:.1f}%")
-            remaining_space = inner_width - content_length - 1
-            tw.write(" " * max(0, remaining_space))
-            tw.write("│", cyan=True)
+            # Fill remaining space
+            remaining = inner_width - len(stats_content) - 2
+            tw.write(" " * remaining)
         else:
-            # Compact stats
-            compact_stats = f" Total: {totals['executions']} | Pass: {totals['pass']} | Fail: {totals['fail']} | Time: {total_time_str} | Rate: {overall_success_rate:.1f}%"
-            tw.write("│", cyan=True)
-            tw.write(compact_stats.ljust(inner_width), bold=True)
-            tw.write("│", cyan=True)
+            # Compact display
+            compact_stats = f"T:{totals['executions']} P:{totals['pass']} F:{totals['fail']} {overall_success_rate:.1f}%"
+            tw.write(compact_stats)
+            remaining = inner_width - len(compact_stats) - 2
+            tw.write(" " * remaining)
+        
+        tw.write(" │", cyan=True)
         tw.line("")
         
         tw.write("└" + "─" * inner_width + "┘", cyan=True)
         tw.line("")
         tw.line("")
         
-        # Performance Dashboard instead of detailed table
+        # Performance Dashboard
         self.display_basic_performance_dashboard(terminalreporter)
 
     def display_basic_performance_dashboard(self, terminalreporter):
@@ -409,7 +439,9 @@ class TestSummaryDisplay:
         
         tw = terminalreporter._tw
         terminal_width = self._get_terminal_width(terminalreporter)
-        inner_width = min(terminal_width - 2, 80)
+        # Use a safe width
+        panel_width = min(terminal_width - 2, 100)
+        inner_width = panel_width - 2
         
         # Calculate total time for title
         totals = self.tracker.get_totals()
@@ -418,11 +450,17 @@ class TestSummaryDisplay:
         # Performance Dashboard Panel
         tw.write("┌" + "─" * inner_width + "┐", blue=True)
         tw.line("")
+        
+        # Dashboard title
         dashboard_title = f" 📊 TEST PERFORMANCE DASHBOARD - 🕐 {total_time_str}"
         tw.write("│", blue=True)
+        # Truncate title if too long
+        if len(dashboard_title) > inner_width:
+            dashboard_title = dashboard_title[:inner_width-3] + "..."
         tw.write(dashboard_title.ljust(inner_width), bold=True, blue=True)
         tw.write("│", blue=True)
         tw.line("")
+        
         tw.write("├" + "─" * inner_width + "┤", blue=True)
         tw.line("")
         
@@ -432,20 +470,36 @@ class TestSummaryDisplay:
             duration_str = self.tracker.format_duration(results['total_duration'])
             
             # Create visual progress bar
-            bar_length = 25
+            bar_length = min(25, inner_width // 3)  # Adjust bar length based on available space
             filled_length = int(bar_length * success_rate / 100)
             bar = "█" * filled_length + "░" * (bar_length - filled_length)
             
             # Test name line with time
             tw.write("│ ", blue=True)
+            
+            # Build the test line content
+            test_line_parts = []
+            test_line_parts.append(f"{status_icon} {test_name}")
+            test_line_parts.append(f"🕐 {duration_str}")
+            test_line_content = "  -  ".join(test_line_parts)
+            
+            # Truncate if necessary
+            max_test_line_length = inner_width - 2
+            if len(test_line_content) > max_test_line_length:
+                # Truncate the test name part
+                max_name_length = max_test_line_length - len(f"  -  🕐 {duration_str}") - 5
+                truncated_name = test_name[:max_name_length] + "..."
+                test_line_content = f"{status_icon} {truncated_name}  -  🕐 {duration_str}"
+            
+            # Write test line
             tw.write(f"{status_icon} {test_name}", cyan=True, bold=True)
             tw.write("  -  ", blue=True)
             tw.write("🕐 ", yellow=True)
             tw.write(f"{duration_str}", bold=True, yellow=True)
             
-            # Calculate remaining space for test name line
-            test_line_content = f"{status_icon} {test_name}  -  🕐 {duration_str}"
-            remaining_space = inner_width - len(test_line_content) - 1
+            # Calculate and fill remaining space
+            display_width = self._calculate_string_display_width(test_line_content)
+            remaining_space = inner_width - display_width
             tw.write(" " * max(0, remaining_space))
             tw.write("│", blue=True)
             tw.line("")
@@ -463,14 +517,15 @@ class TestSummaryDisplay:
             
             tw.write(f" ({results['pass']}/{results['executions']})")
             
-            # Calculate remaining space for alignment
-            progress_line_content = f"    Success Rate: {success_rate:>6.1f}% [{bar}] ({results['pass']}/{results['executions']})"
-            remaining_space = inner_width - len(progress_line_content) - 1
+            # Calculate remaining space for progress line
+            progress_content = f"    Success Rate: {success_rate:>6.1f}% [{bar}] ({results['pass']}/{results['executions']})"
+            progress_display_width = self._calculate_string_display_width(progress_content)
+            remaining_space = inner_width - progress_display_width
             tw.write(" " * max(0, remaining_space))
             tw.write("│", blue=True)
             tw.line("")
             
-            # Add separator line between tests (empty line)
+            # Add separator line between tests
             tw.write("│" + " " * inner_width + "│", blue=True)
             tw.line("")
         
@@ -497,44 +552,50 @@ class TestSummaryDisplay:
             system_text.append(f"Python: {system_info['python_version']}\n", style="green")
             system_text.append(f"Pytest: {system_info['pytest_version']}", style="blue")
             
-            system_panel = Panel(system_text, title="🖥️  System Information", border_style="cyan")
+            system_panel = Panel(system_text, title="🖥️  System Information", border_style="cyan", expand=False)
             
             # Test Collection Panel
             collection_text = Text()
             collection_text.append(f"Collected Tests: {self.session_info.collected_tests}", 
                                  style="green bold" if self.session_info.collected_tests > 0 else "red")
             
-            collection_panel = Panel(collection_text, title="📊 Test Collection", border_style="green")
+            collection_panel = Panel(collection_text, title="📊 Test Collection", border_style="green", expand=False)
             
             # Markers Panel
             markers_text = Text()
             if self.session_info.markers:
                 # Adapt markers per line based on terminal width
                 avg_marker_length = sum(len(m) for m in self.session_info.markers) / len(self.session_info.markers)
-                markers_per_line = max(1, int(terminal_width / (avg_marker_length + 10)))
+                markers_per_line = max(1, int((terminal_width - 10) / (avg_marker_length + 5)))
                 
+                lines = []
                 for i in range(0, len(self.session_info.markers), markers_per_line):
                     line_markers = self.session_info.markers[i:i+markers_per_line]
-                    markers_text.append(" | ".join(f"@{marker}" for marker in line_markers) + "\n", style="magenta bold")
+                    lines.append(" | ".join(f"@{marker}" for marker in line_markers))
+                
+                markers_text.append("\n".join(lines), style="magenta bold")
             else:
                 markers_text.append("No custom markers detected", style="yellow")
             
-            markers_panel = Panel(markers_text, title="🏷️  Test Markers", border_style="magenta")
+            markers_panel = Panel(markers_text, title="🏷️  Test Markers", border_style="magenta", expand=False)
             
             # Plugins Panel
             plugins_text = Text()
             if self.session_info.plugins:
                 # Adapt plugins per line based on terminal width
                 avg_plugin_length = sum(len(p) for p in self.session_info.plugins) / len(self.session_info.plugins)
-                plugins_per_line = max(1, int(terminal_width / (avg_plugin_length + 10)))
+                plugins_per_line = max(1, int((terminal_width - 10) / (avg_plugin_length + 5)))
                 
+                lines = []
                 for i in range(0, len(self.session_info.plugins), plugins_per_line):
                     line_plugins = self.session_info.plugins[i:i+plugins_per_line]
-                    plugins_text.append(" | ".join(line_plugins) + "\n", style="blue")
+                    lines.append(" | ".join(line_plugins))
+                
+                plugins_text.append("\n".join(lines), style="blue")
             else:
                 plugins_text.append("No plugins detected", style="yellow")
             
-            plugins_panel = Panel(plugins_text, title="🔌 Active Plugins", border_style="blue")
+            plugins_panel = Panel(plugins_text, title="🔌 Active Plugins", border_style="blue", expand=False)
             
             # Display panels
             console.print("\n")
@@ -542,7 +603,7 @@ class TestSummaryDisplay:
             
             # Adapt layout based on terminal width
             if terminal_width >= 120:
-                console.print(Columns([system_panel, collection_panel]))
+                console.print(Columns([system_panel, collection_panel], equal=True, expand=True))
                 console.print(markers_panel)
             else:
                 console.print(system_panel)
@@ -582,12 +643,13 @@ class TestSummaryDisplay:
             stats_text.append(f"🕐 TOTAL TIME: {total_time_str}\n", style="bold yellow")
             stats_text.append(f"📈 SUCCESS RATE: {overall_success_rate:.1f}%", 
                             style="bold green" if overall_success_rate >= 80 else 
-                                  ("bold yellow" if overall_success_rate >= 60 else "bold red"))
+                                ("bold yellow" if overall_success_rate >= 60 else "bold red"))
             
-            stats_panel = Panel(stats_text, title="📊 Execution Statistics", border_style="cyan")
+            stats_panel = Panel(stats_text, title="📊 Execution Statistics", border_style="cyan", expand=False)
             
             # Simplified Performance Dashboard with total time in title
             dashboard_text = Text()
+            dashboard_text.append("\n")
             
             for test_name, results in sorted(self.tracker.results.items()):
                 success_rate = self.tracker.get_success_rate(results)
@@ -614,7 +676,7 @@ class TestSummaryDisplay:
                     
                 dashboard_text.append(f" ({results['pass']}/{results['executions']})\n\n", style="dim white")
             
-            dashboard_panel = Panel(dashboard_text, title=f"📊 Test Performance Dashboard - 🕐 {total_time_str}", border_style="blue")
+            dashboard_panel = Panel(dashboard_text, title=f"📊 Test Performance Dashboard - 🕐 {total_time_str}", border_style="blue", expand=False)
             
             # Display everything
             console.print("\n")

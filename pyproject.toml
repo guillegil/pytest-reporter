@@ -4,7 +4,7 @@ dependencies = ["pytest>=7"]
 description = "A pytest plugin that provides enhanced reporting capabilities, making test results easier to read and analyze."
 version = "0.5.0"
 license = "Apache-2.0"
-name = "pytest-reporter"
+name = "pytest-report"
 readme = "README.md"
 requires-python = ">=3.9"
 urls = {homepage = "https://google.es", repository = "https://google.es"}

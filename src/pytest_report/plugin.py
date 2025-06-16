@@ -82,6 +82,25 @@ def _silence_terminal_reporter(terminal):
     if hasattr(terminal, '_tw'):
         _silence_terminal_writer(terminal._tw)
 
+@pytest.fixture(autouse=True)
+def setup_test_logging(request):
+    """Auto-fixture that configures logging for each test that actually runs."""
+    
+    # Check if this test function has log config info
+    if hasattr(request.function, '_log_config'):
+        config = request.function._log_config
+        
+        # Configure logging only once per test function (not per parameter)
+        test_key = (config['filename'], config['testname'])
+        if not hasattr(setup_test_logging, '_configured'):
+            setup_test_logging._configured = set()
+        
+        if test_key not in setup_test_logging._configured:
+            log.configure_test_handler(
+                filename=config['filename'], 
+                testname=config['testname']
+            )
+            setup_test_logging._configured.add(test_key)
 
 # ===== CONFIGURATION PHASE =====
 
@@ -176,14 +195,26 @@ def pytest_report_collectionfinish(config, start_path, items):
 
 # ===== TEST GENERATION PHASE =====
 
-@pytest.hookimpl(trylast=True)
 def pytest_generate_tests(metafunc: Metafunc):
-    """Configure test-specific logging."""
-    testname = metafunc.definition.originalname
-    test_fname = os.path.basename(metafunc.function.__code__.co_filename)
-    log.configure_test_handler(filename=test_fname, testname=testname)
-
-
+    """Configure logging setup to be done when test actually executes."""
+    
+    # Your existing parametrization logic here
+    # metafunc.parametrize(...)
+    
+    # Add a fixture that will configure logging when the test runs
+    if not hasattr(metafunc.function, '_log_configured'):
+        # Mark that we've added the log setup to avoid duplicates
+        metafunc.function._log_configured = True
+        
+        # Get test info
+        base_testname = metafunc.function.__name__
+        test_fname = os.path.basename(metafunc.function.__code__.co_filename)
+        
+        # Store the log config info on the function for later use
+        metafunc.function._log_config = {
+            'filename': test_fname,
+            'testname': base_testname
+        }
 # ===== TEST EXECUTION PHASE =====
 
 @pytest.hookimpl(tryfirst=True)
