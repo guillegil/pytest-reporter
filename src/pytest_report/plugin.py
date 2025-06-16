@@ -143,12 +143,12 @@ def pytest_runtest_logstart(nodeid, location):
     """Start timing the test."""
     test_tracker.start_test(nodeid)
 
-
+@pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
 
-
+@pytest.hookimpl(tryfirst=True)
 def pytest_runtest_makereport(item: Item, call: CallInfo):
     """Capture test results for summary table."""
     if call.when == "call":  # Only capture the main test execution, not setup/teardown
