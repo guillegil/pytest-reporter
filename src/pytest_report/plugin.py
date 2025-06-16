@@ -1,15 +1,17 @@
 # pytest_reporter.py
 import os
 import pytest
+import time  # Add this import
 from .logger.logger import *
 from .logger.logger import log
-from .test_summary import TestResultTracker, TestSummaryDisplay
+from .test_summary import TestResultTracker, TestSummaryDisplay, TestSessionInfo
 
 from pytest import Session, Config, Item, CallInfo, Metafunc
 
-# Global tracker and display instances
+# Global tracker, session info, and display instances
 test_tracker = TestResultTracker()
-test_summary_display = TestSummaryDisplay(test_tracker)
+session_info = TestSessionInfo()
+test_summary_display = TestSummaryDisplay(test_tracker, session_info)
 
 
 def __normalize_str(s: str) -> str:
@@ -152,16 +154,18 @@ def pytest_collection(session):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Hook for modifying collected items (currently unused)."""
-    pass
+    """Store session information after collection."""
+    session_info.set_session_data(config, items)
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_finish(session):
-    """Suppress collection finish output."""
+    """Display session header after collection and suppress collection finish output."""
     terminal = session.config.pluginmanager.get_plugin('terminalreporter')
     if terminal:
         terminal.report_collect = lambda *args, **kwargs: None
+        # Display the session header here
+        test_summary_display.display_header(terminal)
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -193,8 +197,8 @@ def pytest_runtest_protocol(item, nextitem):
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_logstart(nodeid, location):
-    """Suppress test start logging."""
-    pass
+    """Start timing the test."""
+    test_tracker.start_test(nodeid)
 
 
 def pytest_runtest_setup(item):
@@ -205,8 +209,17 @@ def pytest_runtest_setup(item):
 def pytest_runtest_makereport(item: Item, call: CallInfo):
     """Capture test results for summary table."""
     if call.when == "call":  # Only capture the main test execution, not setup/teardown
-        outcome = "passed" if call.excinfo is None else "failed"
-        test_name = item.name
+        test_name = item.nodeid
+        
+        # Determine outcome based on call result
+        if call.excinfo is None:
+            outcome = "passed"
+        elif call.excinfo[0] == pytest.skip.Exception:
+            outcome = "skipped"
+        else:
+            outcome = "failed"
+        
+        # Add result with duration calculation
         test_tracker.add_result(test_name, outcome)
 
 
