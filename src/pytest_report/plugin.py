@@ -151,21 +151,25 @@ def pytest_runtest_setup(item):
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_makereport(item: Item, call: CallInfo):
     """Capture test results for summary table."""
+    # outcome = yield
+
     if call.when == "call":  # Only capture the main test execution, not setup/teardown
         test_name = item.nodeid
 
         # Determine outcome based on call result
         if call.excinfo is None:
-            outcome = "passed"
+            outcome_status = "passed"
         elif issubclass(call.excinfo.type, pytest.skip.Exception):
-            outcome = "skipped"
+            outcome_status = "skipped"
         elif issubclass(call.excinfo.type, AssertionError):
-            outcome = "failed"  # Test failure (assertion failed)
+            outcome_status = "failed"  # Test failure (assertion failed)
         else:
-            outcome = "error"   # Test error (unexpected exception)
+            outcome_status = "error"   # Test error (unexpected exception)
 
         # Add result with duration calculation
-        test_tracker.add_result(test_name, outcome)
+        test_tracker.add_result(test_name, outcome_status)
+
+    # return outcome.get_result()
 
 
 @pytest.hookimpl(trylast=True)
@@ -177,13 +181,11 @@ def pytest_runtest_teardown(item, nextitem):
 def pytest_report_teststatus(report, config):
     """Suppress short status indicators and capture skip reasons."""
 
-    from pprint import pprint
-
     if report.when == "call":
         if report.passed:
-            return "passed", "", ""
+            return ("passed", ".", "PASSED")
         elif report.failed:
-            return "failed", "", ""
+            return ("failed", "f", "FAILED")
         elif report.skipped:
             # Get the skip reason
             skip_reason = ""
@@ -198,16 +200,16 @@ def pytest_report_teststatus(report, config):
                     skip_test_reason   = ""
                 
                 print(f"⏭️  \033[1;33mSKIPPED: {skip_test_filename} at line {skip_test_fileline} because: {skip_test_reason}\033[0m", end="")
-
+                return ("skipped", "s", "SKIPPED")
             elif hasattr(report, 'wasxfail'):
                 # For xfail cases
                 skip_reason = getattr(report, 'wasxfail', '')
+                return ("skipped", "s", "SKIPPED")
             else:
-                pprint(report.__dict__)
+                return ("error", "E", "ERROR")
+        else:
+            return ("error", "E", "ERROR")
             
-
-            return "skipped", "", ""
-
     return None
 
 # ===== SESSION FINISH PHASE =====

@@ -577,7 +577,7 @@ class TestSummaryDisplay:
             else:
                 markers_text.append("No custom markers detected", style="yellow")
             
-            markers_panel = Panel(markers_text, title="🏷️  Test Markers", border_style="magenta", expand=False)
+            markers_panel = Panel(markers_text, title="🔖 Test Markers", border_style="magenta", expand=False)
             
             # Plugins Panel
             plugins_text = Text()
@@ -603,7 +603,7 @@ class TestSummaryDisplay:
             
             # Adapt layout based on terminal width
             if terminal_width >= 120:
-                console.print(Columns([system_panel, collection_panel], equal=True, expand=True))
+                console.print(Columns([system_panel, collection_panel], equal=True, expand=False))
                 console.print(markers_panel)
             else:
                 console.print(system_panel)
