@@ -1,0 +1,331 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+
+    font-family: Poppins, Arial, Helvetica, sans-serif /*Update this line*/
+}
+
+#sidebar {
+    width: 220px;
+    background-color: #f4f4f4;
+
+    display: flex;
+    flex-direction: column;
+    align-items: right;
+
+    height: 100vh;
+    border-right: 1px solid #e9ecef;
+
+    flex-shrink: 0;
+}
+
+#sidebar ul{
+    list-style: none;
+}
+
+#sidebar-header {
+    padding: 20px 20px 15px 20px;
+    border-bottom: 2px solid #dee2e6;
+    margin-bottom: 10px;
+    background-color: #fff;
+
+    display: flex;
+    align-items: center;
+    gap: 12px
+}
+
+#sidebar-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.sidebar-menu {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 12px 20px;
+    gap: 15px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border-left: 5px solid transparent;
+}
+
+.sidebar-menu:hover {
+    background-color: #e8f2ff;
+    border-left: 5px solid #5a80e6;
+}
+
+.sidebar-menu.active {
+    background-color: #e8f2ff;
+    border-left: 5px solid #5a80e6;
+    font-weight: 500;
+}
+
+.sidebar-menu svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.sidebar-menu span {
+    font-weight: 400;
+    color: #495057;
+    font-size: 14px;
+}
+
+
+.sidebar-divider {
+    height: 1px;
+    background-color: #dee2e6;
+    margin: 8px 20px;
+}
+
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+main {
+    flex: 1;
+    padding: 32px 40px;
+    background: #fff;
+    min-width: 0;
+}
+
+.content h2 {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #444;
+    margin-bottom: 25px;
+}
+
+.content section {
+    margin-bottom: 24px;
+    font-size: 1.1rem;
+    color: #333;
+}
+
+/* Styles for summary cards */
+#summary-cards {
+    display: flex; /* Use flexbox to display cards in a row */
+    flex-wrap: wrap; /* Allow cards to wrap to the next line if needed */
+    gap: 20px; /* Add some space between the cards */
+    margin-bottom: 20px;
+
+    justify-content: center;
+}
+
+.summary-card {
+    background-color: #f0f0f0;
+    border-radius: 5px;
+    padding: 15px;
+    text-align: center;
+    width: 200px; /* Adjust the width as needed */
+}
+
+.summary-title {
+    font-size: 1em;
+    margin-bottom: 5px;
+}
+
+.summary-value {
+    font-size: 1.5em;
+    font-weight: bold;
+}
+
+#footer {
+    background-color: #f8f9fa;
+}
+
+
+/* 
+ TABLE STYLES
+*/
+
+#expandable-table {
+    margin-top: 30px;
+}
+
+#expandable-table h3 {
+    margin-bottom: 15px;
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.expandable-results-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.expandable-results-table th {
+    background-color: #5a80e6;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.expandable-results-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e9ecef;
+    font-size: 14px;    
+}
+
+
+.expandable-results-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Expandable Row Styles */
+.expandable-row {
+    cursor: pointer;
+}
+
+.details-row {
+    display: none; /* Initially hide details rows */
+}
+
+.details-content {
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-top: 1px solid #e9ecef;
+}
+
+.details-content p {
+    margin-bottom: 8px;
+}
+
+.expand-button {
+    background-color: #5a80e6;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.expand-button:hover {
+    background-color: #4267b2;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.4em 0.6em;
+    border-radius: 0.5em;
+    font-size: 0.85em;
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    color: white;
+}
+
+/* Passed Badge */
+.badge.passed {
+    background-color: #27ae60; /* Green */
+}
+
+/* Failed Badge */
+.badge.failed {
+    background-color: #e74c3c; /* Red */
+}
+
+/* Skipped Badge */
+.badge.skipped {
+    background-color: #f39c12; /* Orange */
+}
+
+/* Pending Badge */
+.badge.pending {
+    background-color: #3498db; /* Blue */
+}
+
+.test-report {
+    width: 100%;
+
+    background: #f9fafb;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+
+.filters {
+    display: flex;
+    flex-direction: row;
+    gap: 25px;
+}
+
+.test-report h2 {
+    margin-top: 0;
+    color: #2d3748;
+    font-size: 1.17rem;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.5rem;
+}
+
+.test-report details {
+    margin-top: 1.2rem;
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    padding: 0.8rem 1.2rem;
+    transition: all 0.2s;
+}
+  
+.test-report details[open] {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+  
+.test-report summary {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+
+
+    font-weight: 400;
+    color: #507da6;
+    cursor: pointer;
+    outline: none;
+    font-size: 1.1rem;
+    user-select: none;
+}
+
+.badge-container {
+    display: flex;
+    flex-direction: row;
+
+    gap: 5px;
+    align-self: flex-end;
+}
+
+.test-report summary div.badge-container .badge {
+    width: 100%;
+    font-size: 0.8rem;
+}
+  
+.test-report-details {
+    margin-top: 1rem;
+    padding-left: 0.5rem;
+}
+  
+.test-report-summary {
+    color: #2f855a;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+}
+  
+.test-report-description {
+    color: #4a5568;
+    font-size: 0.98rem;
+    background: #f1f5f9;
+    border-radius: 6px;
+    padding: 0.7rem 1rem;
+}
