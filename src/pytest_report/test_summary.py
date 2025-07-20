@@ -305,7 +305,8 @@ class TestSummaryDisplay:
             for i in range(0, len(self.session_info.markers), markers_per_row):
                 row_markers = self.session_info.markers[i:i+markers_per_row]
                 marker_row = "  " + " | ".join(f"@{marker}" for marker in row_markers)
-                tw.write(marker_row, magenta=True)
+                # tw.write(marker_row, magenta=True)
+                tw.write(marker_row)
                 tw.line("")
         else:
             tw.write("  No custom markers detected", yellow=True)

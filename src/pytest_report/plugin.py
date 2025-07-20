@@ -1,9 +1,10 @@
 # pytest_reporter.py
 import os
 import pytest
-import time
+
 from .logger.logger import *
 from .logger.logger import log
+from .meta.metainfo import meta
 from .test_summary import TestResultTracker, TestSummaryDisplay, TestSessionInfo
 
 from pytest import Session, Config, Item, CallInfo, Metafunc
@@ -14,6 +15,7 @@ session_info = TestSessionInfo()
 test_summary_display = TestSummaryDisplay(test_tracker, session_info)
 
 _log_test_tracker = []
+_log_test_handlers = {}
 
 def __normalize_str(s: str) -> str:
     """Normalize string for log level comparison."""
@@ -127,16 +129,16 @@ def pytest_generate_tests(metafunc: Metafunc):
 
 # ===== TEST EXECUTION PHASE =====
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_runtest_protocol(item: Item, nextitem):
-    """Suppress per-test output during test protocol."""
-    testname = item.originalname
-    filename = item.fspath.basename
+# @pytest.hookimpl(tryfirst=True)
+# def pytest_runtest_protocol(item: Item, nextitem: Item):
+#     """Suppress per-test output during test protocol."""
+#     testname = item.originalname
+#     filename = item.fspath.basename
 
-    global _log_test_tracker
-    if testname not in _log_test_tracker:
-        log.configure_test_handler(filename=filename, testname=testname)
-        _log_test_tracker.append(testname)
+#     global _log_test_tracker
+#     if testname not in _log_test_tracker:
+#         log.configure_test_handler(filename=filename, testname=testname)
+#         _log_test_tracker.append(testname)
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_logstart(nodeid, location):
@@ -144,14 +146,56 @@ def pytest_runtest_logstart(nodeid, location):
     test_tracker.start_test(nodeid)
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_runtest_setup(item):
+def pytest_runtest_setup(item: Item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
+    meta.current_testproto = "setup"
+    testname = item.originalname
+    filename = item.fspath.basename
+
+    meta.current_testcase  = testname
+    meta.current_filename  = filename 
+
+    from pprint import pprint
+    # pprint(item.__dict__)
+    if hasattr(item, "callspec"):
+        pass
+        # TODO: Here you can store the arguments with its names in the meta.
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item: Item):
+    """Add newline before each test (for your custom logging)."""
+    print('\n')
+    meta.current_testproto = "call"
+ 
+    testname = item.originalname
+    filename = item.fspath.basename
+
+    meta.current_testcase  = testname
+    meta.current_filename  = filename 
+
+    global _log_test_tracker
+    global _log_test_handlers
+
+    setup_handler = _log_test_handlers.get(f"{testname}_setup", None)
+    if setup_handler is not None:
+        setup_handler.close()
+        log.logger.removeHandler(setup_handler)
+        del _log_test_handlers[f"{testname}_setup"]
+
+    if testname not in _log_test_tracker:
+        handler = log.configure_test_handler()
+        _log_test_tracker.append(testname)
+        _log_test_handlers[testname] = handler
+
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_makereport(item: Item, call: CallInfo):
     """Capture test results for summary table."""
     # outcome = yield
+
+    meta.append_item(item, call)
 
     if call.when == "call":  # Only capture the main test execution, not setup/teardown
         test_name = item.nodeid
@@ -173,9 +217,17 @@ def pytest_runtest_makereport(item: Item, call: CallInfo):
 
 
 @pytest.hookimpl(trylast=True)
-def pytest_runtest_teardown(item, nextitem):
+def pytest_runtest_teardown(item: Item, nextitem: Item):
     """Hook for test teardown (currently unused)."""
-    pass
+
+    testname = item.originalname
+    filename = item.fspath.basename
+
+    meta.current_testcase  = testname
+    meta.current_filename  = filename 
+    meta.current_testproto = "teardown"
+
+    log.finish_current_test_log()
 
 @pytest.hookimpl
 def pytest_report_teststatus(report, config):
