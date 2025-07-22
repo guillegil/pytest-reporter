@@ -7,14 +7,14 @@ from .logger.logger import log
 from .meta.metainfo import meta
 from .test_summary import TestResultTracker, TestSummaryDisplay, TestSessionInfo
 
-from pytest import Session, Config, Item, CallInfo, Metafunc
+from pytest import Session, Config, Item, CallInfo, Metafunc, TestReport
 
 # Global tracker, session info, and display instances
 test_tracker = TestResultTracker()
 session_info = TestSessionInfo()
 test_summary_display = TestSummaryDisplay(test_tracker, session_info)
 
-_log_test_tracker = []
+_log_test_tracker = {}
 _log_test_handlers = {}
 
 def __normalize_str(s: str) -> str:
@@ -49,6 +49,14 @@ def pytest_addoption(parser):
         default=os.path.join(".", "logs"),
         help="Path for log files"
     )
+
+    parser.addoption(
+        "--setup-log-level",
+        action="store",
+        default="INFO",
+        help="Path for log files"
+    )
+    
     
     parser.addoption(
         "--reporter-log-level",
@@ -67,6 +75,10 @@ def pytest_configure(config: Config):
     # Configure logging
     log_level = _get_log_level(config.getoption("--reporter-log-level"))
     log.set_level(log_level)
+
+    # -- Setup CMD Log Level ------------------------------------------ #
+    setup_log_level = _get_log_level(config.getoption("--setup-log-level"))
+    log.setup_log_level = setup_log_level
 
     if log.report_path == "":
         log.report_path = "./reports/logs"
@@ -149,53 +161,23 @@ def pytest_runtest_logstart(nodeid, location):
 def pytest_runtest_setup(item: Item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
-    meta.current_testproto = "setup"
-    testname = item.originalname
-    filename = item.fspath.basename
 
-    meta.current_testcase  = testname
-    meta.current_filename  = filename 
-
-    from pprint import pprint
-    # pprint(item.__dict__)
-    if hasattr(item, "callspec"):
-        pass
-        # TODO: Here you can store the arguments with its names in the meta.
+    meta.update_item_setup(item)
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_call(item: Item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
-    meta.current_testproto = "call"
- 
-    testname = item.originalname
-    filename = item.fspath.basename
+    meta.update_item_call(item)
 
-    meta.current_testcase  = testname
-    meta.current_filename  = filename 
-
-    global _log_test_tracker
-    global _log_test_handlers
-
-    setup_handler = _log_test_handlers.get(f"{testname}_setup", None)
-    if setup_handler is not None:
-        setup_handler.close()
-        log.logger.removeHandler(setup_handler)
-        del _log_test_handlers[f"{testname}_setup"]
-
-    if testname not in _log_test_tracker:
-        handler = log.configure_test_handler()
-        _log_test_tracker.append(testname)
-        _log_test_handlers[testname] = handler
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_makereport(item: Item, call: CallInfo):
     """Capture test results for summary table."""
     # outcome = yield
-
-    meta.append_item(item, call)
+    meta.update_test_status(item, call)
 
     if call.when == "call":  # Only capture the main test execution, not setup/teardown
         test_name = item.nodeid
@@ -219,19 +201,14 @@ def pytest_runtest_makereport(item: Item, call: CallInfo):
 @pytest.hookimpl(trylast=True)
 def pytest_runtest_teardown(item: Item, nextitem: Item):
     """Hook for test teardown (currently unused)."""
+    meta.update_item_teardown(item)
 
-    testname = item.originalname
-    filename = item.fspath.basename
-
-    meta.current_testcase  = testname
-    meta.current_filename  = filename 
-    meta.current_testproto = "teardown"
-
-    log.finish_current_test_log()
 
 @pytest.hookimpl
-def pytest_report_teststatus(report, config):
+def pytest_report_teststatus(report: TestReport, config):
     """Suppress short status indicators and capture skip reasons."""
+
+    meta.update_test_status(report, config)
 
     if report.when == "call":
         if report.passed:
@@ -290,6 +267,10 @@ def pytest_runtest_logreport(report):
 @pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Display custom results table - called for terminal summary."""
+
+    from pprint import pprint
+
+    pprint(meta.run_info)
 
     terminalreporter.stats.clear()
 

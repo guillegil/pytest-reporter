@@ -1,12 +1,15 @@
-from pytest import Item, CallInfo
+from pytest import Item, CallInfo, TestReport
 
 import pytest
 
 class MetaInfo:
     def __init__(self):
-        self.__current_testcase  : str  = ""
-        self.__current_filename  : str  = ""
-        self.__current_testproto : str  = ""
+        self.__current_testcase   : str  = ""
+        self.__current_filename   : str  = ""
+        self.__current_testpath   : str  = ""
+        self.__current_testproto  : str  = ""
+        self.__current_testargs   : dict = {}
+        self.__current_test_index : int = 0
 
         self.__current_testinfo = {}
 
@@ -79,6 +82,14 @@ class MetaInfo:
         self.__current_filename = filename
 
     @property
+    def current_testpath(self) -> str:
+        return self.__current_testpath
+    
+    @current_testpath.setter
+    def current_testpath(self, testpath: str) -> None:
+        self.__current_testpath = testpath
+
+    @property
     def current_testproto(self) -> str:
         return self.__current_testproto
     
@@ -91,90 +102,135 @@ class MetaInfo:
         return self.__current_testinfo
 
     @property
-    def run_info(self):
+    def current_testargs(self) -> str:
+        return self.__current_testargs
+    
+    @current_testargs.setter
+    def current_testargs(self, testargs: str) -> None:
+        self.__current_testargs = testargs
+
+    @property
+    def current_test_index(self) -> int:
+        return self.__current_test_index
+    
+    @current_test_index.setter
+    def current_test_index(self, index: int) -> None:
+        self.__current_test_index = index
+
+
+    @property
+    def run_info(self) -> dict:
         return self.__run_info
+    
+    @property
+    def testinfo(self) -> dict:
+        return self.__run_info["testinfo"]
 
-    def append_logline(self, logmsg: str):
-        logmsg = logmsg + '\n' if not logmsg.endswith('\n') else logmsg
+    @property
+    def current_testinfo(self) -> dict:
+        return self.testinfo[self.current_filename][self.current_testcase][self.current_test_index]
 
-        if self.current_testproto == "setup" or self.current_testproto == "fake_setup":
-            if "setup" not in self.__current_testinfo:
-                self.__current_testinfo["setup"] = {}
+    @property
+    def current_testlog(self) -> str:
+        proto = self.current_testproto
+        if self.current_testproto == "fake_setup":
+            proto = "setup"
+
+        return self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"]
+
+    @current_testlog.setter
+    def current_testlog(self, log: str) -> None:
+        proto = self.current_testproto
+        if self.current_testproto == "fake_setup":
+            proto = "setup"
+
+        self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"] += log
+
+
+    def _update_run_info(self):
+        if self.current_testproto == "setup":
+            if self.current_filename not in self.testinfo:
+                self.testinfo[self.current_filename] = {}
             
-            if "log" not in self.__current_testinfo["setup"]:
-                self.__current_testinfo["setup"]["log"] = ""
+            if self.current_testcase not in self.testinfo[self.current_filename]:
+                self.testinfo[self.current_filename][self.current_testcase] = []
+                self.current_test_index = 0
+            else:
+                self.current_test_index += 1
 
-            self.__current_testinfo["setup"]["log"] += logmsg
-
+            self.testinfo[self.current_filename][self.current_testcase].append({
+                "index": self.current_test_index,
+                "setup": {},
+                "call": {
+                    "inputs": self.current_testargs
+                },
+                "teardown": {},
+            })
         elif self.current_testproto == "call":
-            if "call" not in self.__current_testinfo:
-                self.__current_testinfo["call"] = {}
-            
-            if "log" not in self.__current_testinfo["call"]:
-                self.__current_testinfo["call"]["log"] = ""
-
-            self.__current_testinfo["call"]["log"] += logmsg
-
+            pass
         elif self.current_testproto == "teardown":
-            if "teardown`" not in self.__current_testinfo:
-                self.__current_testinfo["teardown"] = {}
+            pass
+        else:
+            pass
+
+    def update_item_setup(self, item: Item):
+        self.current_testproto = "setup"
+
+        self.current_testcase  = item.originalname
+        self.current_testpath  = item.fspath.dirname
+        self.current_filename  = item.fspath.basename
+
+        if hasattr(item, "callspec"):
+            self.current_testargs = item.callspec.params
+
+        self._update_run_info()
+
+    def update_item_call(self, item: Item):
+        meta.current_testcase  = item.originalname
+        meta.current_testpath  = item.fspath.dirname
+        meta.current_filename  = item.fspath.basename
+        meta.current_testproto = "call"
+
+    def update_item_teardown(self, item: Item):
+        meta.current_testcase  = item.originalname
+        meta.current_testpath  = item.fspath.dirname
+        meta.current_filename  = item.fspath.basename
+        meta.current_testproto = "teardown"
+
+        self._update_run_info()
+
+    def update_test_status(self, item: TestReport, call: CallInfo):
+        if call.when == "call":
+            if call.excinfo is None:
+                self.current_testinfo["call"]["status"] = "passed"
+            elif issubclass(call.excinfo.type, pytest.skip.Exception):
+                self.current_testinfo["call"]["status"] = "failed"
+            elif issubclass(call.excinfo.type, AssertionError):
+                self.current_testinfo["call"]["status"] = "skipped"
+            else:
+                self.current_testinfo["call"]["status"] = "error"
             
-            if "log" not in self.__current_testinfo["teardown"]:
-                self.__current_testinfo["teardown"]["log"] = ""
 
-            self.__current_testinfo["teardown"]["log"] += logmsg
+            self.current_testinfo["call"]["start"] = call.start
+            self.current_testinfo["call"]["stop"] = call.stop
+            self.current_testinfo["call"]["duration"] = call.duration
+
+        elif call.when == "setup":
+            if call.excinfo is None:
+                self.current_testinfo["setup"]["status"] = "passed"
+            elif issubclass(call.excinfo.type, pytest.skip.Exception):
+                self.current_testinfo["setup"]["status"] = "failed"
+            elif issubclass(call.excinfo.type, AssertionError):
+                self.current_testinfo["setup"]["status"] = "skipped"
+            else:
+                self.current_testinfo["setup"]["status"] = "error"
+
+            self.current_testinfo["setup"]["start"] = call.start
+            self.current_testinfo["setup"]["stop"] = call.stop
+            self.current_testinfo["setup"]["duration"] = call.duration
         else:
             pass
 
-    def append_item(self, item: Item, call_info: CallInfo):
-        from pprint import pprint
-
-        if self.current_filename not in self.__run_info["testinfo"]:
-            self.__run_info["testinfo"][self.current_filename] = {}
-        elif self.current_testcase not in self.__run_info["testinfo"][self.current_filename]:
-            self.__run_info["testinfo"][self.current_filename][self.current_testcase] = []
-        else:
-            pass
-
-        if call_info.when == "setup":
-            if "setup" not in self.__current_testinfo:
-                self.__current_testinfo["setup"] = {}
-
-            self.__current_testinfo["setup"]["start"] = call_info.start
-            self.__current_testinfo["setup"]["stop"] = call_info.stop
-            self.__current_testinfo["setup"]["duration"] = call_info.duration
-
-            if call_info.excinfo is None:
-                self.__current_testinfo["setup"]["status"] = "passed"
-            elif issubclass(call_info.excinfo.type, pytest.skip.Exception):
-                self.__current_testinfo["setup"]["status"] = "skipped"
-            elif issubclass(call_info.excinfo.type, pytest.fail.Exception) or issubclass(call_info.excinfo.type, AssertionError):
-                self.__current_testinfo["setup"]["status"] = "failed"
-            else:
-                self.__current_testinfo["setup"]["status"] = "error"
-                
-
-        if call_info.when == "call":
-            if "call" not in self.__current_testinfo:
-                self.__current_testinfo["call"] = {}
-
-            self.__current_testinfo["call"]["start"] = call_info.start
-            self.__current_testinfo["call"]["stop"] = call_info.stop
-            self.__current_testinfo["call"]["duration"] = call_info.duration
-
-            if call_info.excinfo is None:
-                self.__current_testinfo["call"]["status"] = "passed"
-            elif issubclass(call_info.excinfo.type, pytest.skip.Exception):
-                self.__current_testinfo["call"]["status"] = "skipped"
-            elif issubclass(call_info.excinfo.type, pytest.fail.Exception) or issubclass(call_info.excinfo.type, AssertionError):
-                self.__current_testinfo["call"]["status"] = "failed"
-            else:
-                self.__current_testinfo["call"]["status"] = "error"
-                
-
-        if call_info.when == "teardown":
-            self.__run_info["testinfo"][self.current_filename][self.current_testcase].append(self.__current_testinfo)
-            self.__current_testinfo = {}
                 
 meta = MetaInfo()
 

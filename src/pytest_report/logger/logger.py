@@ -11,6 +11,8 @@ import math
 
 from pytest_report.meta import meta
 
+import shutil
+
 datefmt = "%Y-%m-%d %H:%M:%S"
 
 PASS_LEVEL = 25  # Between INFO (20) and WARNING (30)
@@ -70,11 +72,21 @@ class PytestLogger:
         self.__logger = logging.getLogger("pytest_logger")
         self.__logger.setLevel(logging.INFO)
 
+        self.__setup_log_level = logging.INFO
+
         self.__report_path: str = ""
 
         self.__cmd_handler  = None
         self.__file_handlers = {}
         self.__log_files = {}
+
+    @property
+    def setup_log_level(self) -> int:
+        return self.__setup_log_level
+
+    @setup_log_level.setter
+    def setup_log_level(self, level: int) -> None:
+        self.__setup_log_level = level
 
     @property
     def report_path(self) -> str:
@@ -217,7 +229,9 @@ class PytestLogger:
         
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-        filepath = os.path.join(self.report_path, f"{now}_X_{meta.current_filename}_{meta.current_testcase}.log")
+        print(f"{meta.current_run_count=}")
+
+        filepath = os.path.join(self.report_path, f"{now}_X_{meta.current_filename}_{meta.current_testcase}_{meta.current_run_count}.log")
     
         if not os.path.exists(filepath):
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -240,7 +254,7 @@ class PytestLogger:
         if meta.current_testcase not in self.__log_files[meta.current_filename]:
             self.__log_files[meta.current_filename][meta.current_testcase] = {}
 
-        self.__file_handlers[meta.current_filename][meta.current_testcase] = file_handler
+        self.__file_handlers[meta.current_filename][meta.current_testcase + f"_{meta.current_run_count}"] = file_handler
         self.__log_files[meta.current_filename][meta.current_testcase]["call"] = filepath
 
         return file_handler
@@ -257,7 +271,7 @@ class PytestLogger:
         
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-        filepath = os.path.join(self.report_path, f"{now}_X_{meta.current_filename}_{meta.current_testcase}_setup.log")
+        filepath = os.path.join(self.report_path, f"{now}_X_{meta.current_filename}_{meta.current_testcase}_setup_{meta.current_run_count}.log")
         
         if not os.path.exists(filepath):
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -267,6 +281,7 @@ class PytestLogger:
         file_handler = logging.FileHandler(filename=filepath, encoding="utf-8")
         file_handler.setLevel(level)
         self.cmd_handler.setFormatter(ColorFormatter(fmt=cmdfmt, datefmt=datefmt))
+        self.cmd_handler.setLevel(self.setup_log_level)
         file_handler.setFormatter(logging.Formatter(fmt=filefmt, datefmt=datefmt))
 
         self.logger.addHandler(file_handler)
@@ -280,7 +295,7 @@ class PytestLogger:
         if meta.current_testcase not in self.__log_files[meta.current_filename]:
             self.__log_files[meta.current_filename][meta.current_testcase] = {}
 
-        self.__file_handlers[meta.current_filename][meta.current_testcase + "_setup"] = file_handler
+        self.__file_handlers[meta.current_filename][meta.current_testcase + f"_setup_{meta.current_run_count}"] = file_handler
         self.__log_files[meta.current_filename][meta.current_testcase]["setup"] = filepath
 
         return file_handler
@@ -300,7 +315,7 @@ class PytestLogger:
 
     def close_test_setup(self):
         test_handler = self.__file_handlers.get(meta.current_filename, {}).get(meta.current_testcase, None)
-        testsetup_handler = self.__file_handlers.get(meta.current_filename, {}).get(meta.current_testcase + "_setup", None)
+        testsetup_handler = self.__file_handlers.get(meta.current_filename, {}).get(meta.current_testcase + f"_setup_{meta.current_run_count}", None)
         
         if test_handler is not None:
             test_handler.filters.clear()
@@ -310,9 +325,13 @@ class PytestLogger:
 
         cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [%(levelname)s] - %(message)s"
         self.cmd_handler.setFormatter(ColorFormatter(fmt=cmdfmt, datefmt=datefmt))
+        self.cmd_handler.setLevel(logging.INFO)
 
     def finish_current_test_log(self):
-        test_handler = self.__file_handlers.get(meta.current_filename, {}).get(meta.current_testcase, None)
+        testsetup_handler = self.__file_handlers.get(meta.current_filename, {}).get(meta.current_testcase + f"_setup_{meta.current_run_count}", None)
+        test_handler      = self.__file_handlers.get(meta.current_filename, {}).get(meta.current_testcase, None)
+
+        self.remove_file_handler(testsetup_handler)
         self.remove_file_handler(test_handler)
 
         log_path_setup = self.__log_files[meta.current_filename][meta.current_testcase]["setup"]
@@ -332,7 +351,7 @@ class PytestLogger:
         else:
             pass
 
-        os.rename(log_path_setup, log_path_setup.replace("_X_", status_key_setup))
+        shutil.move(log_path_setup, log_path_setup.replace("_X_", status_key_setup))
 
         if meta.current_test_info["call"]["status"] == "passed":
             status_key_call = "_P_"
@@ -345,13 +364,12 @@ class PytestLogger:
         else:
             pass
 
-        os.rename(log_path_call, log_path_call.replace("_X_", status_key_call))
-
-
+        shutil.move(log_path_call, log_path_call.replace("_X_", status_key_call))
 
     def remove_file_handler(self, handler):
-        handler.close()
-        log.logger.removeHandler(handler)
+        if handler is not None:
+            handler.close()
+            log.logger.removeHandler(handler)
 
 
 log = PytestLogger()
