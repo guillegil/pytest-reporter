@@ -247,6 +247,7 @@ class PytestLogger:
     
     def step(self, *args, sep=' ', end='', enable=True, **kwargs):
         self.stepn += 1
+        self.substepn = 0
         extra = {"step": f" {self.stepn}"}
 
         if enable and args:  # Only log if enabled and there are arguments
