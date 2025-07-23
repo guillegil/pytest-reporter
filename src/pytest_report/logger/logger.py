@@ -338,7 +338,7 @@ class PytestLogger:
         self.__logger.addHandler(self.global_handler)
 
     def _generate_setup_log_path(self) -> str:
-        filepath = os.path.join(self.report_path, f"{self.now()}_X_{meta.current_filename}_{meta.current_testcase}_setup_{meta.current_test_index}.log")
+        filepath = os.path.join(self.report_path, f"{meta.current_test_index}_{self.now()}_X_{meta.current_filename}_{meta.current_testcase}_setup.log")
 
         if not os.path.exists(filepath):
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -346,7 +346,7 @@ class PytestLogger:
         return filepath
 
     def _generate_call_log_path(self) -> str:
-        filepath = os.path.join(self.report_path, f"{self.now()}_X_{meta.current_filename}_{meta.current_testcase}_{meta.current_test_index}.log")
+        filepath = os.path.join(self.report_path, f"{meta.current_test_index}_{self.now()}_X_{meta.current_filename}_{meta.current_testcase}_{meta.current_test_index}.log")
 
         if not os.path.exists(filepath):
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
