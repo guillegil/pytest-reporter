@@ -135,19 +135,25 @@ class MetaInfo:
 
     @property
     def current_testlog(self) -> str:
-        proto = self.current_testproto
-        if self.current_testproto == "fake_setup":
-            proto = "setup"
+        try:
+            proto = self.current_testproto
+            if self.current_testproto == "fake_setup":
+                proto = "setup"
 
-        return self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"]
+            return self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"]
+        except:
+            return ""
 
     @current_testlog.setter
     def current_testlog(self, log: str) -> None:
-        proto = self.current_testproto
-        if self.current_testproto == "fake_setup":
-            proto = "setup"
+        try:
+            proto = self.current_testproto
+            if self.current_testproto == "fake_setup":
+                proto = "setup"
 
-        self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"] += log
+            self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"] += log
+        except:
+            pass
 
     @property
     def current_setup_status(self) -> str:
