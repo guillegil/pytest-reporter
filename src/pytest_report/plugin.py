@@ -164,6 +164,8 @@ def pytest_runtest_setup(item: Item):
     print('\n')
     meta.update_item_setup(item)
 
+    log.stepn = 0
+    log.substepn = 0
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_call(item: Item):
@@ -265,11 +267,6 @@ def pytest_runtest_logreport(report):
 @pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Display custom results table - called for terminal summary."""
-
-    from pprint import pprint
-
-    pprint(meta.run_info)
-    meta.export_json()
 
     terminalreporter.stats.clear()
 

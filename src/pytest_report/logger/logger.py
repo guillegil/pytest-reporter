@@ -6,19 +6,22 @@ from logging import Logger
 
 import logging
 
-import pytest
-import math
-
 from pytest_report.meta import meta
 
 import shutil
 
 datefmt = "%Y-%m-%d %H:%M:%S"
 
-PASS_LEVEL = 25  # Between INFO (20) and WARNING (30)
-FAIL_LEVEL = 35  # Between WARNING (30) and ERROR (40)
-RW_LEVEL   = 26
-RW_LEVEL_FAIL = 36
+STEP_LEVEL = 21
+SUBSTEP_LEVEL = 22
+
+PASS_LEVEL = 23  # Between INFO (20) and WARNING (30)
+FAIL_LEVEL = 31  # Between WARNING (30) and ERROR (40)
+
+RW_LEVEL         = 24
+RW_LEVEL_SUBSTEP = 25
+
+RW_LEVEL_FAIL = 32
 
 class BlockAllFilter(logging.Filter):
     def filter(self, record):
@@ -32,6 +35,8 @@ class ColorFormatter(logging.Formatter):
         logging.WARNING:  "\033[33m",  # Yellow
         logging.ERROR:    "\033[31m",  # Red
         logging.CRITICAL: "\033[91m",  # Bright Red
+        STEP_LEVEL:       "\033[37m",  # Same as INFO
+        SUBSTEP_LEVEL:    "\033[37m",  # Same as INFO
         PASS_LEVEL:       "\033[1;30;42m",  # Bright Green
         FAIL_LEVEL:       "\033[1;97;41m",  # White on Red Background
         RW_LEVEL:         "\033[37m",       # White
@@ -43,9 +48,11 @@ class ColorFormatter(logging.Formatter):
         if fmt is None:
             fmt = "[%(asctime)s] %(levelname)-8s %(message)s"
 
-        logging.addLevelName(PASS_LEVEL, "PASS")
-        logging.addLevelName(FAIL_LEVEL, "FAIL")
-        logging.addLevelName(RW_LEVEL,   "R/W OK")
+        logging.addLevelName(STEP_LEVEL,    "STEP")
+        logging.addLevelName(SUBSTEP_LEVEL, "SUB-STEP")
+        logging.addLevelName(PASS_LEVEL,    "PASS")
+        logging.addLevelName(FAIL_LEVEL,    "FAIL")
+        logging.addLevelName(RW_LEVEL,      "R/W OK")
         logging.addLevelName(RW_LEVEL_FAIL, "R/W FAILED")
         
         super().__init__(fmt, datefmt, style)
@@ -83,6 +90,11 @@ class PytestLogger:
 
         self.__current_setup_log_path = ""
         self.__current_call_log_path  = ""
+
+        self.__step     : int = 0
+        self.__substep  : int = 0
+
+        self.__log_is_substep : bool = False
 
     @property
     def setup_log_level(self) -> int:
@@ -148,6 +160,29 @@ class PytestLogger:
     def current_call_log_path(self, path: str):
         self.__current_call_log_path = path
 
+    @property
+    def stepn(self) -> int:
+        return self.__step
+    
+    @stepn.setter
+    def stepn(self, step: int) -> None:
+        self.__step = step
+
+    @property
+    def substepn(self) -> int:
+        return self.__substep
+    
+    @substepn.setter
+    def substepn(self, substep: int) -> None:
+        self.__substep = substep
+
+    @property
+    def log_is_substep(self) -> bool:
+        return self.__log_is_substep
+    
+    @log_is_substep.setter
+    def log_is_substep(self, is_substep: bool) -> None:
+        self.__log_is_substep = is_substep
 
     def set_report_path(self, path: str):
         self.__report_path = path
@@ -157,47 +192,79 @@ class PytestLogger:
 
 
     def debug(self, *args, sep=' ', end='', enable=True, **kwargs):
+        extra = {"step": ""}
+
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
-            self.__logger.debug(msg, **kwargs)
+            self.__logger.debug(msg, **kwargs, extra=extra)
             meta.current_testlog = f"[DEBUG]   - {msg}"
 
     def info(self, *args, sep=' ', end='', enable=True, **kwargs):
+        extra = {"step": ""}
+
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
-            self.__logger.info(msg, **kwargs)
+            self.__logger.info(msg, **kwargs, extra=extra)
             meta.current_testlog = f"[INFO]    - {msg}"
 
     def warning(self, *args, sep=' ', end='', enable=True, **kwargs):
+        extra = {"step": " "}
+
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
-            self.__logger.warning(msg, **kwargs)
+            self.__logger.warning(msg, **kwargs, extra=extra)
             meta.current_testlog = f"[WARNING] - {msg}"
 
     def error(self, *args, sep=' ', end='', enable=True, **kwargs):
+        extra = {"step": ""}
+
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
-            self.__logger.error(msg, **kwargs)
+            self.__logger.error(msg, **kwargs, extra=extra)
             meta.current_testlog = f"[ERROR]   - {msg}"
 
     def passed(self, *args, sep=' ', end='', enable=True, **kwargs):
+        extra = {"step": ""}
+
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
-            self.__logger._log(PASS_LEVEL, msg, (), **kwargs)
+            self.__logger._log(PASS_LEVEL, msg, (), **kwargs, extra=extra)
             meta.current_testlog = f"[PASSED]  - {msg}"
 
     def fail(self, *args, sep=' ', end='', enable=True, **kwargs):
+        extra = {"step": ""}
+
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
-            self.__logger._log(FAIL_LEVEL, msg, (), **kwargs)
+            self.__logger._log(FAIL_LEVEL, msg, (), **kwargs, extra=extra)
             meta.current_testlog = f"[FAIL]    - {msg}"
     
+    def step(self, *args, sep=' ', end='', enable=True, **kwargs):
+        self.stepn += 1
+        extra = {"step": f" {self.stepn}"}
+
+        if enable and args:  # Only log if enabled and there are arguments
+            msg = sep.join(str(a) for a in args) + end
+            # Correctly call the logger.info method
+            self.__logger._log(STEP_LEVEL, msg, (), **kwargs, extra=extra)
+            meta.current_testlog = f"[STEP {self.stepn}]    - {msg}"
+
+    def substep(self, *args, sep=' ', end='', enable=True, **kwargs):
+        self.substepn += 1
+        extra = {"step": f" {self.stepn}.{self.substepn}"}
+
+        if enable and args:  # Only log if enabled and there are arguments
+            msg = sep.join(str(a) for a in args) + end
+            # Correctly call the logger.info method
+            self.__logger._log(SUBSTEP_LEVEL, msg, (), **kwargs, extra=extra)
+            meta.current_testlog = f"[SUBSTEP {self.stepn}.{self.substepn}]    - {msg}"
+
     def rw(
         self,
         *args,
@@ -212,6 +279,9 @@ class PytestLogger:
         **kwargs,
     ):
         msg: str = ""
+        if self.log_is_substep:
+            self.substepn += 1
+            extra = {"step": f" {self.stepn}.{self.substepn}"}
 
         if enable:
             if (reg_name is not None) and (write_data is not None) and (read_data is not None):
@@ -220,17 +290,17 @@ class PytestLogger:
 
                     msg = f"{reg_name}: {write_data if write_data < 0 else f'{hex(write_data)}'} (Readback: {read_data if read_data < 0 else f'{hex(read_data)}'})"
 
-                    self.__logger._log(RW_LEVEL, msg, (), **kwargs)
+                    self.__logger._log(RW_LEVEL, msg, (), **kwargs, extra=extra)
 
                 else:
                     msg = f"{reg_name}: {write_data if write_data < 0 else f'{hex(write_data)}'} (Readback: {read_data if read_data < 0 else f'{hex(read_data)}'})"
 
-                    self.__logger._log(RW_LEVEL_FAIL, msg, (), **kwargs)
+                    self.__logger._log(RW_LEVEL_FAIL, msg, (), **kwargs, extra=extra)
             else:
                 if args:  # Only log if there are arguments
                     msg = sep.join(str(a) for a in args) + end
                     # Correctly call the logger.info method
-                    self.__logger._log(RW_LEVEL, msg, (), **kwargs)
+                    self.__logger._log(RW_LEVEL, msg, (), **kwargs, extra=extra)
 
             meta.current_testlog = f"[R/W]     - {msg}"
 
@@ -240,7 +310,7 @@ class PytestLogger:
     def configure_cmd_handler(
         self,
         level: int = logging.INFO,
-        fmt: str = "[%(levelname)s] - %(message)s"
+        fmt: str = "[%(levelname)s%(step)s] - %(message)s"
     ):
         self.__cmd_handler = logging.StreamHandler()
         self.__cmd_handler.setLevel(level)
@@ -250,7 +320,7 @@ class PytestLogger:
     def configure_global_handler(
         self, 
         level: int = logging.INFO,
-        fmt: str = "%(asctime)s [%(levelname)s] - %(message)s"
+        fmt: str = "%(asctime)s [%(levelname)s%(step)s] - %(message)s"
     ):
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         
@@ -283,13 +353,13 @@ class PytestLogger:
     def configure_setup_log(
         self,
         level   : int = INFO,
-        filefmt : str = "%(asctime)s [%(levelname)s] - %(message)s",
+        filefmt : str = "%(asctime)s [%(levelname)s%(step)s] - %(message)s",
         **kwargs # For future use
     ):
         self.current_setup_log_path = self._generate_setup_log_path()
 
         # -- add the [SETUP] identificator to the CMD Logger ------------ #
-        cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [SETUP] [%(levelname)s] - %(message)s"
+        cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [SETUP][%(levelname)s%(step)s] - %(message)s"
         self.cmd_handler.setFormatter(ColorFormatter(fmt=cmdfmt, datefmt=datefmt))
         self.cmd_handler.setLevel(self.setup_log_level)
 
@@ -307,13 +377,13 @@ class PytestLogger:
     def configuire_call_log(        
         self,
         level   : int = INFO,
-        filefmt : str = "%(asctime)s [%(levelname)s] - %(message)s",
+        filefmt : str = "%(asctime)s [%(levelname)s%(step)s] - %(message)s",
         **kwargs # For future use) -> None:
     ):  
         self.current_call_log_path = self._generate_call_log_path()
 
         # -- add the [SETUP] identificator to the CMD Logger ------------ #
-        cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [%(levelname)s] - %(message)s"
+        cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [%(levelname)s%(step)s] - %(message)s"
         self.cmd_handler.setFormatter(ColorFormatter(fmt=cmdfmt, datefmt=datefmt))
         self.cmd_handler.setLevel(self.setup_log_level)
 
@@ -341,7 +411,7 @@ class PytestLogger:
             self.release_file_handler(self.current_test_handler)
             meta.current_testproto = current_testproto
 
-            cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [%(levelname)s] - %(message)s"
+            cmdfmt = f"{meta.current_filename}/{meta.current_testcase} [%(levelname)s%(step)s] - %(message)s"
             self.cmd_handler.setFormatter(ColorFormatter(fmt=cmdfmt, datefmt=datefmt))
             self.cmd_handler.setLevel(self.setup_log_level)        
 
