@@ -279,6 +279,8 @@ class PytestLogger:
         
         **kwargs,
     ):
+        extra = {"step": ""}
+
         msg: str = ""
         if self.log_is_substep:
             self.substepn += 1
