@@ -1,6 +1,9 @@
-from pytest import Item, CallInfo, TestReport
+from pytest import Item, CallInfo, TestReport, Config
 
 import pytest
+
+import os
+import json
 
 class MetaInfo:
     def __init__(self):
@@ -146,6 +149,14 @@ class MetaInfo:
 
         self.testinfo[self.current_filename][self.current_testcase][self.current_test_index][proto]["log"] += log
 
+    @property
+    def current_setup_status(self) -> str:
+        return self.current_testinfo["setup"]["status"]
+
+    @property
+    def current_call_status(self) -> str:
+        return self.current_testinfo["call"]["status"]
+
 
     def _update_run_info(self):
         if self.current_testproto == "setup":
@@ -160,9 +171,14 @@ class MetaInfo:
 
             self.testinfo[self.current_filename][self.current_testcase].append({
                 "index": self.current_test_index,
-                "setup": {},
+                "setup": {
+                    "log": "",
+                    "status": "",
+                },
                 "call": {
-                    "inputs": self.current_testargs
+                    "inputs": self.current_testargs,
+                    "log": "",
+                    "status": "",
                 },
                 "teardown": {},
             })
@@ -199,14 +215,14 @@ class MetaInfo:
 
         self._update_run_info()
 
-    def update_test_status(self, item: TestReport, call: CallInfo):
+    def update_test_status(self, item: Item, call: CallInfo):
         if call.when == "call":
             if call.excinfo is None:
                 self.current_testinfo["call"]["status"] = "passed"
             elif issubclass(call.excinfo.type, pytest.skip.Exception):
-                self.current_testinfo["call"]["status"] = "failed"
-            elif issubclass(call.excinfo.type, AssertionError):
                 self.current_testinfo["call"]["status"] = "skipped"
+            elif issubclass(call.excinfo.type, AssertionError):
+                self.current_testinfo["call"]["status"] = "failed"
             else:
                 self.current_testinfo["call"]["status"] = "error"
             
@@ -219,9 +235,9 @@ class MetaInfo:
             if call.excinfo is None:
                 self.current_testinfo["setup"]["status"] = "passed"
             elif issubclass(call.excinfo.type, pytest.skip.Exception):
-                self.current_testinfo["setup"]["status"] = "failed"
-            elif issubclass(call.excinfo.type, AssertionError):
                 self.current_testinfo["setup"]["status"] = "skipped"
+            elif issubclass(call.excinfo.type, AssertionError):
+                self.current_testinfo["setup"]["status"] = "failed"
             else:
                 self.current_testinfo["setup"]["status"] = "error"
 
@@ -231,7 +247,17 @@ class MetaInfo:
         else:
             pass
 
-                
+    def export_json(self, path: str = "./") -> None:
+        if not path.endswith(".json"):
+            if os.path.isdir(path):
+                path = os.path.join(path, "run_info.json")
+            else:
+                path += ".json"
+
+        with open(path, "w") as json_file:
+            json.dump(self.run_info, json_file, indent=4)
+
+
 meta = MetaInfo()
 
 if __name__ == "__main__":

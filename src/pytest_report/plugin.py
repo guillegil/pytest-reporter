@@ -157,11 +157,11 @@ def pytest_runtest_logstart(nodeid, location):
     """Start timing the test."""
     test_tracker.start_test(nodeid)
 
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: Item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
-
     meta.update_item_setup(item)
 
 
@@ -170,7 +170,7 @@ def pytest_runtest_call(item: Item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
     meta.update_item_call(item)
-
+    log.configuire_call_log()
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -196,7 +196,7 @@ def pytest_runtest_makereport(item: Item, call: CallInfo):
         test_tracker.add_result(test_name, outcome_status)
 
     # return outcome.get_result()
-
+    log.close_all_logs()
 
 @pytest.hookimpl(trylast=True)
 def pytest_runtest_teardown(item: Item, nextitem: Item):
@@ -207,8 +207,6 @@ def pytest_runtest_teardown(item: Item, nextitem: Item):
 @pytest.hookimpl
 def pytest_report_teststatus(report: TestReport, config):
     """Suppress short status indicators and capture skip reasons."""
-
-    meta.update_test_status(report, config)
 
     if report.when == "call":
         if report.passed:
@@ -271,6 +269,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     from pprint import pprint
 
     pprint(meta.run_info)
+    meta.export_json()
 
     terminalreporter.stats.clear()
 
