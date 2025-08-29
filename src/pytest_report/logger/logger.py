@@ -210,7 +210,7 @@ class PytestLogger:
             meta.current_testlog = f"[INFO]    - {msg}"
 
     def warning(self, *args, sep=' ', end='', enable=True, **kwargs):
-        extra = {"step": " "}
+        extra = {"step": ""}
 
         if enable and args:  # Only log if enabled and there are arguments
             msg = sep.join(str(a) for a in args) + end
@@ -264,7 +264,7 @@ class PytestLogger:
             msg = sep.join(str(a) for a in args) + end
             # Correctly call the logger.info method
             self.__logger._log(SUBSTEP_LEVEL, msg, (), **kwargs, extra=extra)
-            meta.current_testlog = f"[SUBSTEP {self.stepn}.{self.substepn}]    - {msg}"
+            meta.current_testlog = f"   [SUBSTEP {self.stepn}.{self.substepn}]    - {msg}"
 
     def rw(
         self,
@@ -421,7 +421,6 @@ class PytestLogger:
             return result
         
         return wrapper
-
 
     def release_file_handler(self, handler):
         if handler is not None:

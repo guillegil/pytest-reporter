@@ -3,16 +3,21 @@ from pytest import Item, CallInfo, TestReport, Config
 import pytest
 
 import os
+from pathlib import Path
 import json
 
 class MetaInfo:
     def __init__(self):
+        self.__root_report_path   : str  = ""
+
         self.__current_testcase   : str  = ""
         self.__current_filename   : str  = ""
         self.__current_testpath   : str  = ""
         self.__current_testproto  : str  = ""
         self.__current_testargs   : dict = {}
         self.__current_test_index : int = 0
+
+        self.__current_test_report_path : str = ""
 
         self.__current_testinfo = {}
 
@@ -30,23 +35,66 @@ class MetaInfo:
         #   "total_failed": 0,
         #   "total_skipped": 0,
       
+        #   test_info: {
+        #       "cTEC": {
+        #          "level": 0,
+        #          "total_passed": 0,
+        #          "total_failed": 0,
+        #          "total_skipped": 0,
+        #  
+        #          "test_info": {
+        #               "MMDC": {
+        #                   "level": 1,
+        #                   "total_passed": 0,
+        #                   "total_failed": 0,
+        #                   "total_skipped": 0,
+
+        #                   "test_info": {
+        #                       "STATUS": {
+            #                       "level": 2,
+            #                       "total_passed": 0,
+            #                       "total_failed": 0,
+            #                       "total_skipped": 0,           
+        #                       }
+
+        #                   }
+        #               },
+
+        #               "FOX": {
+        #                   "level": 1,
+        #                   "total_passed": 0,
+        #                   "total_failed": 0,
+        #                   "total_skipped": 0,                            
+        #               }
+        #           }
+        #       }
+        #   }
+        #
+        #
+
         #   "test_file.py": {
         #         "is_test_file": True,
+        #         "groups": ["cTEC", "MMDC", "STATUS", "IMSO"]
         #         "test_almsa": [
         #             {
         #                 "index": 0,
+        #                 "report_path": 
 
         #                 "setup": {
         #                     "start": 0,
         #                     "finished": 10,
         #                     "execution_time": 10,
 
+        #                     "log_path": "",
         #                     "log": "",
         #                     "status": "",
         #                 },
 
         #                 "call": {
-        #                     "inputs": {
+
+        #                     "log_path": "",
+        #                     "args": 2,
+        #                     "argv": {
         #                         "a": 1,
         #                         "b": 5.3
         #                     },
@@ -68,6 +116,18 @@ class MetaInfo:
         self.__current_item : Item | None = None
         self.__next_item    : Item | None = None
     
+    @property
+    def project_root(self) -> str:
+        return Path.cwd()
+
+    @property
+    def root_report_path(self) -> str:
+        return self.__root_report_path
+    
+    @root_report_path.setter
+    def root_report_path(self, path: str) -> None:
+        self.__root_report_path = path
+
     @property
     def current_testcase(self) -> str:
         return self.__current_testcase
@@ -119,7 +179,6 @@ class MetaInfo:
     @current_test_index.setter
     def current_test_index(self, index: int) -> None:
         self.__current_test_index = index
-
 
     @property
     def run_info(self) -> dict:

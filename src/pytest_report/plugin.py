@@ -171,6 +171,10 @@ def pytest_runtest_setup(item: Item):
 def pytest_runtest_call(item: Item):
     """Add newline before each test (for your custom logging)."""
     print('\n')
+
+    log.stepn = 0
+    log.substepn = 0
+
     meta.update_item_call(item)
     log.configuire_call_log()
 
