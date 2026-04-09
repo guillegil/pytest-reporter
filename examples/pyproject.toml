@@ -1,0 +1,3 @@
+[tool.pytest.ini_options]
+addopts = ["--report-dir=reports", "--report-retries=2", "-v", "--tb=long"]
+testpaths = ["tests"]

@@ -1,0 +1,2 @@
+- Agent is entiteld to use any skills avaliable that suits the task.
+- For web design use the `ui-ux-pro-max-skill`
