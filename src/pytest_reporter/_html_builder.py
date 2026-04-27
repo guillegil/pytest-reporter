@@ -193,19 +193,102 @@ button { font-family: inherit; }
    ================================================================ */
 .summary-container { padding: 28px; max-width: 1400px; margin: 0 auto; }
 
+/* Hero / pass-rate section */
+.summary-hero {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-xl);
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.summary-hero-rate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+.summary-hero-pct {
+  font-size: 48px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.summary-hero-pct.good { color: var(--c-passed); }
+.summary-hero-pct.warn { color: var(--c-skipped); }
+.summary-hero-pct.bad { color: var(--c-failed); }
+.summary-hero-pct-label {
+  font-size: 10px;
+  color: var(--c-text3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.summary-hero-body { flex: 1; min-width: 0; }
+.summary-hero-body h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: 12px;
+}
+
+/* Ratio bar */
+.ratio-bar-wrap { width: 100%; }
+.ratio-bar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--c-surface3);
+}
+.ratio-bar-seg {
+  height: 100%;
+  transition: width 0.3s var(--ease-out);
+  min-width: 0;
+}
+.ratio-bar-seg.passed { background: var(--c-passed); }
+.ratio-bar-seg.failed { background: var(--c-failed); }
+.ratio-bar-seg.skipped { background: var(--c-skipped); }
+.ratio-bar-seg.error { background: var(--c-error); }
+.ratio-bar-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.ratio-bar-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--c-text2);
+  font-weight: 500;
+}
+.ratio-bar-legend-item strong {
+  color: var(--c-text);
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+/* Counter cards */
 .counters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 32px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 28px;
 }
 .counter-card {
   background: var(--c-surface);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 18px 16px;
   text-align: center;
   border: 1px solid var(--c-border);
-  transition: transform 0.25s var(--ease-out), border-color 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
   cursor: default;
   position: relative;
   overflow: hidden;
@@ -218,24 +301,31 @@ button { font-family: inherit; }
   opacity: 0.8;
 }
 .counter-card:hover {
-  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 .counter-card .value {
-  font-size: 36px;
+  font-size: 32px;
   font-weight: 700;
   font-family: var(--font-mono);
   letter-spacing: -0.03em;
   line-height: 1.1;
 }
 .counter-card .label {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--c-text3);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-weight: 600;
-  margin-top: 6px;
+  font-weight: 700;
+  margin-top: 4px;
 }
+.counter-card .counter-pct {
+  font-size: 11px;
+  color: var(--c-text3);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
 .counter-card.passed { border-color: rgba(34,197,94,0.2); }
 .counter-card.passed::before { background: var(--c-passed); }
 .counter-card.passed .value { color: var(--c-passed); }
@@ -253,12 +343,13 @@ button { font-family: inherit; }
 
 .counter-card.error { border-color: rgba(249,115,22,0.2); }
 .counter-card.error::before { background: var(--c-error); }
+.counter-card.error .value { color: var(--c-error); }
+.counter-card.error:hover { border-color: rgba(249,115,22,0.35); box-shadow: 0 4px 20px rgba(249,115,22,0.1); }
+
 .counter-card.retried { border-color: rgba(59,130,246,0.2); }
 .counter-card.retried::before { background: var(--c-accent); }
 .counter-card.retried .value { color: var(--c-accent); }
 .counter-card.retried:hover { border-color: rgba(59,130,246,0.35); box-shadow: 0 4px 20px rgba(59,130,246,0.1); }
-.counter-card.error .value { color: var(--c-error); }
-.counter-card.error:hover { border-color: rgba(249,115,22,0.35); box-shadow: 0 4px 20px rgba(249,115,22,0.1); }
 
 .counter-card.total { border-color: rgba(59,130,246,0.2); }
 .counter-card.total::before { background: var(--c-accent); }
@@ -266,17 +357,17 @@ button { font-family: inherit; }
 .counter-card.total:hover { border-color: rgba(59,130,246,0.35); box-shadow: 0 4px 20px rgba(59,130,246,0.1); }
 
 /* Charts */
-.charts-section { margin-bottom: 32px; }
+.charts-section { margin-bottom: 28px; }
 .charts-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--c-text2);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-text3);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 16px;
+  letter-spacing: 0.08em;
+  margin-bottom: 14px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .charts-section-title::after {
   content: '';
@@ -284,38 +375,49 @@ button { font-family: inherit; }
   height: 1px;
   background: var(--c-border);
 }
+.charts-section-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text3);
+  background: var(--c-surface2);
+  padding: 1px 7px;
+  border-radius: 8px;
+}
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 .chart-card {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-lg);
-  padding: 24px 20px;
+  padding: 22px 18px;
   text-align: center;
   cursor: pointer;
-  transition: transform 0.25s var(--ease-out), border-color 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
 }
 .chart-card:hover {
-  transform: translateY(-2px);
   border-color: var(--c-border2);
   box-shadow: var(--shadow-md);
 }
 .chart-card h3 {
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chart-card svg { display: block; margin: 0 auto; }
 .chart-legend {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
-  margin-top: 14px;
+  margin-top: 12px;
   font-size: 11px;
   color: var(--c-text2);
 }
@@ -331,6 +433,11 @@ button { font-family: inherit; }
   border-radius: 50%;
   display: inline-block;
   flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .summary-hero { flex-direction: column; gap: 20px; padding: 22px 20px; }
+  .summary-hero-pct { font-size: 36px; }
 }
 
 /* ================================================================
@@ -907,6 +1014,94 @@ button { font-family: inherit; }
 }
 .log-hidden { display: none !important; }
 
+/* Inline table (from log.table()) */
+.log-entry-table-wrap {
+  grid-column: 1 / -1;
+  margin: 4px 0 4px 24px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+}
+.log-entry-table-name {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.log-entry-table-name .table-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--c-accent-dim);
+  color: var(--c-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.log-entry-table-scroll {
+  overflow-x: auto;
+  max-height: 500px;
+  overflow-y: auto;
+}
+.log-entry-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.log-entry-table th {
+  background: var(--c-surface2);
+  color: var(--c-text2);
+  font-weight: 700;
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 2px solid var(--c-border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.log-entry-table td {
+  padding: 4px 12px;
+  color: var(--c-text);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.log-entry-table tr:hover td { background: var(--c-surface3); }
+.log-entry-table tr:nth-child(even) td { background: rgba(27,39,64,0.3); }
+.log-entry-table tr:nth-child(even):hover td { background: var(--c-surface3); }
+.log-entry-table-footer {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--c-text3);
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--c-surface);
+}
+.log-entry-table-toggle {
+  background: none;
+  border: none;
+  color: var(--c-accent);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 0;
+}
+.log-entry-table-toggle:hover { text-decoration: underline; }
+
 /* ================================================================
    Procedure Steps
    ================================================================ */
@@ -1400,10 +1595,10 @@ button { font-family: inherit; }
     max-height: 45vh;
   }
   .detail-panel { min-height: 50vh; padding: 20px 16px; }
-  .counters { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
-  .counter-card { padding: 16px; }
-  .counter-card .value { font-size: 28px; }
-  .charts-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .counters { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }
+  .counter-card { padding: 14px 12px; }
+  .counter-card .value { font-size: 24px; }
+  .charts-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
   .header { padding: 0 16px; }
   .tabs { padding: 0 16px; }
   .summary-container, .report-container { padding: 16px; }
@@ -1581,25 +1776,71 @@ function renderSummary() {
   const panel = document.getElementById('tab-summary');
   const container = el('div', {className:'summary-container'});
   const agg = aggTests(DATA.tests);
+  const total = agg.total || 1;
+  const passRate = Math.round((agg.passed / total) * 100);
 
   // Count retried tests
   let retriedCount = 0;
   DATA.tests.forEach(t => t.runs.forEach(r => { if (r.retries && r.retries.attempts > 0) retriedCount++; }));
 
-  // Counters
+  // ── Hero: pass rate + ratio bar ──
+  const hero = el('div', {className:'summary-hero'});
+  const rateSection = el('div', {className:'summary-hero-rate'});
+  const rateClass = passRate >= 90 ? 'good' : passRate >= 70 ? 'warn' : 'bad';
+  rateSection.appendChild(el('div', {className:'summary-hero-pct ' + rateClass}, passRate + '%'));
+  rateSection.appendChild(el('div', {className:'summary-hero-pct-label'}, 'Pass rate'));
+  hero.appendChild(rateSection);
+
+  const heroBody = el('div', {className:'summary-hero-body'});
+  heroBody.appendChild(el('h3', null, 'Test Results Distribution'));
+  const barWrap = el('div', {className:'ratio-bar-wrap'});
+  const bar = el('div', {className:'ratio-bar'});
+  STATUSES.forEach(s => {
+    if (!agg[s]) return;
+    const pct = (agg[s] / total) * 100;
+    const seg = el('div', {className:'ratio-bar-seg ' + s, style:'width:' + pct.toFixed(2) + '%'});
+    bar.appendChild(seg);
+  });
+  barWrap.appendChild(bar);
+
+  const barLegend = el('div', {className:'ratio-bar-legend'});
+  STATUSES.forEach(s => {
+    if (!agg[s]) return;
+    const pct = Math.round((agg[s] / total) * 100);
+    const item = el('span', {className:'ratio-bar-legend-item'},
+      el('span', {className:'legend-dot', style:'background:' + COLORS[s]}),
+      el('strong', null, String(agg[s])),
+      LABELS[s] + ' (' + pct + '%)'
+    );
+    barLegend.appendChild(item);
+  });
+  barWrap.appendChild(barLegend);
+  heroBody.appendChild(barWrap);
+  hero.appendChild(heroBody);
+  container.appendChild(hero);
+
+  // ── Counter cards ──
   const counterDefs = [{k:'passed',l:'Passed'},{k:'failed',l:'Failed'},{k:'skipped',l:'Skipped'},{k:'error',l:'Errors'}];
   if (DATA.retries_enabled) counterDefs.push({k:'retried',l:'Retried'});
   counterDefs.push({k:'total',l:'Total'});
   const counterData = Object.assign({}, agg, {retried: retriedCount});
   const counters = el('div', {className:'counters'},
-    counterDefs.map(c => el('div', {className:`counter-card ${c.k}`},
-      el('div', {className:'value'}, String(counterData[c.k])),
-      el('div', {className:'label'}, c.l)
-    ))
+    counterDefs.map(c => {
+      const val = counterData[c.k];
+      const card = el('div', {className:'counter-card ' + c.k},
+        el('div', {className:'value'}, String(val)),
+        el('div', {className:'label'}, c.l)
+      );
+      if (c.k !== 'total' && total > 0) {
+        const pct = Math.round((val / total) * 100);
+        card.appendChild(el('div', {className:'counter-pct'}, pct + '%'));
+      }
+      return card;
+    })
   );
   container.appendChild(counters);
 
-  // Overall donut
+  // ── Overall donut ──
   const overallSection = el('div', {className:'charts-section'},
     el('div', {className:'charts-section-title'}, 'Overall'),
     el('div', {className:'charts-grid'},
@@ -1608,7 +1849,7 @@ function renderSummary() {
   );
   container.appendChild(overallSection);
 
-  // Per top-level group
+  // ── Per top-level group ──
   const tree = buildTree(DATA.tests);
   const topGroups = Object.entries(tree.children);
   if (topGroups.length > 0) {
@@ -1618,8 +1859,12 @@ function renderSummary() {
         el('h3', null, name), donutSVG(a, 130), legendEl(a)
       );
     });
+    const topTitle = el('div', {className:'charts-section-title'},
+      'Top-Level Groups',
+      el('span', {className:'charts-section-count'}, String(topGroups.length))
+    );
     const topSection = el('div', {className:'charts-section'},
-      el('div', {className:'charts-section-title'}, 'Top-Level Groups'),
+      topTitle,
       el('div', {className:'charts-grid'}, groupCards)
     );
     container.appendChild(topSection);
@@ -1634,8 +1879,12 @@ function renderSummary() {
             el('h3', null, fname), donutSVG(a, 110), legendEl(a)
           );
         });
+        const featTitle = el('div', {className:'charts-section-title'},
+          groupName + ' \u2014 Features',
+          el('span', {className:'charts-section-count'}, String(features.length))
+        );
         const section = el('div', {className:'charts-section'},
-          el('div', {className:'charts-section-title'}, groupName + ' \u2014 Features'),
+          featTitle,
           el('div', {className:'charts-grid'}, featureCards)
         );
         container.appendChild(section);
@@ -2235,7 +2484,9 @@ function renderLogEntries(entries) {
     const lvl = el('span', {className:`log-entry-level ${e.level || ''}`}); lvl.textContent = e.level || ''; row.appendChild(lvl);
     row.appendChild(el('span', {className:'log-entry-source'}, (e.source || []).join('.')));
     row.appendChild(el('span', {className:'log-entry-msg'}, e.msg || ''));
-    if (e.data) {
+    if (e.data && e.data._type === 'table') {
+      row.appendChild(renderInlineTable(e.data));
+    } else if (e.data) {
       const dataEl = el('div', {className:'log-entry-data'});
       dataEl.textContent = JSON.stringify(e.data, null, 2);
       row.appendChild(dataEl);
@@ -2248,6 +2499,94 @@ function renderLogEntries(entries) {
     container.appendChild(row);
   });
   return container;
+}
+
+function renderInlineTable(td) {
+  const LIMIT = 20;
+  const wrap = el('div', {className:'log-entry-table-wrap'});
+
+  // Table name header
+  if (td.name) {
+    const nameRow = el('div', {className:'log-entry-table-name'},
+      td.name,
+      el('span', {className:'table-badge'}, 'TABLE')
+    );
+    wrap.appendChild(nameRow);
+  }
+
+  const scrollWrap = el('div', {className:'log-entry-table-scroll'});
+  const table = document.createElement('table');
+  table.className = 'log-entry-table';
+
+  // Header
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  (td.columns || []).forEach(col => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement('tbody');
+  const allRows = td.rows || [];
+  allRows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    if (i >= LIMIT) tr.style.display = 'none';
+    row.forEach(cell => {
+      const tdc = document.createElement('td');
+      tdc.textContent = cell != null ? String(cell) : '';
+      tdc.title = cell != null ? String(cell) : '';
+      tr.appendChild(tdc);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  scrollWrap.appendChild(table);
+  wrap.appendChild(scrollWrap);
+
+  // Footer
+  const totalRows = td.total_rows || allRows.length;
+  if (totalRows > 0) {
+    const footer = el('div', {className:'log-entry-table-footer'});
+    const showing = Math.min(LIMIT, allRows.length);
+    const info = el('span', null, totalRows <= LIMIT
+      ? totalRows + ' rows \u00d7 ' + (td.columns || []).length + ' columns'
+      : 'Showing ' + showing + ' of ' + totalRows + ' rows');
+    footer.appendChild(info);
+
+    if (allRows.length > LIMIT) {
+      let expanded = false;
+      const toggleBtn = el('button', {className:'log-entry-table-toggle'},
+        'Show all ' + allRows.length + ' rows');
+      toggleBtn.addEventListener('click', () => {
+        expanded = !expanded;
+        const trs = tbody.querySelectorAll('tr');
+        for (let i = LIMIT; i < trs.length; i++) {
+          trs[i].style.display = expanded ? '' : 'none';
+        }
+        toggleBtn.textContent = expanded
+          ? 'Show first ' + LIMIT + ' rows'
+          : 'Show all ' + allRows.length + ' rows';
+        info.textContent = expanded
+          ? allRows.length + ' of ' + totalRows + ' rows'
+          : 'Showing ' + showing + ' of ' + totalRows + ' rows';
+      });
+      footer.appendChild(toggleBtn);
+    }
+
+    if (td.truncated && td.artifact_name) {
+      footer.appendChild(el('span', {style:'color:var(--c-text3)'}, '\u2022'));
+      footer.appendChild(el('span', {className:'log-entry-table-toggle',
+        style:'cursor:default'}, 'Full table in Artifacts \u2192 ' + td.artifact_name));
+    }
+
+    wrap.appendChild(footer);
+  }
+
+  return wrap;
 }
 
 function _appendCheckInline(row, check) {

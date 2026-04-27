@@ -127,6 +127,23 @@ class Reporter:
         if logger is not None:
             serialized = logger.serialize()
             entries = serialized.get("entries", [])
+
+            # Write table artifacts before resetting the logger
+            table_payloads = logger.get_table_payloads()
+            if table_payloads:
+                from ._table import build_table_artifact_html
+
+                run_dir = self._get_run_dir(nodeid)
+                artifacts_dir = run_dir / "artifacts"
+                artifacts_dir.mkdir(parents=True, exist_ok=True)
+                for _seq, payload in table_payloads.items():
+                    html = build_table_artifact_html(
+                        payload.name, payload.columns, payload.rows
+                    )
+                    (artifacts_dir / payload.artifact_name).write_text(
+                        html, encoding="utf-8"
+                    )
+
             # Reset logger after capturing entries for this phase
             # (each phase gets its own entries)
             logger.reset()
@@ -207,9 +224,59 @@ class Reporter:
         # Run the test normally first (log=False so we control report dispatch)
         reports = runtestprotocol(item, nextitem=nextitem, log=False)
 
-        # Process reports internally (record in our collector)
+        # Process reports: since log=False, the logger was NOT reset between
+        # phases.  All entries accumulated during the full run belong to the
+        # call phase (setup/teardown only run fixture code, not user code).
+        # Capture entries once and assign to the call-phase report.
+        logger = self._test_loggers.get(nodeid)
+        import sys; print(f'PROTO DEBUG: logger_id={id(logger)}, entries={len(logger.serialize().get("entries",[]))}', file=sys.stderr, flush=True)
+        all_entries: list[dict[str, Any]] = []
+        if logger is not None:
+            all_entries = logger.serialize().get("entries", [])
+            import sys; print(f'PROTO all_entries: {len(all_entries)}', file=sys.stderr, flush=True)
+
+            # Write table artifacts
+            table_payloads = logger.get_table_payloads()
+            if table_payloads:
+                from ._table import build_table_artifact_html
+
+                run_dir = self._get_run_dir(nodeid)
+                artifacts_dir = run_dir / "artifacts"
+                artifacts_dir.mkdir(parents=True, exist_ok=True)
+                for _seq, payload in table_payloads.items():
+                    html = build_table_artifact_html(
+                        payload.name, payload.columns, payload.rows
+                    )
+                    (artifacts_dir / payload.artifact_name).write_text(
+                        html, encoding="utf-8"
+                    )
+
+            logger.reset()
+
         for report in reports:
-            self.pytest_runtest_logreport(report)
+            entries = all_entries if report.when == "call" else []
+            import sys; print(f'PROTO phase={report.when} entries_assigned={len(entries)}', file=sys.stderr, flush=True)
+            self.collector.record_phase(report, entries=entries)
+            phase = self.collector.get_phase(nodeid, report.when)
+            if phase is not None:
+                run_dir = self._get_run_dir(nodeid)
+                write_phase_log(run_dir / f"{report.when}.log.json", phase)
+            # Write failure log for call-phase failures
+            if (
+                report.when == "call"
+                and report.failed
+                and report.longrepr
+                and nodeid not in self._retry_paths
+            ):
+                run_info = self.collector.get_run_info(nodeid)
+                failure_name = (
+                    f"{run_info.function_name}_{run_info.run_id}_error.log"
+                )
+                write_failure_log(
+                    self.context.failures_dir / failure_name,
+                    nodeid,
+                    str(report.longrepr),
+                )
 
         # Write per-run files for original execution
         self.pytest_runtest_logfinish(nodeid=nodeid, location=item.location)
@@ -222,13 +289,15 @@ class Reporter:
                 break
 
         if call_report is None or not call_report.failed:
-            # No retry needed — dispatch reports to pytest for terminal output
+            # Mark finished BEFORE dispatching to prevent our own
+            # logreport hook from re-processing (and overwriting entries)
+            self._finished_runs.add(nodeid)
+            # Dispatch reports to pytest for terminal output
             for report in reports:
                 item.config.hook.pytest_runtest_logreport(report=report)
             item.config.hook.pytest_runtest_logfinish(
                 nodeid=nodeid, location=item.location
             )
-            self._finished_runs.add(nodeid)
             return True
 
         # Start retry loop
@@ -271,6 +340,22 @@ class Reporter:
                 if logger is not None:
                     serialized = logger.serialize()
                     retry_entries = serialized.get("entries", [])
+
+                    # Write table artifacts for retry
+                    table_payloads = logger.get_table_payloads()
+                    if table_payloads:
+                        from ._table import build_table_artifact_html
+
+                        retry_artifacts = retry_dir / "artifacts"
+                        retry_artifacts.mkdir(parents=True, exist_ok=True)
+                        for _seq, payload in table_payloads.items():
+                            html = build_table_artifact_html(
+                                payload.name, payload.columns, payload.rows
+                            )
+                            (retry_artifacts / payload.artifact_name).write_text(
+                                html, encoding="utf-8"
+                            )
+
                     logger.reset()
 
                 from ._types import PhaseData as _PD

@@ -100,6 +100,33 @@ class ReportLogger:
     def error(self, msg: str, *, data: dict | None = None, exc: BaseException | None = None) -> None: ...
     def critical(self, msg: str, *, data: dict | None = None, exc: BaseException | None = None) -> None: ...
     def child(self, name: str) -> "ReportLogger": ...
+    def table(self, data: Any, name: str = "table", *, level: str = "INFO") -> None: ...
+```
+
+### Table Logging
+
+`log.table(data, name="...")` logs a table that appears in two places:
+1. **Inline in phase logs** — rendered as a styled HTML table at the chronological log position
+2. **In the Artifacts tab** — saved as a self-contained dark-theme HTML file
+
+**Accepted input types** (zero pandas dependency — duck-typed):
+- `pandas.DataFrame` — detected via `.columns` + `.values` attributes
+- `list[dict]` — union of keys as columns, values as rows
+- `dict[str, list]` — keys as columns, values transposed to rows
+
+**Inline truncation**: Shows first 20 rows with a "Show all" toggle (up to 200 rows inline). Full table is always available in the HTML artifact.
+
+**Table log entry schema** (`data` field when `_type == "table"`):
+```json
+{
+  "_type": "table",
+  "name": "voltage_readings",
+  "columns": ["Channel", "Voltage", "Status"],
+  "rows": [["1", "3.301", "OK"], ["2", "5.002", "OK"]],
+  "total_rows": 2,
+  "truncated": false,
+  "artifact_name": "voltage_readings.html"
+}
 ```
 
 ## Report Folder Structure

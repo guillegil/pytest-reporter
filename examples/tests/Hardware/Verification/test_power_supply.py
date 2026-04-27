@@ -297,6 +297,18 @@ def test_all_channels_in_range(log, verify, testbench):
             substep(f"CH{ch} = {v} V")
             psu.info(f"CH{ch} reading", data={"voltage": v})
 
+    nominals = {1: 3.3, 2: 5.0, 3: 12.0}
+    tolerances = {1: 0.05, 2: 0.10, 3: 0.24}
+    psu.table(
+        [{"Channel": f"CH{ch}", "Nominal (V)": nominals[ch],
+          "Measured (V)": readings[ch],
+          "Error (mV)": round((readings[ch] - nominals[ch]) * 1000, 1),
+          "Tolerance (mV)": tolerances[ch] * 1000,
+          "Status": "PASS" if abs(readings[ch] - nominals[ch]) <= tolerances[ch] else "FAIL"}
+         for ch in readings],
+        name="channel_summary",
+    )
+
     step("CH1 in range [3.25, 3.35] V",
          check=verify.between(readings[1], 3.25, 3.35, name="CH1 range", units="V"))
 

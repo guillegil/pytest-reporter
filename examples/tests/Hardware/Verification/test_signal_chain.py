@@ -186,6 +186,15 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
     step("ADC SNR", check=verify.greater(snr, 60.0, name="ADC SNR", units="dB"))
     step("ADC THD", check=verify.less(thd, 0.1, name="ADC THD", units="%"))
 
+    # Log signal chain summary as table
+    log.table([
+        {"Stage": "Amplifier", "Metric": "Gain", "Value": f"{gain:.1f} dB", "Limit": "20.0 +/- 0.5 dB"},
+        {"Stage": "Filter", "Metric": "Passband", "Value": f"{passband_gain:.1f} dB", "Limit": "0.0 +/- 0.5 dB"},
+        {"Stage": "Filter", "Metric": "Stopband", "Value": f"{stopband_gain:.1f} dB", "Limit": "< -15 dB"},
+        {"Stage": "ADC", "Metric": "SNR", "Value": f"{snr:.1f} dB", "Limit": "> 60 dB"},
+        {"Stage": "ADC", "Metric": "THD", "Value": f"{thd:.4f}%", "Limit": "< 0.1%"},
+    ], name="signal_chain_summary")
+
     # Save simulated waveform data as artifact
     waveform_data = "time_us,voltage_mv\n"
     for i in range(200):
@@ -234,12 +243,19 @@ def test_adc_linearity_check(log, verify, testbench):
             adc.info("Reading", data={"vin_mv": vin_mv, "adc_code": code})
 
     with step("Check linearity at key points"):
+        linearity_rows = []
         for vin, code in readings:
             expected = int(vin / 3300 * 4095)
             error_lsb = abs(code - expected)
+            linearity_rows.append({
+                "Vin (mV)": vin, "Expected Code": expected,
+                "Actual Code": code, "Error (LSB)": error_lsb,
+                "Status": "PASS" if error_lsb <= 3 else "FAIL",
+            })
             adc.info(f"Linearity @ {vin} mV", data={
                 "expected": expected, "actual": code, "error_lsb": error_lsb,
             })
+        adc.table(linearity_rows, name="adc_linearity_sweep")
 
     # Some of these may fail if random noise is large enough
     step("Zero-scale accuracy",

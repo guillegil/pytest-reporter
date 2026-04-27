@@ -24,6 +24,23 @@ class LogEntryDict(TypedDict, total=False):
     exc: dict[str, str] | None
 
 
+class TableData(TypedDict, total=False):
+    """Schema for table entries stored in ``LogEntryDict.data``.
+
+    When ``data["_type"] == "table"``, the entry represents a logged table
+    (from ``log.table()``).  The HTML renderer detects this marker and
+    renders an inline styled table instead of a JSON dump.
+    """
+
+    _type: str  # always "table"
+    name: str
+    columns: list[str]
+    rows: list[list[Any]]
+    total_rows: int
+    truncated: bool
+    artifact_name: str
+
+
 # --- Phase log schema (§5.4) ---
 
 

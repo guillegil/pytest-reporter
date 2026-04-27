@@ -89,8 +89,12 @@ def test_regional_revenue_breakdown(log, region):
     channels = {}
     for r in regional:
         channels[r["channel"]] = channels.get(r["channel"], 0) + r["units"] * r["unit_price"]
-    for ch, rev in channels.items():
-        rl.info(f"Channel '{ch}'", data={"revenue": round(rev, 2), "pct_of_regional": round(rev / total_rev * 100, 1) if total_rev else 0})
+    channel_rows = [
+        {"Channel": ch, "Revenue": round(rev, 2),
+         "% of Regional": round(rev / total_rev * 100, 1) if total_rev else 0}
+        for ch, rev in channels.items()
+    ]
+    rl.table(channel_rows, name=f"channel_mix_{region.lower().replace(' ', '_')}")
 
     step("Validate regional data")
     rl.info("Checking region has transactions")
@@ -252,12 +256,14 @@ def test_sales_rep_leaderboard(log):
 
     step("Rank and report")
     ranked = sorted(reps.items(), key=lambda x: -x[1]["revenue"])
-    for rank, (rep, vals) in enumerate(ranked, 1):
-        rl.info(f"#{rank} {rep}", data={
-            "revenue": round(vals["revenue"], 2),
-            "deals": vals["deals"],
-            "avg_deal": round(vals["avg_deal"], 2),
-        })
+    rl.table(
+        [{"Rank": rank, "Rep": rep,
+          "Revenue": round(vals["revenue"], 2),
+          "Deals": vals["deals"],
+          "Avg Deal": round(vals["avg_deal"], 2)}
+         for rank, (rep, vals) in enumerate(ranked, 1)],
+        name="sales_rep_leaderboard",
+    )
 
     step("Validate leaderboard")
     substep("At least 3 reps")
@@ -281,13 +287,15 @@ def test_customer_tier_revenue(log):
 
     step("Report tier breakdown")
     total = sum(v["revenue"] for v in tier_rev.values())
-    for tier, vals in tier_rev.items():
-        share = vals["revenue"] / total * 100 if total else 0
-        tl.info(f"Tier: {tier}", data={
-            "revenue": round(vals["revenue"], 2),
-            "transactions": vals["count"],
-            "share_pct": round(share, 1),
-        })
+    tier_order = ["platinum", "gold", "silver", "bronze"]
+    tl.table(
+        [{"Tier": tier.capitalize(),
+          "Revenue": round(tier_rev[tier]["revenue"], 2),
+          "Transactions": tier_rev[tier]["count"],
+          "Share (%)": round(tier_rev[tier]["revenue"] / total * 100, 1) if total else 0}
+         for tier in tier_order if tier in tier_rev],
+        name="customer_tier_breakdown",
+    )
 
     step("Validate all tiers present")
     for expected in ["bronze", "silver", "gold", "platinum"]:

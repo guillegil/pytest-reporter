@@ -109,17 +109,21 @@ def test_query_aggregate_functions(log):
         for func, sql, expected in aggregates:
             agg.info(f"Running {func}", data={"sql": sql})
             agg.debug("Result", data={"function": func, "value": expected, "latency_ms": 15.3})
+        agg.table(
+            [{"Function": func, "SQL": sql, "Result": expected}
+             for func, sql, expected in aggregates],
+            name="aggregate_results",
+        )
 
     with step("Execute grouped aggregate"):
         sql = "SELECT status, COUNT(*), AVG(total) FROM orders GROUP BY status"
         db.info("Group by query", data={"sql": sql})
-        db.debug("Results", data={
-            "groups": [
-                {"status": "completed", "count": 35000, "avg_total": 52.10},
-                {"status": "pending", "count": 10000, "avg_total": 44.30},
-                {"status": "cancelled", "count": 5000, "avg_total": 38.90},
-            ]
-        })
+        group_results = [
+            {"Status": "completed", "Count": 35000, "Avg Total": 52.10},
+            {"Status": "pending", "Count": 10000, "Avg Total": 44.30},
+            {"Status": "cancelled", "Count": 5000, "Avg Total": 38.90},
+        ]
+        db.table(group_results, name="order_status_summary")
         substep("Verify group totals")
         agg.info("Total across groups", data={"sum_count": 50000})
 
@@ -362,8 +366,12 @@ def test_query_connection_pool_health(log):
             "max_wait_ms": 0,
         })
         substep("Verify connection health")
-        for i in range(5):
-            pool.debug(f"Connection {i + 1}: alive, age={120 + i * 30}s, queries={45 + i * 10}")
+        pool.table(
+            [{"Conn": i + 1, "Status": "alive", "Age (s)": 120 + i * 30,
+              "Queries Served": 45 + i * 10, "Last Active": f"{5 + i * 2}s ago"}
+             for i in range(5)],
+            name="connection_pool_status",
+        )
 
     with step("Simulate connection recycle"):
         pool.info("Recycling connections older than 3600s")

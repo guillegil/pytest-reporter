@@ -62,12 +62,16 @@ class Logger:
             self._entries: list[LogEntry] = []
             self._seq: int = 0
             self._lock = Lock()
+            self._table_payloads: dict[int, Any] = {}
+            self._used_artifact_names: set[str] = set()
         else:
             self._root = _root
             # These are only used on root; set to satisfy type checkers
             self._entries = _root._entries
             self._seq = 0
             self._lock = _root._lock
+            self._table_payloads = _root._table_payloads
+            self._used_artifact_names = _root._used_artifact_names
 
         self._path: list[str] = _path or []
 
@@ -127,6 +131,74 @@ class Logger:
     def critical(self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None) -> None:
         self._log("CRITICAL", msg, data, exc_info)
 
+    def table(
+        self,
+        data: Any,
+        name: str = "table",
+        *,
+        level: str = "INFO",
+    ) -> None:
+        """Log a table (DataFrame, list[dict], or dict[str, list]).
+
+        The table appears inline in the phase log at this chronological
+        position and is also saved as a styled HTML artifact.
+
+        Args:
+            data: Table data -- pandas DataFrame (duck-typed), list of dicts,
+                  or dict of lists.
+            name: Display name for the table (also used for the artifact filename).
+            level: Log level for the entry (default ``"INFO"``).
+        """
+        from ._table import (
+            SERIALIZED_ROW_LIMIT,
+            TablePayload,
+            normalize_table,
+            sanitize_filename,
+        )
+
+        columns, rows = normalize_table(data)
+
+        # Generate unique artifact filename
+        base = sanitize_filename(name)
+        candidate = f"{base}.html"
+        with self._root._lock:
+            counter = 2
+            while candidate in self._root._used_artifact_names:
+                candidate = f"{base}_{counter}.html"
+                counter += 1
+            self._root._used_artifact_names.add(candidate)
+
+        artifact_name = candidate
+        truncated = len(rows) > SERIALIZED_ROW_LIMIT
+        inline_rows = rows[:SERIALIZED_ROW_LIMIT]
+
+        table_data: dict[str, Any] = {
+            "_type": "table",
+            "name": name,
+            "columns": columns,
+            "rows": inline_rows,
+            "total_rows": len(rows),
+            "truncated": truncated,
+            "artifact_name": artifact_name,
+        }
+
+        self._log(level, f"Table: {name}", data=table_data)
+
+        # Store full payload for artifact generation
+        with self._root._lock:
+            seq = self._root._seq - 1  # seq of the entry we just created
+            self._root._table_payloads[seq] = TablePayload(
+                name=name,
+                columns=columns,
+                rows=rows,
+                artifact_name=artifact_name,
+            )
+
+    def get_table_payloads(self) -> dict[int, Any]:
+        """Return table payloads for artifact writing (keyed by entry seq)."""
+        with self._root._lock:
+            return dict(self._root._table_payloads)
+
     def serialize(self) -> dict[str, Any]:
         """Serialize all entries to a dict with an 'entries' key."""
         with self._root._lock:
@@ -137,3 +209,5 @@ class Logger:
         with self._root._lock:
             self._root._entries.clear()
             self._root._seq = 0
+            self._root._table_payloads.clear()
+            self._root._used_artifact_names.clear()

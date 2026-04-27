@@ -98,6 +98,13 @@ def test_fan_speeds_and_report(log, verify, report_artifacts):
     step("PSU fan above 700 RPM",
          check=verify.greater(readings["psu_fan"], 700, name="PSU fan speed", units="RPM"))
 
+    # Log fan readings as a table
+    cooling.table(
+        [{"Fan": fan, "RPM": rpm, "Status": "OK" if rpm > 700 else "WARNING"}
+         for fan, rpm in readings.items()],
+        name="fan_speed_readings",
+    )
+
     # Save fan speed report as artifact
     report_artifacts.mkdir(parents=True, exist_ok=True)
     report = {
@@ -127,6 +134,9 @@ def test_thermal_profile(log, verify, report_artifacts, testbench):
             if t % 15 == 0:
                 substep(f"t={t}s: CPU={cpu:.1f}°C, GPU={gpu:.1f}°C")
                 thermal.info("Sample", data=profile[-1])
+
+    # Log the full profile as a table
+    thermal.table(profile, name="thermal_profile")
 
     max_cpu = max(p["cpu_c"] for p in profile)
     max_gpu = max(p["gpu_c"] for p in profile)
