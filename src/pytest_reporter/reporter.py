@@ -22,7 +22,7 @@ from ._json_writer import (
 from ._junit_writer import write_junit_xml
 from ._logger import Logger
 from ._procedure import ProcedureTracker, _set_tracker
-from ._symlinks import update_symlinks
+from ._symlinks import update_latest_copy
 from ._types import RetryData
 
 try:
@@ -457,8 +457,8 @@ class Reporter:
         html = build_html_report(html_data)
         (self.context.run_dir / "report.html").write_text(html, encoding="utf-8")
 
-        # Update symlinks
-        update_symlinks(self.context.reports_dir, self.context.run_dir)
+        # Refresh the 01_latest hard copy of this run
+        update_latest_copy(self.context.reports_dir, self.context.run_dir)
 
     def pytest_terminal_summary(
         self,

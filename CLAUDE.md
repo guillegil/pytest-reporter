@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A distributable pytest plugin (`pytest-reporter`) that generates structured test reports: timestamped run folders with per-test JSON logs, an HTML dashboard, JUnit XML, and convenience symlinks. Activated via `--report-dir=<path>`. Built with hatchling, uses src layout.
+A distributable pytest plugin (`pytest-reporter`) that generates structured test reports: timestamped run folders with per-test JSON logs, an HTML dashboard, JUnit XML, and a `01_latest/` hard copy of the most recent run. Activated via `--report-dir=<path>`. Built with hatchling, uses src layout.
 
 The authoritative spec is at `docs/specs.md`.
 
@@ -55,7 +55,7 @@ mypy --strict src/pytest_reporter/
 - `_junit_writer.py` — standard JUnit XML via `xml.etree.ElementTree`
 - `_html_builder.py` — self-contained HTML with embedded JSON data, rendered by inline JS (SVG donut charts, tree navigation, 3 tabs)
 - `_console_capture.py` — `TeeFile` wraps terminal reporter to capture pytest.log
-- `_symlinks.py` — relative symlinks for `01_latest` and `02_latest_failures`
+- `_symlinks.py` — refreshes the `01_latest/` hard copy of the most recent run (legacy filename; the module exports `update_latest_copy`)
 
 **Tests use `pytester`** — all plugin behavior is tested via subprocess isolation. The `pytester` fixture is enabled in `tests/conftest.py`.
 

@@ -64,7 +64,7 @@ pytest_reporter/
 ├── _retry.py                # pytest_runtest_protocol hook — retry engine
 ├── _report_builder.py       # HTML report generation at session end
 ├── _junit.py                # junit.xml generation
-├── _symlinks.py             # Symlink management (01_latest, 02_latest_failures)
+├── _symlinks.py             # 01_latest/ hard-copy refresh (update_latest_copy)
 ├── _schemas.py              # TypedDicts for all JSON schemas
 └── _types.py                # Shared type aliases
 ```
@@ -133,8 +133,7 @@ class ReportLogger:
 
 ```
 reports/
-├── 01_latest/                  → symlink to latest run
-├── 02_latest_failures/         → symlink to latest failures/
+├── 01_latest/                  → hard copy of the most recent run
 └── runs/
     └── YYYY_MM_DD_HH_MM_SS/   (UTC, underscores only)
         ├── report.html
@@ -164,7 +163,7 @@ reports/
 - Parametrized tests: zero-padded sequential folders (`01/`, `02/`). Pytest IDs stored in `parameters.json`.
 - Non-parametrized tests: single `default/` folder.
 - Failure files include run identifier: `test_login_01_error.log`.
-- Symlinks updated at END of run (after all files written).
+- `01_latest/` hard copy refreshed at END of run (after all files written).
 - Timestamp format: `YYYY_MM_DD_HH_MM_SS` (UTC, underscores only).
 
 ## JSON Schemas
@@ -413,7 +412,7 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 - Fresh logger per retry
 - Final outcome is last attempt
 - No parameters.json in retry folders
-- Symlinks updated after all retries complete
+- `01_latest/` hard copy refreshed after all retries complete
 
 ### HTML report:
 - Self-contained (no external resources)
@@ -431,7 +430,7 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 
 - **Don't forget `py.typed`.** Without it, IDE autocompletion won't work.
 - **Logger seq is global.** Root owns the counter. All children share it. Must be monotonically increasing but does not need to be gap-free.
-- **Symlinks at END of run.** Not during. All files must be written first.
+- **`01_latest/` copy refreshed at END of run.** Not during. All files must be written first; the previous `01_latest/` is removed before the new copy is created.
 - **Timestamp format uses underscores.** `YYYY_MM_DD_HH_MM_SS`. No colons, no dashes.
 - **step(check=...) does NOT evaluate.** It stores the descriptor as inline metadata on the step. It does NOT create a substep. The reporter NEVER determines pass/fail.
 - **Entries must not be modified.** Phase capture wraps entries as-is from the logger.

@@ -1,20 +1,24 @@
-"""Symlink management for latest run pointers."""
+"""Latest-copy management: keep ``01_latest/`` as a hard copy of the most recent run."""
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 
-def update_symlinks(reports_dir: Path, run_dir: Path) -> None:
-    """Create or update 01_latest and 02_latest_failures symlinks."""
+def update_latest_copy(reports_dir: Path, run_dir: Path) -> None:
+    """Replace ``reports_dir/01_latest/`` with a fresh copy of ``run_dir``.
+
+    The previous ``01_latest`` (whether a directory, file, or symlink left over
+    from older versions) is removed before the new copy is created.
+    """
     latest = reports_dir / "01_latest"
-    latest_failures = reports_dir / "02_latest_failures"
 
-    # Use relative paths so the reports directory is portable
-    rel_run = run_dir.relative_to(reports_dir)
-    rel_failures = (run_dir / "failures").relative_to(reports_dir)
+    # Clean up any previous latest entry (directory, file, or stale symlink)
+    if latest.is_symlink() or latest.is_file():
+        latest.unlink()
+    elif latest.is_dir():
+        shutil.rmtree(latest)
 
-    for link, target in ((latest, rel_run), (latest_failures, rel_failures)):
-        if link.is_symlink() or link.exists():
-            link.unlink()
-        link.symlink_to(target)
+    # Copy the entire run directory (preserves nested structure and permissions)
+    shutil.copytree(run_dir, latest, symlinks=False)

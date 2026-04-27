@@ -29,9 +29,10 @@ def test_report_dir_created(pytester: Pytester) -> None:
     reports = pytester.path / "reports"
     assert reports.exists()
     assert (reports / "runs").exists()
-    # Check symlinks exist
-    assert (reports / "01_latest").exists()
-    assert (reports / "02_latest_failures").exists()
+    # 01_latest is a hard copy of the most recent run
+    assert (reports / "01_latest").is_dir()
+    assert not (reports / "01_latest").is_symlink()
+    assert not (reports / "02_latest_failures").exists()
 
 
 def test_run_directory_structure(pytester: Pytester) -> None:
@@ -213,7 +214,7 @@ def test_terminal_summary(pytester: Pytester) -> None:
     result.stdout.fnmatch_lines(["*JUnit*junit.xml*"])
 
 
-def test_symlinks_point_to_latest(pytester: Pytester) -> None:
+def test_latest_copy_mirrors_run(pytester: Pytester) -> None:
     pytester.makepyfile("""
         def test_pass():
             assert True
@@ -223,9 +224,40 @@ def test_symlinks_point_to_latest(pytester: Pytester) -> None:
 
     reports = pytester.path / "reports"
     latest = reports / "01_latest"
-    assert latest.is_symlink()
+    # 01_latest is a real directory copy, not a symlink
+    assert latest.is_dir()
+    assert not latest.is_symlink()
     assert (latest / "report.html").exists()
 
-    latest_failures = reports / "02_latest_failures"
-    assert latest_failures.is_symlink()
-    assert latest_failures.is_dir()
+    # Confirm contents match the most recent run
+    runs = sorted((reports / "runs").iterdir())
+    assert (latest / "report.html").read_bytes() == (runs[-1] / "report.html").read_bytes()
+
+    # 02_latest_failures is no longer created
+    assert not (reports / "02_latest_failures").exists()
+
+
+def test_latest_copy_replaced_on_rerun(pytester: Pytester) -> None:
+    """A second run replaces the previous 01_latest copy in place."""
+    import time
+
+    pytester.makepyfile("""
+        def test_pass():
+            assert True
+    """)
+    pytester.runpytest("--report-dir=reports")
+    # Sleep past the per-second timestamp granularity so the second run
+    # creates a distinct runs/ subfolder.
+    time.sleep(1.1)
+    pytester.runpytest("--report-dir=reports")
+
+    reports = pytester.path / "reports"
+    runs = sorted((reports / "runs").iterdir())
+    assert len(runs) == 2
+
+    latest = reports / "01_latest"
+    assert latest.is_dir()
+    assert not latest.is_symlink()
+    # 01_latest mirrors the most recent run, not the older one
+    assert (latest / "report.html").read_bytes() == (runs[-1] / "report.html").read_bytes()
+    assert (latest / "report.html").read_bytes() != (runs[0] / "report.html").read_bytes()
