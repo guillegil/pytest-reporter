@@ -49,4 +49,6 @@ line-length = 100
 select = ["E", "F", "I", "UP", "ANN"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/pytest_reporter/_html_builder.py" = ["E501"]
+"src/pytest_reporter/_html_builder/_css.py" = ["E501"]
+"src/pytest_reporter/_html_builder/_js.py" = ["E501"]
+"src/pytest_reporter/_html_builder/_template.py" = ["E501"]
