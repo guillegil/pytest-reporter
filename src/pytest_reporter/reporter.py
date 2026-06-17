@@ -32,9 +32,9 @@ from ._table import build_table_artifact_html
 from ._types import PhaseData, RetryData
 
 try:
-    from pytest_verify._stash import check_results_key as _check_results_key
+    from pytest_verify import get_check_results  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover
-    _check_results_key = None  # type: ignore[assignment]
+    get_check_results = None
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -193,13 +193,13 @@ class Reporter:
         if nodeid not in self._retry_paths:
             write_parameters_json(run_dir / "parameters.json", run_info)
 
-        # Capture verification check results from item.stash (pytest-verify)
-        if _check_results_key is not None:
+        # Capture verification check results from pytest-verify public API
+        if get_check_results is not None:
             item = self._items.get(nodeid)
             if item is not None:
-                checks = item.stash.get(_check_results_key, None)
+                checks = get_check_results(item)
                 if checks:
-                    self._check_results[nodeid] = list(checks)
+                    self._check_results[nodeid] = checks
 
         # Create artifacts directory
         (run_dir / "artifacts").mkdir(parents=True, exist_ok=True)
