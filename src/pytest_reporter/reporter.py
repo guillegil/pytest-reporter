@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import json
+import mimetypes
+import platform
+import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -23,7 +28,8 @@ from ._junit_writer import write_junit_xml
 from ._logger import Logger
 from ._procedure import ProcedureTracker, _set_tracker
 from ._symlinks import update_latest_copy
-from ._types import RetryData
+from ._table import build_table_artifact_html
+from ._types import PhaseData, RetryData
 
 try:
     from pytest_verify._stash import check_results_key as _check_results_key
@@ -72,9 +78,7 @@ class Reporter:
         if retry_path is not None:
             return retry_path
         run_info = self.collector.get_run_info(nodeid)
-        return self.context.run_subdir(
-            run_info.file_path, run_info.function_name, run_info.run_id
-        )
+        return self.context.run_subdir(run_info.file_path, run_info.function_name, run_info.run_id)
 
     def pytest_sessionstart(self, session: Session) -> None:
         self._start_time = time.time()
@@ -131,18 +135,12 @@ class Reporter:
             # Write table artifacts before resetting the logger
             table_payloads = logger.get_table_payloads()
             if table_payloads:
-                from ._table import build_table_artifact_html
-
                 run_dir = self._get_run_dir(nodeid)
                 artifacts_dir = run_dir / "artifacts"
                 artifacts_dir.mkdir(parents=True, exist_ok=True)
                 for _seq, payload in table_payloads.items():
-                    html = build_table_artifact_html(
-                        payload.name, payload.columns, payload.rows
-                    )
-                    (artifacts_dir / payload.artifact_name).write_text(
-                        html, encoding="utf-8"
-                    )
+                    html = build_table_artifact_html(payload.name, payload.columns, payload.rows)
+                    (artifacts_dir / payload.artifact_name).write_text(html, encoding="utf-8")
 
             # Reset logger after capturing entries for this phase
             # (each phase gets its own entries)
@@ -229,33 +227,24 @@ class Reporter:
         # call phase (setup/teardown only run fixture code, not user code).
         # Capture entries once and assign to the call-phase report.
         logger = self._test_loggers.get(nodeid)
-        import sys; print(f'PROTO DEBUG: logger_id={id(logger)}, entries={len(logger.serialize().get("entries",[]))}', file=sys.stderr, flush=True)
         all_entries: list[dict[str, Any]] = []
         if logger is not None:
             all_entries = logger.serialize().get("entries", [])
-            import sys; print(f'PROTO all_entries: {len(all_entries)}', file=sys.stderr, flush=True)
 
             # Write table artifacts
             table_payloads = logger.get_table_payloads()
             if table_payloads:
-                from ._table import build_table_artifact_html
-
                 run_dir = self._get_run_dir(nodeid)
                 artifacts_dir = run_dir / "artifacts"
                 artifacts_dir.mkdir(parents=True, exist_ok=True)
                 for _seq, payload in table_payloads.items():
-                    html = build_table_artifact_html(
-                        payload.name, payload.columns, payload.rows
-                    )
-                    (artifacts_dir / payload.artifact_name).write_text(
-                        html, encoding="utf-8"
-                    )
+                    html = build_table_artifact_html(payload.name, payload.columns, payload.rows)
+                    (artifacts_dir / payload.artifact_name).write_text(html, encoding="utf-8")
 
             logger.reset()
 
         for report in reports:
             entries = all_entries if report.when == "call" else []
-            import sys; print(f'PROTO phase={report.when} entries_assigned={len(entries)}', file=sys.stderr, flush=True)
             self.collector.record_phase(report, entries=entries)
             phase = self.collector.get_phase(nodeid, report.when)
             if phase is not None:
@@ -269,9 +258,7 @@ class Reporter:
                 and nodeid not in self._retry_paths
             ):
                 run_info = self.collector.get_run_info(nodeid)
-                failure_name = (
-                    f"{run_info.function_name}_{run_info.run_id}_error.log"
-                )
+                failure_name = f"{run_info.function_name}_{run_info.run_id}_error.log"
                 write_failure_log(
                     self.context.failures_dir / failure_name,
                     nodeid,
@@ -295,9 +282,7 @@ class Reporter:
             # Dispatch reports to pytest for terminal output
             for report in reports:
                 item.config.hook.pytest_runtest_logreport(report=report)
-            item.config.hook.pytest_runtest_logfinish(
-                nodeid=nodeid, location=item.location
-            )
+            item.config.hook.pytest_runtest_logfinish(nodeid=nodeid, location=item.location)
             return True
 
         # Start retry loop
@@ -344,8 +329,6 @@ class Reporter:
                     # Write table artifacts for retry
                     table_payloads = logger.get_table_payloads()
                     if table_payloads:
-                        from ._table import build_table_artifact_html
-
                         retry_artifacts = retry_dir / "artifacts"
                         retry_artifacts.mkdir(parents=True, exist_ok=True)
                         for _seq, payload in table_payloads.items():
@@ -358,12 +341,12 @@ class Reporter:
 
                     logger.reset()
 
-                from ._types import PhaseData as _PD
-                from datetime import timedelta
                 end_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-                start_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00")) - timedelta(seconds=report.duration)
+                start_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00")) - timedelta(
+                    seconds=report.duration
+                )
                 start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-                retry_phase = _PD(
+                retry_phase = PhaseData(
                     when=report.when,
                     outcome=report.outcome,
                     duration=report.duration,
@@ -410,9 +393,7 @@ class Reporter:
         # This ensures terminal reporter and outcome counters reflect the retry result
         for report in final_reports:
             item.config.hook.pytest_runtest_logreport(report=report)
-        item.config.hook.pytest_runtest_logfinish(
-            nodeid=nodeid, location=item.location
-        )
+        item.config.hook.pytest_runtest_logfinish(nodeid=nodeid, location=item.location)
 
         return True  # We handled the protocol
 
@@ -424,9 +405,7 @@ class Reporter:
         # Write test.log.json aggregates
         for base_nodeid in self.collector.get_all_base_nodeids():
             aggregate = self.collector.get_function_aggregate(base_nodeid)
-            func_dir = self.context.test_function_dir(
-                aggregate["file"], aggregate["function_name"]
-            )
+            func_dir = self.context.test_function_dir(aggregate["file"], aggregate["function_name"])
             write_test_log_json(func_dir / "test.log.json", aggregate)
 
         # Write JUnit XML
@@ -467,21 +446,12 @@ class Reporter:
         config: Config,
     ) -> None:
         terminalreporter.write_sep("=", "Report")
-        terminalreporter.write_line(
-            f"  HTML:  {self.context.run_dir / 'report.html'}"
-        )
-        terminalreporter.write_line(
-            f"  JUnit: {self.context.run_dir / 'junit.xml'}"
-        )
-        terminalreporter.write_line(
-            f"  Latest: {self.context.reports_dir / '01_latest'}"
-        )
+        terminalreporter.write_line(f"  HTML:  {self.context.run_dir / 'report.html'}")
+        terminalreporter.write_line(f"  JUnit: {self.context.run_dir / 'junit.xml'}")
+        terminalreporter.write_line(f"  Latest: {self.context.reports_dir / '01_latest'}")
 
     def _build_html_data(self, duration: float, exitstatus: int) -> dict:  # type: ignore[type-arg]
         """Build the data dict for the HTML report."""
-        import platform
-        import sys
-
         # Collect all test data
         tests: list[dict] = []  # type: ignore[type-arg]
         for base_nodeid in self.collector.get_all_base_nodeids():
@@ -533,52 +503,50 @@ class Reporter:
                                 attempt_data: dict[str, Any] = {
                                     "attempt": attempt_dir.name,
                                     "phases": {},
-                                    "artifacts": self._collect_artifacts(
-                                        attempt_dir / "artifacts"
-                                    ),
+                                    "artifacts": self._collect_artifacts(attempt_dir / "artifacts"),
                                 }
                                 # Read phase logs from retry dir
                                 for phase_name in ("setup", "call", "teardown"):
                                     phase_file = attempt_dir / f"{phase_name}.log.json"
                                     if phase_file.exists():
-                                        import json
                                         attempt_data["phases"][phase_name] = json.loads(
                                             phase_file.read_text()
                                         )
                                 # Read procedure
                                 proc_file = attempt_dir / "procedure.json"
                                 if proc_file.exists():
-                                    import json
-                                    attempt_data["procedure"] = json.loads(
-                                        proc_file.read_text()
-                                    )
+                                    attempt_data["procedure"] = json.loads(proc_file.read_text())
                                 retry_attempts.append(attempt_data)
 
                 # Collect verification check results from pytest-verify
                 check_results = self._check_results.get(nodeid, [])
 
-                runs.append({
-                    "run_id": run_info.run_id,
-                    "nodeid": nodeid,
-                    "parametrize_id": run_info.parametrize_id,
-                    "params": {
-                        k: {"type": type(v).__name__, "value": str(v)}
-                        for k, v in run_info.params.items()
-                    },
-                    "outcome": self.collector.get_outcome(nodeid),
-                    "duration": round(self.collector.get_duration(nodeid), 4),
-                    "phases": phases,
-                    "procedure": procedure,
-                    "artifacts": artifacts,
-                    "retries": retries_info,
-                    "retry_attempts": retry_attempts,
-                    "check_results": check_results,
-                })
-            tests.append({
-                "base_nodeid": base_nodeid,
-                "aggregate": dict(aggregate),
-                "runs": runs,
-            })
+                runs.append(
+                    {
+                        "run_id": run_info.run_id,
+                        "nodeid": nodeid,
+                        "parametrize_id": run_info.parametrize_id,
+                        "params": {
+                            k: {"type": type(v).__name__, "value": str(v)}
+                            for k, v in run_info.params.items()
+                        },
+                        "outcome": self.collector.get_outcome(nodeid),
+                        "duration": round(self.collector.get_duration(nodeid), 4),
+                        "phases": phases,
+                        "procedure": procedure,
+                        "artifacts": artifacts,
+                        "retries": retries_info,
+                        "retry_attempts": retry_attempts,
+                        "check_results": check_results,
+                    }
+                )
+            tests.append(
+                {
+                    "base_nodeid": base_nodeid,
+                    "aggregate": dict(aggregate),
+                    "runs": runs,
+                }
+            )
 
         # Collect environment info
         plugin_list = []
@@ -611,16 +579,20 @@ class Reporter:
     @staticmethod
     def _collect_artifacts(artifacts_dir: Path) -> list[dict[str, object]]:
         """Read artifacts from disk and encode embeddable ones as data URIs."""
-        import base64
-        import mimetypes
-
         if not artifacts_dir.is_dir():
             return []
 
         result: list[dict[str, object]] = []
         embeddable = {
-            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
-            ".html", ".htm",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".svg",
+            ".bmp",
+            ".html",
+            ".htm",
         }
 
         for path in sorted(artifacts_dir.iterdir()):
@@ -633,8 +605,7 @@ class Reporter:
             ext = path.suffix.lower()
             if ext in embeddable:
                 mime = mimetypes.guess_type(path.name)[0] or (
-                    "text/html" if ext in (".html", ".htm") else
-                    "application/octet-stream"
+                    "text/html" if ext in (".html", ".htm") else "application/octet-stream"
                 )
                 raw = path.read_bytes()
                 b64 = base64.b64encode(raw).decode("ascii")

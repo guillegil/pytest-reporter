@@ -54,19 +54,21 @@ pytest tests/ --report-dir=reports --report-retries=3  # Enable retries
 
 ```
 pytest_reporter/
-├── __init__.py              # Exports: step, substep
+├── __init__.py              # Exports: step, substep, Logger, ReportLogger
 ├── py.typed                 # PEP 561 marker — REQUIRED
-├── _plugin.py               # Plugin registration, hooks
-├── _logger.py               # ReportLogger class (tree-based)
-├── _fixtures.py             # log, session_log, report_artifacts fixtures
-├── _phase_capture.py        # pytest_runtest_makereport hook — serialize + write
-├── _procedure.py            # step(), substep(), procedure state, procedure.json writing
-├── _retry.py                # pytest_runtest_protocol hook — retry engine
-├── _report_builder.py       # HTML report generation at session end
-├── _junit.py                # junit.xml generation
-├── _symlinks.py             # 01_latest/ hard-copy refresh (update_latest_copy)
-├── _schemas.py              # TypedDicts for all JSON schemas
-└── _types.py                # Shared type aliases
+├── plugin.py                # Plugin registration (pytest11 entry point)
+├── reporter.py              # Reporter class — main hook orchestrator
+├── _collector.py            # DataCollector — item registry, phase tracking, aggregation
+├── _context.py              # RunContext — timestamped run directory management
+├── _logger.py               # Logger class (+ ReportLogger alias) — tree-based structured logger
+├── _procedure.py            # step(), substep(), ProcedureTracker, procedure.json writing
+├── _types.py                # Shared TypedDicts and type aliases
+├── _json_writer.py          # Phase log, test.log.json, session.log.json writers
+├── _junit_writer.py         # junit.xml generation
+├── _html_builder.py         # Self-contained HTML report generation at session end
+├── _table.py                # Table normalization and HTML artifact builder
+├── _console_capture.py      # TeeFile — captures pytest.log output
+└── _symlinks.py             # 01_latest/ hard-copy refresh (update_latest_copy)
 ```
 
 ## Public API
@@ -79,27 +81,33 @@ pytest_reporter/
 | `session_log` | session | `ReportLogger` | Structured logging for session-scoped fixtures |
 | `report_artifacts` | test | `pathlib.Path` | Directory path for saving test artifacts |
 
-### Functions (explicit import)
+### Functions and types (explicit import)
 
 ```python
 from pytest_reporter import step, substep
+from pytest_reporter import ReportLogger  # canonical public name
+from pytest_reporter import Logger        # internal name, kept for compat
 
 step(description: str, *, check: dict | None = None) -> ContextManager
 substep(description: str) -> None
 ```
 
+`ReportLogger` is the canonical public name documented for users. `Logger` is the underlying class name in `_logger.py`; both names refer to the same class object (`ReportLogger is Logger`).
+
 ## IDE Autocompletion — CRITICAL REQUIREMENT
 
 All fixtures must return fully typed class instances. Ship `py.typed` marker.
 
+The logger class is `Logger` (internal name), exported as `ReportLogger` (public name):
+
 ```python
-class ReportLogger:
-    def info(self, msg: str, *, data: dict | None = None) -> None: ...
-    def debug(self, msg: str, *, data: dict | None = None) -> None: ...
-    def warning(self, msg: str, *, data: dict | None = None) -> None: ...
-    def error(self, msg: str, *, data: dict | None = None, exc: BaseException | None = None) -> None: ...
-    def critical(self, msg: str, *, data: dict | None = None, exc: BaseException | None = None) -> None: ...
-    def child(self, name: str) -> "ReportLogger": ...
+class Logger:  # also exported as ReportLogger
+    def info(self, msg: str, data: dict | None = None) -> None: ...
+    def debug(self, msg: str, data: dict | None = None) -> None: ...
+    def warning(self, msg: str, data: dict | None = None) -> None: ...
+    def error(self, msg: str, data: dict | None = None, exc_info: BaseException | None = None) -> None: ...
+    def critical(self, msg: str, data: dict | None = None, exc_info: BaseException | None = None) -> None: ...
+    def child(self, name: str) -> "Logger": ...
     def table(self, data: Any, name: str = "table", *, level: str = "INFO") -> None: ...
 ```
 

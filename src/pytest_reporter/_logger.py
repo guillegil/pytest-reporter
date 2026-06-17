@@ -92,9 +92,7 @@ class Logger:
                 "type": type(exc_info).__name__,
                 "msg": str(exc_info),
                 "tb": "".join(
-                    traceback.format_exception(
-                        type(exc_info), exc_info, exc_info.__traceback__
-                    )
+                    traceback.format_exception(type(exc_info), exc_info, exc_info.__traceback__)
                 ),
             }
 
@@ -116,24 +114,34 @@ class Logger:
         with self._root._lock:
             self._root._entries.append(entry)
 
-    def debug(self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None) -> None:
+    def debug(
+        self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None
+    ) -> None:
         self._log("DEBUG", msg, data, exc_info)
 
-    def info(self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None) -> None:
+    def info(
+        self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None
+    ) -> None:
         self._log("INFO", msg, data, exc_info)
 
-    def warning(self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None) -> None:
+    def warning(
+        self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None
+    ) -> None:
         self._log("WARNING", msg, data, exc_info)
 
-    def error(self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None) -> None:
+    def error(
+        self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None
+    ) -> None:
         self._log("ERROR", msg, data, exc_info)
 
-    def critical(self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None) -> None:
+    def critical(
+        self, msg: str, data: dict[str, Any] | None = None, exc_info: BaseException | None = None
+    ) -> None:
         self._log("CRITICAL", msg, data, exc_info)
 
     def table(
         self,
-        data: Any,
+        data: Any,  # noqa: ANN401
         name: str = "table",
         *,
         level: str = "INFO",
@@ -211,3 +219,9 @@ class Logger:
             self._root._seq = 0
             self._root._table_payloads.clear()
             self._root._used_artifact_names.clear()
+
+
+#: Public alias for :class:`Logger`.
+#: ``ReportLogger`` is the canonical name for users; ``Logger`` is kept for
+#: internal compatibility.
+ReportLogger = Logger

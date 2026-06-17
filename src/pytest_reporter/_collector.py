@@ -53,16 +53,12 @@ class DataCollector:
             func_name = func_part.split("[")[0]
 
             # Extract markers
-            markers = [
-                m.name
-                for m in item.iter_markers()
-                if m.name not in ("parametrize",)
-            ]
+            markers = [m.name for m in item.iter_markers() if m.name not in ("parametrize",)]
 
             # Extract docstring
             docstring: str | None = None
             if hasattr(item, "function"):
-                docstring = getattr(item.function, "__doc__", None)  # type: ignore[attr-defined]
+                docstring = getattr(item.function, "__doc__", None)
 
             run_info = RunInfo(
                 run_id=run_id,
@@ -85,7 +81,7 @@ class DataCollector:
         """Look up run info for a nodeid."""
         return self._run_map[nodeid]
 
-    def record_phase(self, report: Any, entries: list[dict[str, Any]] | None = None) -> None:
+    def record_phase(self, report: Any, entries: list[dict[str, Any]] | None = None) -> None:  # noqa: ANN401
         """Record phase data from a TestReport."""
         now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -94,6 +90,7 @@ class DataCollector:
         duration = report.duration
         start_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
         from datetime import timedelta
+
         start_dt = start_dt - timedelta(seconds=duration)
         start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -147,14 +144,8 @@ class DataCollector:
             if phase is not None:
                 total += phase.duration
 
-        # Add retry durations
-        retry = self._retries.get(nodeid)
-        if retry:
-            for retry_phases_key in list(self._phases.keys()):
-                nid, _ = retry_phases_key
-                if nid.startswith(f"{nodeid}::retry::"):
-                    phase = self._phases[retry_phases_key]
-                    total += phase.duration
+        # Retry phase time is intentionally excluded from duration totals;
+        # retries write to separate folders (retries/01/, retries/02/, ...).
         return total
 
     def set_retry_data(self, nodeid: str, retry_data: RetryData) -> None:

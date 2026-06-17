@@ -1,5 +1,6 @@
 """pytest-reporter: A pytest plugin for generating custom test reports."""
 
+from ._logger import Logger, ReportLogger
 from ._procedure import (
     ProcedureError,
     ProcedureNestingError,
@@ -7,4 +8,11 @@ from ._procedure import (
     substep,
 )
 
-__all__ = ["step", "substep", "ProcedureError", "ProcedureNestingError"]
+__all__ = [
+    "step",
+    "substep",
+    "ProcedureError",
+    "ProcedureNestingError",
+    "Logger",
+    "ReportLogger",
+]
