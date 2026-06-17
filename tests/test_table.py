@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_reporter._table import (
-    INLINE_ROW_LIMIT,
     SERIALIZED_ROW_LIMIT,
     normalize_table,
     sanitize_filename,

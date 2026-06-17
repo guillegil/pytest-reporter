@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import traceback
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 
 class ProcedureError(Exception):
@@ -29,9 +29,7 @@ def _make_exc(exc: BaseException) -> dict[str, str]:
     return {
         "type": type(exc).__name__,
         "msg": str(exc),
-        "tb": "".join(
-            traceback.format_exception(type(exc), exc, exc.__traceback__)
-        ),
+        "tb": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
     }
 
 
@@ -100,9 +98,7 @@ class ProcedureTracker:
     def record_substep(self, description: str) -> dict[str, Any]:
         """Record an explicit substep under the current step."""
         if not self._steps:
-            raise ProcedureError(
-                "substep() called before any step() has been recorded"
-            )
+            raise ProcedureError("substep() called before any step() has been recorded")
         now = _now()
         parent = self._steps[-1]
         sub_count = len(parent["substeps"]) + 1
@@ -230,7 +226,12 @@ class _StepProxy:
         self._step_data = tracker.enter_step_cm(self._description)
         return self._step_data
 
-    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, tb: Any) -> bool:
+    def __exit__(
+        self,
+        exc_type: type | None,
+        exc_val: BaseException | None,
+        tb: Any,  # noqa: ANN401
+    ) -> Literal[False]:
         self._tracker.exit_step_cm(self._step_data, exc_val)  # type: ignore[arg-type]
         return False  # Do not swallow exceptions
 

@@ -9,7 +9,6 @@ import pytest
 
 from ._context import RunContext
 from ._logger import Logger
-from ._procedure import ProcedureTracker, _set_tracker
 from .reporter import Reporter
 
 if TYPE_CHECKING:
@@ -53,9 +52,7 @@ def log(request: pytest.FixtureRequest) -> Logger:
     Returns a Logger instance whose entries are automatically captured
     by the reporter at the end of each phase (setup, call, teardown).
     """
-    reporter: Reporter | None = request.config.pluginmanager.get_plugin(
-        "pytest_reporter"
-    )
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
     if reporter is None:
         # No report dir configured -- return a no-op logger
         return Logger()
@@ -65,7 +62,7 @@ def log(request: pytest.FixtureRequest) -> Logger:
     logger = getattr(item, "_reporter_logger", None)
     if logger is None:
         logger = Logger()
-        item._reporter_logger = logger  # type: ignore[attr-defined]
+        item._reporter_logger = logger  # dynamic attribute on pytest.Item
     return logger
 
 
@@ -76,9 +73,7 @@ def session_log(request: pytest.FixtureRequest) -> Logger:
     Session-scoped fixtures use this to produce structured logs that
     are written to session.log.json at the end of the test run.
     """
-    reporter: Reporter | None = request.config.pluginmanager.get_plugin(
-        "pytest_reporter"
-    )
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
     if reporter is None:
         return Logger()
 
@@ -92,9 +87,7 @@ def report_artifacts(request: pytest.FixtureRequest) -> Path:
     Tests can save files here and they will be included in the HTML report.
     Returns a temporary directory when --report-dir is not active.
     """
-    reporter: Reporter | None = request.config.pluginmanager.get_plugin(
-        "pytest_reporter"
-    )
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
     if reporter is None:
         # No report dir configured -- return a tmp path so tests still work
         tmp: Path = request.getfixturevalue("tmp_path")

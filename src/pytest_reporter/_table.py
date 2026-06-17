@@ -24,7 +24,7 @@ class TablePayload:
     artifact_name: str
 
 
-def _stringify_cell(value: Any) -> str:
+def _stringify_cell(value: Any) -> str:  # noqa: ANN401
     """Convert a cell value to a display string."""
     if value is None:
         return ""
@@ -37,7 +37,7 @@ def _stringify_cell(value: Any) -> str:
     return str(value)
 
 
-def normalize_table(data: Any) -> tuple[list[str], list[list[str]]]:
+def normalize_table(data: Any) -> tuple[list[str], list[list[str]]]:  # noqa: ANN401
     """Normalize various table inputs to (columns, rows).
 
     Accepts:
@@ -67,10 +67,7 @@ def normalize_table(data: Any) -> tuple[list[str], list[list[str]]]:
             for k in row_dict:
                 col_set[k] = None
         columns = list(col_set)
-        rows = [
-            [_stringify_cell(row_dict.get(c)) for c in columns]
-            for row_dict in data
-        ]
+        rows = [[_stringify_cell(row_dict.get(c)) for c in columns] for row_dict in data]
         return columns, rows
 
     # dict[str, list] (column-oriented)
@@ -105,17 +102,13 @@ def sanitize_filename(name: str) -> str:
     return clean or "table"
 
 
-def build_table_artifact_html(
-    name: str, columns: list[str], rows: list[list[str]]
-) -> str:
+def build_table_artifact_html(name: str, columns: list[str], rows: list[list[str]]) -> str:
     """Build a self-contained dark-theme HTML document for a table artifact."""
+
     # Escape HTML
     def esc(s: str) -> str:
         return (
-            s.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
+            s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
         )
 
     header_cells = "".join(f"<th>{esc(c)}</th>" for c in columns)

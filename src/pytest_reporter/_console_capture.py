@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class TeeFile:
     """Wraps a file-like object to duplicate writes to a capture buffer."""
 
-    def __init__(self, original: Any) -> None:
+    def __init__(self, original: Any) -> None:  # noqa: ANN401
         self.original = original
         self.capture = StringIO()
 
@@ -23,16 +23,16 @@ class TeeFile:
         else:
             text = str(data)
         self.capture.write(text)
-        return self.original.write(data)
+        return int(self.original.write(data))
 
     def flush(self) -> None:
         self.original.flush()
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         return getattr(self.original, name)
 
 
-def install_capture(config: Any) -> TeeFile | None:
+def install_capture(config: Any) -> TeeFile | None:  # noqa: ANN401
     """Install a TeeFile on the terminal reporter to capture output."""
     tr = config.pluginmanager.get_plugin("terminalreporter")
     if tr is None:

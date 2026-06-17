@@ -46,12 +46,16 @@ def write_junit_xml(
             if retry_data and retry_data.attempts > 0:
                 props = SubElement(tc, "properties")
                 SubElement(
-                    props, "property",
-                    name="retries", value=str(retry_data.attempts),
+                    props,
+                    "property",
+                    name="retries",
+                    value=str(retry_data.attempts),
                 )
                 SubElement(
-                    props, "property",
-                    name="original_outcome", value=retry_data.original_outcome,
+                    props,
+                    "property",
+                    name="original_outcome",
+                    value=retry_data.original_outcome,
                 )
 
             total += 1
@@ -62,15 +66,16 @@ def write_junit_xml(
                     call_phase = collector.get_phase(nodeid, "call")
                     if call_phase and call_phase.longrepr:
                         so = SubElement(tc, "system-out")
-                        so.text = f"Original failure (passed on retry {retry_data.attempts}):\n{call_phase.longrepr}"
+                        so.text = (
+                            f"Original failure (passed on retry {retry_data.attempts}):\n"
+                            f"{call_phase.longrepr}"
+                        )
             elif outcome == "failed":
                 failed += 1
                 # For retried tests, get the last attempt's failure
                 call_phase = collector.get_phase(nodeid, "call")
                 longrepr = call_phase.longrepr if call_phase else ""
-                failure = SubElement(
-                    tc, "failure", message=f"{name} failed", type="AssertionError"
-                )
+                failure = SubElement(tc, "failure", message=f"{name} failed", type="AssertionError")
                 failure.text = longrepr or ""
                 # Include original failure in system-out for retried tests
                 if retry_data and retry_data.attempts > 0 and call_phase and call_phase.longrepr:
@@ -86,9 +91,7 @@ def write_junit_xml(
                 errors += 1
                 setup_phase = collector.get_phase(nodeid, "setup")
                 longrepr = setup_phase.longrepr if setup_phase else ""
-                error_el = SubElement(
-                    tc, "error", message=f"{name} error", type="Error"
-                )
+                error_el = SubElement(tc, "error", message=f"{name} error", type="Error")
                 error_el.text = longrepr or ""
 
     testsuite.set("tests", str(total))

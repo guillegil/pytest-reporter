@@ -198,8 +198,8 @@ def test_junit_xml(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     xml_content = (runs[0] / "junit.xml").read_text()
-    assert '<?xml' in xml_content
-    assert 'testsuites' in xml_content
+    assert "<?xml" in xml_content
+    assert "testsuites" in xml_content
     assert 'failures="1"' in xml_content
 
 

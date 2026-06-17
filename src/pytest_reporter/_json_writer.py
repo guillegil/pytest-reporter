@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ._types import (
+    LogEntryDict,
     ParamEntry,
     ParametersJson,
     PhaseData,
@@ -17,7 +18,7 @@ from ._types import (
 )
 
 
-def _write_json(path: Path, data: Any) -> None:
+def _write_json(path: Path, data: Any) -> None:  # noqa: ANN401
     """Write a JSON file, creating parent directories as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
@@ -32,7 +33,7 @@ def write_phase_log(path: Path, phase: PhaseData) -> None:
         end_time=phase.end_time,
         duration_seconds=round(phase.duration, 4),
         longrepr=phase.longrepr,
-        entries=phase.entries,
+        entries=cast(list[LogEntryDict], phase.entries),
     )
     _write_json(path, log)
 
@@ -75,7 +76,7 @@ def write_session_log_json(
         start_time=start_time,
         end_time=end_time,
         duration_seconds=round(duration_seconds, 4),
-        entries=entries,
+        entries=cast(list[LogEntryDict], entries),
     )
     _write_json(path, data)
 

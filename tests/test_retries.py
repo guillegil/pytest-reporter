@@ -39,7 +39,9 @@ def test_retry_passes_on_second_attempt(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    test_dir = run_dir / "tests" / "test_retry_passes_on_second_attempt.py" / "test_flaky" / "default"
+    test_dir = (
+        run_dir / "tests" / "test_retry_passes_on_second_attempt.py" / "test_flaky" / "default"
+    )
 
     # Retries directory should exist
     retries_dir = test_dir / "retries"
@@ -110,7 +112,9 @@ def test_retry_no_parameters_json_in_retries(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    test_dir = run_dir / "tests" / "test_retry_no_parameters_json_in_retries.py" / "test_flaky" / "default"
+    test_dir = (
+        run_dir / "tests" / "test_retry_no_parameters_json_in_retries.py" / "test_flaky" / "default"
+    )
 
     assert (test_dir / "parameters.json").exists()
     assert not (test_dir / "retries" / "01" / "parameters.json").exists()

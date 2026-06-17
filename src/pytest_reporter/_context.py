@@ -37,9 +37,7 @@ class RunContext:
         """Return path: run_dir/tests/<module>/<test_file>.py/<function>/."""
         return self.tests_dir / file_path / function_name
 
-    def run_subdir(
-        self, file_path: str, function_name: str, run_id: str
-    ) -> Path:
+    def run_subdir(self, file_path: str, function_name: str, run_id: str) -> Path:
         """Return path: test_function_dir/<run_id>/."""
         return self.test_function_dir(file_path, function_name) / run_id
 

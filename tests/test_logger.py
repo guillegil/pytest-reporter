@@ -20,7 +20,14 @@ def test_log_fixture_produces_entries(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    call_log = run_dir / "tests" / "test_log_fixture_produces_entries.py" / "test_with_log" / "default" / "call.log.json"
+    call_log = (
+        run_dir
+        / "tests"
+        / "test_log_fixture_produces_entries.py"
+        / "test_with_log"
+        / "default"
+        / "call.log.json"
+    )
     data = json.loads(call_log.read_text())
 
     assert data["phase"] == "call"
@@ -51,7 +58,9 @@ def test_log_child_logger(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    call_log = run_dir / "tests" / "test_log_child_logger.py" / "test_child" / "default" / "call.log.json"
+    call_log = (
+        run_dir / "tests" / "test_log_child_logger.py" / "test_child" / "default" / "call.log.json"
+    )
     data = json.loads(call_log.read_text())
 
     entries = data["entries"]
@@ -125,7 +134,14 @@ def test_log_exception_capture(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    call_log = run_dir / "tests" / "test_log_exception_capture.py" / "test_exc" / "default" / "call.log.json"
+    call_log = (
+        run_dir
+        / "tests"
+        / "test_log_exception_capture.py"
+        / "test_exc"
+        / "default"
+        / "call.log.json"
+    )
     data = json.loads(call_log.read_text())
 
     entries = data["entries"]

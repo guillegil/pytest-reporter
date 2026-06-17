@@ -23,7 +23,9 @@ def test_step_plain_call(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    proc = run_dir / "tests" / "test_step_plain_call.py" / "test_steps" / "default" / "procedure.json"
+    proc = (
+        run_dir / "tests" / "test_step_plain_call.py" / "test_steps" / "default" / "procedure.json"
+    )
     data = json.loads(proc.read_text())
 
     assert len(data["steps"]) == 3
@@ -49,7 +51,14 @@ def test_step_with_substep(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    proc = run_dir / "tests" / "test_step_with_substep.py" / "test_substeps" / "default" / "procedure.json"
+    proc = (
+        run_dir
+        / "tests"
+        / "test_step_with_substep.py"
+        / "test_substeps"
+        / "default"
+        / "procedure.json"
+    )
     data = json.loads(proc.read_text())
 
     assert len(data["steps"]) == 2
@@ -77,7 +86,14 @@ def test_step_context_manager(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    proc = run_dir / "tests" / "test_step_context_manager.py" / "test_cm" / "default" / "procedure.json"
+    proc = (
+        run_dir
+        / "tests"
+        / "test_step_context_manager.py"
+        / "test_cm"
+        / "default"
+        / "procedure.json"
+    )
     data = json.loads(proc.read_text())
 
     assert len(data["steps"]) == 3
@@ -105,7 +121,14 @@ def test_step_cm_with_timing(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    proc = run_dir / "tests" / "test_step_cm_with_timing.py" / "test_timing" / "default" / "procedure.json"
+    proc = (
+        run_dir
+        / "tests"
+        / "test_step_cm_with_timing.py"
+        / "test_timing"
+        / "default"
+        / "procedure.json"
+    )
     data = json.loads(proc.read_text())
 
     step_data = data["steps"][0]
@@ -171,8 +194,22 @@ def test_procedure_resets_per_test(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    proc1 = run_dir / "tests" / "test_procedure_resets_per_test.py" / "test_first" / "default" / "procedure.json"
-    proc2 = run_dir / "tests" / "test_procedure_resets_per_test.py" / "test_second" / "default" / "procedure.json"
+    proc1 = (
+        run_dir
+        / "tests"
+        / "test_procedure_resets_per_test.py"
+        / "test_first"
+        / "default"
+        / "procedure.json"
+    )
+    proc2 = (
+        run_dir
+        / "tests"
+        / "test_procedure_resets_per_test.py"
+        / "test_second"
+        / "default"
+        / "procedure.json"
+    )
     d1 = json.loads(proc1.read_text())
     d2 = json.loads(proc2.read_text())
 
@@ -204,9 +241,12 @@ def test_step_with_check_descriptor(pytester: Pytester) -> None:
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
     proc = (
-        run_dir / "tests"
+        run_dir
+        / "tests"
         / "test_step_with_check_descriptor.py"
-        / "test_check" / "default" / "procedure.json"
+        / "test_check"
+        / "default"
+        / "procedure.json"
     )
     data = json.loads(proc.read_text())
 
