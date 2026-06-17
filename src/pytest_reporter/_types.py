@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, TypedDict
 
+# --- Metadata panel type alias (report-metadata-panel) ---
+
+# Mapping of section name -> {label: stringified value}.
+# Produced by _merge_metadata after all hook contributions and fixture overlay
+# have been applied; all keys and values are guaranteed to be str.
+SystemMetadata = dict[str, dict[str, str]]
+
 # --- Log entry schema (§5.2) ---
 
 

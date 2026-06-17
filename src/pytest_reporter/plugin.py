@@ -7,12 +7,18 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from . import _hookspecs
 from ._context import RunContext
 from ._logger import Logger
 from .reporter import Reporter
 
 if TYPE_CHECKING:
     from pytest import Config, Parser
+
+
+def pytest_addhooks(pluginmanager: pytest.PytestPluginManager) -> None:
+    """Register pytest-reporter hookspecs early, before conftest collection."""
+    pluginmanager.add_hookspecs(_hookspecs.ReporterSpec)
 
 
 def pytest_addoption(parser: Parser) -> None:
@@ -108,3 +114,25 @@ def report_artifacts(request: pytest.FixtureRequest) -> Path:
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     return artifacts_dir
+
+
+@pytest.fixture(scope="session")
+def report_metadata(request: pytest.FixtureRequest) -> dict[str, dict[str, object]]:
+    """Provide a mutable session-level metadata dict for the HTML Report tab.
+
+    Tests and session-scoped fixtures populate this dict during setup; the
+    values are merged with hook contributions and embedded in the HTML report
+    at session end.  Fixture values override hook values on key collision
+    within the same section.
+
+    When ``--report-dir`` is not active (reporter inactive), returns a
+    throwaway dict so callers never crash.
+
+    Returns:
+        A mutable ``{section: {label: value}}`` dict shared across the session.
+    """
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
+    if reporter is None:
+        # Reporter inactive (no --report-dir) -- return a throwaway dict
+        return {}
+    return reporter.metadata_store

@@ -8,6 +8,7 @@ import mimetypes
 import platform
 import sys
 import time
+import warnings
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +43,47 @@ if TYPE_CHECKING:
     from pytest import Config, Item, Session, TestReport
 
 
+def _merge_metadata(
+    hook_results: list[dict[str, dict[str, object]]],
+    fixture: dict[str, dict[str, object]],
+) -> dict[str, dict[str, str]]:
+    """Merge hook contributions and fixture overrides into a stringified metadata dict.
+
+    Hook results are applied in order (last implementation wins per label within
+    a section).  The fixture dict is applied last, so fixture values override
+    hook values on collision.  All section names, labels, and values are
+    stringified via ``str()``.
+
+    Args:
+        hook_results: List of dicts returned by ``pytest_reporter_metadata``
+            hookimpls (may include ``None`` entries; skipped automatically).
+        fixture: Mutable dict populated via the ``report_metadata`` fixture.
+
+    Returns:
+        A ``{section: {label: str_value}}`` dict ready for JSON embedding.
+    """
+    merged: dict[str, dict[str, str]] = {}
+
+    # Apply hook contributions first (last registered/later conftest wins per label).
+    # Pluggy returns results in LIFO order (last registered = index 0), so we
+    # iterate in reverse to ensure the last-registered hookimpl wins on collision.
+    for result in reversed(hook_results):
+        if not result:
+            continue
+        for section, rows in result.items():
+            if not isinstance(rows, dict):
+                continue
+            merged.setdefault(section, {}).update({str(k): str(v) for k, v in rows.items()})
+
+    # Apply fixture dict on top (fixture overrides hooks on collision)
+    for section, rows in fixture.items():
+        if not isinstance(rows, dict):
+            continue
+        merged.setdefault(section, {}).update({str(k): str(v) for k, v in rows.items()})
+
+    return merged
+
+
 class Reporter:
     """Orchestrates data collection and report generation."""
 
@@ -67,6 +109,8 @@ class Reporter:
         self._check_results: dict[str, list[dict[str, Any]]] = {}
         # Item references for stash access: nodeid -> Item
         self._items: dict[str, Item] = {}
+        # Mutable metadata dict populated via report_metadata fixture or hook
+        self.metadata_store: dict[str, dict[str, Any]] = {}
 
     def get_current_run_dir(self, nodeid: str) -> Path | None:
         """Get the current write directory for a test (retry-aware)."""
@@ -561,6 +605,23 @@ class Reporter:
         # Session log data
         session_log_data = self.session_logger.serialize()
 
+        # Collect and merge metadata from hook + fixture.
+        # Broad except is intentional: pytest_reporter_metadata() is third-party
+        # user code called at report-generation time.  The reporter is an observer
+        # and must never crash or suppress test outcomes because a plugin misbehaves
+        # (see .claude/CLAUDE.md: "The reporter observes, never judges / never
+        # affects outcomes").  A raising hook gets its data silently dropped; the
+        # fixture-provided metadata_store is still merged as usual.
+        hook_results: list[dict[str, dict[str, object]]] = []
+        try:
+            hook_results = self.config.hook.pytest_reporter_metadata()
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"pytest_reporter_metadata hook raised an exception and will be ignored: {exc}",
+                stacklevel=2,
+            )
+        system_metadata = _merge_metadata(hook_results, self.metadata_store)
+
         return {
             "timestamp": self.context.timestamp,
             "duration": round(duration, 2),
@@ -574,6 +635,7 @@ class Reporter:
             "session_log": session_log_data,
             "retries_enabled": self.max_retries > 0,
             "max_retries": self.max_retries,
+            "system_metadata": system_metadata,
         }
 
     @staticmethod
