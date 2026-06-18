@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from ._context import sanitize_path_component
 from ._json_writer import write_failure_log, write_phase_log, write_procedure_json
 from ._table import build_table_artifact_html
 
@@ -82,7 +83,8 @@ def capture_phase_logs(reporter: Reporter, report: pytest.TestReport) -> None:
         and nodeid not in reporter._retry_paths
     ):
         run_info = reporter.collector.get_run_info(nodeid)
-        failure_name = f"{run_info.function_name}_{run_info.run_id}_error.log"
+        safe_func = sanitize_path_component(run_info.function_name)
+        failure_name = f"{safe_func}_{run_info.run_id}_error.log"
         write_failure_log(
             reporter.context.failures_dir / failure_name,
             nodeid,
