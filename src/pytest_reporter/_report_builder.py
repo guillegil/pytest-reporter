@@ -59,8 +59,16 @@ def merge_metadata(
     return merged
 
 
+MAX_EMBED_BYTES = 25 * 1024 * 1024  # 25 MB per-file embedding cap (REQ-6)
+
+
 def collect_artifacts(artifacts_dir: Path) -> list[dict[str, object]]:
     """Read artifacts from disk and encode embeddable ones as data URIs.
+
+    Per-file I/O errors are caught and warned so a single locked or deleted
+    file does not prevent the rest of the artifact list from rendering (REQ-2A).
+    Files larger than ``MAX_EMBED_BYTES`` are included as metadata-only entries
+    without a ``data_uri``, avoiding MemoryError for large artifacts (REQ-6).
 
     Args:
         artifacts_dir: Path to the artifacts directory for a test run.
@@ -68,7 +76,8 @@ def collect_artifacts(artifacts_dir: Path) -> list[dict[str, object]]:
     Returns:
         A list of artifact dicts, each containing at minimum ``name`` and ``size``.
         Embeddable file types (images, HTML) additionally carry a ``data_uri``
-        with a base64-encoded ``data:`` URI.
+        with a base64-encoded ``data:`` URI.  Oversized or unreadable files
+        carry ``too_large: True`` or are skipped with a warning respectively.
     """
     if not artifacts_dir.is_dir():
         return []
@@ -89,18 +98,45 @@ def collect_artifacts(artifacts_dir: Path) -> list[dict[str, object]]:
     for path in sorted(artifacts_dir.iterdir()):
         if not path.is_file():
             continue
+        try:
+            size = path.stat().st_size
+        except (OSError, ValueError) as err:
+            warnings.warn(
+                f"pytest-reporter: artifact skipped (stat failed): {path}: {err}",
+                stacklevel=2,
+            )
+            continue
+
         entry: dict[str, object] = {
             "name": path.name,
-            "size": path.stat().st_size,
+            "size": size,
         }
+
         ext = path.suffix.lower()
         if ext in embeddable:
-            mime = mimetypes.guess_type(path.name)[0] or (
-                "text/html" if ext in (".html", ".htm") else "application/octet-stream"
-            )
-            raw = path.read_bytes()
-            b64 = base64.b64encode(raw).decode("ascii")
-            entry["data_uri"] = f"data:{mime};base64,{b64}"
+            if size > MAX_EMBED_BYTES:
+                # File is too large to embed — metadata-only entry (REQ-6)
+                entry["too_large"] = True
+                warnings.warn(
+                    f"pytest-reporter: artifact too large to embed ({size} bytes): {path.name}",
+                    stacklevel=2,
+                )
+            else:
+                try:
+                    raw = path.read_bytes()
+                except (OSError, ValueError) as err:
+                    warnings.warn(
+                        f"pytest-reporter: artifact skipped (read failed): {path}: {err}",
+                        stacklevel=2,
+                    )
+                    result.append(entry)
+                    continue
+                mime = mimetypes.guess_type(path.name)[0] or (
+                    "text/html" if ext in (".html", ".htm") else "application/octet-stream"
+                )
+                b64 = base64.b64encode(raw).decode("ascii")
+                entry["data_uri"] = f"data:{mime};base64,{b64}"
+
         result.append(entry)
     return result
 
@@ -169,17 +205,33 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                                 "phases": {},
                                 "artifacts": collect_artifacts(attempt_dir / "artifacts"),
                             }
-                            # Read phase logs from retry dir
+                            # Read phase logs from retry dir — guarded per-file (REQ-2B).
+                            # A corrupt or unreadable phase log is warned and omitted
+                            # so the attempt entry is still present minus the bad phase.
                             for phase_name in ("setup", "call", "teardown"):
                                 phase_file = attempt_dir / f"{phase_name}.log.json"
                                 if phase_file.exists():
-                                    attempt_data["phases"][phase_name] = json.loads(
-                                        phase_file.read_text()
-                                    )
-                            # Read procedure
+                                    try:
+                                        attempt_data["phases"][phase_name] = json.loads(
+                                            phase_file.read_text()
+                                        )
+                                    except (json.JSONDecodeError, OSError) as err:
+                                        warnings.warn(
+                                            f"pytest-reporter: retry phase log skipped "
+                                            f"(unreadable): {phase_file}: {err}",
+                                            stacklevel=2,
+                                        )
+                            # Read procedure — guarded (REQ-2B)
                             proc_file = attempt_dir / "procedure.json"
                             if proc_file.exists():
-                                attempt_data["procedure"] = json.loads(proc_file.read_text())
+                                try:
+                                    attempt_data["procedure"] = json.loads(proc_file.read_text())
+                                except (json.JSONDecodeError, OSError) as err:
+                                    warnings.warn(
+                                        f"pytest-reporter: retry procedure log skipped "
+                                        f"(unreadable): {proc_file}: {err}",
+                                        stacklevel=2,
+                                    )
                             retry_attempts.append(attempt_data)
 
             # Collect verification check results from pytest-verify
