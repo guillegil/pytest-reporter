@@ -23,7 +23,10 @@ class TeeFile:
         else:
             text = str(data)
         self.capture.write(text)
-        return int(self.original.write(data))
+        written = self.original.write(data)
+        # Some wrapped streams (pytest tee-sys capture, Windows console proxies)
+        # return None instead of the character count. Fall back to len(text).
+        return written if isinstance(written, int) else len(text)
 
     def flush(self) -> None:
         self.original.flush()
