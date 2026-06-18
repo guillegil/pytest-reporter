@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,7 @@ import pytest
 from ._collector import DataCollector
 from ._console_capture import TeeFile, finalize_capture, install_capture
 from ._context import RunContext
+from ._html_builder._degraded import build_degraded_report
 from ._json_writer import write_session_log_json, write_test_log_json
 from ._junit_writer import write_junit_xml
 from ._logger import Logger
@@ -159,14 +161,25 @@ class Reporter:
         # Finalize console capture
         finalize_capture(self._tee, self.context.run_dir / "pytest.log")
 
-        # Write HTML report
+        # Write HTML report — guarded so sessionfinish never raises (REQ-1).
+        # Any exception in the build pipeline is caught, warned, and replaced
+        # with a minimal degraded report.  01_latest/ is refreshed regardless.
         from ._html_builder import build_html_report
 
-        html_data = build_html_data(self, duration, exitstatus)
-        html = build_html_report(html_data)
-        (self.context.run_dir / "report.html").write_text(html, encoding="utf-8")
+        try:
+            html_data = build_html_data(self, duration, exitstatus)
+            html = build_html_report(html_data)
+            (self.context.run_dir / "report.html").write_text(html, encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"pytest-reporter: HTML report build failed, writing degraded report: {exc}",
+                stacklevel=2,
+            )
+            degraded = build_degraded_report(self.context.run_dir, exc)
+            (self.context.run_dir / "report.html").write_text(degraded, encoding="utf-8")
 
-        # Refresh the 01_latest hard copy of this run
+        # Refresh the 01_latest hard copy of this run — always runs after the
+        # guarded write block above so it fires even when the build failed.
         update_latest_copy(self.context.reports_dir, self.context.run_dir)
 
     def pytest_terminal_summary(
