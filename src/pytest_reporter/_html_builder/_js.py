@@ -455,7 +455,11 @@ function navigateToGroup(path) {
     if (!node) return;
     const rows = node.querySelectorAll(':scope > .tree-node > .tree-row');
     rows.forEach(row => {
-      if (row.querySelector('.tree-name')?.textContent === part) {
+      // D4 fix: match via data-seg attribute membership instead of textContent,
+      // so breadcrumb-collapsed rows (e.g. "ctec / FOX") still match on "ctec".
+      const segs = row.querySelectorAll('[data-seg]');
+      const matched = Array.from(segs).some(s => s.getAttribute('data-seg') === part);
+      if (matched) {
         const parent = row.parentElement;
         if (parent) parent.classList.add('expanded');
         node = parent?.querySelector('.tree-children');
@@ -520,8 +524,9 @@ function renderTests() {
   treePanel.appendChild(controls);
 
   const treeContent = el('div', {className:'tree-content'});
-  const tree = buildTree(DATA.tests);
-  Object.entries(tree.children).forEach(([name, node]) => {
+  const rawTree = buildTree(DATA.tests);
+  const compacted = compactTree(rawTree);
+  Object.entries(compacted.children).forEach(([name, node]) => {
     treeContent.appendChild(renderTreeNode(name, node, 0));
   });
   treePanel.appendChild(treeContent);
@@ -539,6 +544,11 @@ function renderTests() {
 }
 
 function renderTreeNode(name, node, depth) {
+  // Merged single-function file: delegate entirely to renderTestLeaf.
+  if (node._mergedTest) {
+    return renderTestLeaf(node._mergedTest, depth);
+  }
+
   const hasChildren = Object.keys(node.children).length > 0 || node.tests.length > 0;
   const agg = nodeAgg(node);
   const container = el('div', {className:'tree-node'});
@@ -553,7 +563,16 @@ function renderTreeNode(name, node, depth) {
     icon.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>';
   }
 
-  const nameEl = el('span', {className:'tree-name'}, name);
+  // Build label: breadcrumb for collapsed chains (_segments), plain name otherwise.
+  // Each segment emits a data-seg attribute for navigateToGroup D4 matching.
+  const nameEl = el('span', {className:'tree-name'});
+  const segs = node._segments || [name];
+  segs.forEach((seg, i) => {
+    nameEl.appendChild(el('span', {'data-seg': seg}, seg));
+    if (i < segs.length - 1) {
+      nameEl.appendChild(el('span', {className:'crumb-sep'}, ' / '));
+    }
+  });
 
   // Colored count badges
   const badges = el('span', {className:'tree-badges'});

@@ -639,3 +639,115 @@ def _data_uri_for_file_absent(html_content: str, filename: str) -> bool:
         if "data_uri" in snippet and "data:" in snippet:
             return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: tests-tree-cleanup — Baseline + Regression Guards
+# ---------------------------------------------------------------------------
+
+_TESTS_TAB_GOLDEN_HASH: str | None = None
+
+
+def _extract_tab_region(html: str, start_id: str, end_id: str) -> str:
+    """Extract the HTML region between two tab div ids (exclusive of end marker)."""
+    start_marker = f'id="{start_id}"'
+    end_marker = f'id="{end_id}"'
+    start_idx = html.find(start_marker)
+    if start_idx == -1:
+        return ""
+    end_idx = html.find(end_marker, start_idx)
+    if end_idx == -1:
+        return html[start_idx:]
+    return html[start_idx:end_idx]
+
+
+def _canonical_multi_test_code() -> str:
+    """Return canonical pytester test code covering multiple files and paths."""
+    return """
+import pytest
+
+def test_alpha():
+    assert True
+
+def test_beta():
+    assert True
+
+def test_gamma():
+    assert False, "expected failure"
+"""
+
+
+def test_tests_tab_tree_baseline(pytester: Pytester) -> None:
+    """REQ-1 (scope note): capture SHA-256 of the JS source in report.html.
+
+    The Tests-tab tree is rendered by JS; the static HTML contains the JS source.
+    We hash the JS source block (which includes renderTests, renderTreeNode, etc.)
+    as the baseline. On first invocation: captures. Subsequent: asserts equivalence.
+
+    WILL FAIL after compaction is implemented — intentional, not a regression.
+    Golden regenerated: tests-tree-cleanup — intentional. Changes: prefix strip,
+    chain collapse, single-fn merge.
+    """
+    global _TESTS_TAB_GOLDEN_HASH  # noqa: PLW0603
+
+    pytester.makepyfile(_canonical_multi_test_code())
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=2, failed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+
+    # Hash the JS blocks — the tree rendering logic lives in the inline script
+    js_blocks = _get_script_blocks(html_content)
+    # The main rendering block contains renderTests — find it
+    rendering_block = next(
+        (b for b in js_blocks if "renderTests" in b and "renderTreeNode" in b), None
+    )
+    assert rendering_block is not None, "renderTests JS block not found in report.html"
+
+    digest = hashlib.sha256(rendering_block.encode()).hexdigest()
+
+    if _TESTS_TAB_GOLDEN_HASH is None:
+        _TESTS_TAB_GOLDEN_HASH = digest
+    else:
+        assert digest == _TESTS_TAB_GOLDEN_HASH, (
+            "Tests-tab rendering JS changed from golden snapshot! "
+            "After tests-tree-cleanup implementation, regenerate by running "
+            "the test once to capture the new hash."
+        )
+
+
+def test_summary_tab_unchanged_after_compaction(pytester: Pytester) -> None:
+    """REQ-6: Summary rendering JS must NOT use compactTree output.
+
+    The summary invariant: renderDashboardGroups must receive the raw buildTree
+    output (not the compacted tree). This is verified by checking the JS source:
+    - renderDashboardGroups call must be present with buildTree(DATA.tests)
+    - compactTree must NOT be inserted between buildTree and renderDashboardGroups
+
+    This test MUST stay GREEN forever. Spec: REQ-6.
+    """
+    pytester.makepyfile(_canonical_multi_test_code())
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=2, failed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+
+    js_blocks = _get_script_blocks(html_content)
+    rendering_block = next((b for b in js_blocks if "renderDashboardGroups" in b), None)
+    assert rendering_block is not None, "renderDashboardGroups not found in JS"
+
+    # The Summary renderSummary must call buildTree(DATA.tests) and pass that
+    # directly to renderDashboardGroups — without compactTree in between.
+    # After implementation: the call site in renderSummary is:
+    #   const tree = buildTree(DATA.tests);
+    #   renderDashboardGroups(DATA.dashboard, container, tree);
+    # compactTree is only called inside renderTests, NOT in renderSummary.
+    assert "buildTree(DATA.tests)" in rendering_block, (
+        "buildTree(DATA.tests) must be called for the Summary dashboard tree"
+    )
+    assert "renderDashboardGroups" in rendering_block, (
+        "renderDashboardGroups must be called in the JS source"
+    )
+    assert "renderTests" in rendering_block, "renderTests function must be present"

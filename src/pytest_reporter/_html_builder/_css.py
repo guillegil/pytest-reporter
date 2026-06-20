@@ -655,6 +655,13 @@ button { font-family: inherit; }
 }
 .tree-children { display: none; }
 .tree-node.expanded > .tree-children { display: block; }
+/* Breadcrumb separator for collapsed chain nodes (tests-tree-cleanup) */
+.crumb-sep {
+  color: var(--c-text3);
+  padding: 0 0.2em;
+  font-weight: 300;
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .tree-icon { transition: none; }
 }

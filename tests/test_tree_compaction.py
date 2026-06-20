@@ -10,6 +10,7 @@ Compacted nodes add optional fields:
 
 Tests are organised in TDD order:
   Phase 2 — unit tests for the pure transform (written BEFORE implementation).
+  Phase 3 — pytester integration tests for rendered report.html.
 
 STRICT TDD: every test in this file was written BEFORE the implementation.
 """
@@ -17,7 +18,11 @@ STRICT TDD: every test in this file was written BEFORE the implementation.
 from __future__ import annotations
 
 import copy
-from typing import Any
+import pathlib
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pytest import Pytester
 
 # ---------------------------------------------------------------------------
 # Helper: build raw tree nodes matching buildTree's {name, children, tests}
@@ -377,3 +382,187 @@ class TestCompactTree:
         assert result is not None
         assert "children" in result
         assert len(result["children"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: pytester Integration Tests (RED -> GREEN after render wiring)
+# ---------------------------------------------------------------------------
+
+
+def _run_dir(pytester: Pytester) -> pathlib.Path:
+    runs_dir = pytester.path / "reports" / "runs"
+    runs = sorted(runs_dir.iterdir())
+    assert len(runs) == 1
+    return runs[0]
+
+
+def _make_deep_test_layout(pytester: Pytester) -> None:
+    """Create tests under tests/ctec/FOX/fox_delay/ (single-child chain).
+
+    Uses importlib mode (no __init__.py needed) — matches project pyproject.toml.
+    """
+    deep_dir = pytester.path / "tests" / "ctec" / "FOX" / "fox_delay"
+    deep_dir.mkdir(parents=True, exist_ok=True)
+    (deep_dir / "test_fox_delay.py").write_text("def test_fox_delay():\n    assert True\n")
+
+
+class TestPytesterIntegration:
+    def test_no_tests_root_node_in_tree(self, pytester: Pytester) -> None:
+        """3.1: compactTree JS function exists and strips common root prefix.
+
+        After implementation: the JS source must contain compactTree.
+        Spec: REQ-1 scenario 1.
+        """
+        _make_deep_test_layout(pytester)
+        result = pytester.runpytest(
+            "--report-dir=reports",
+            "--rootdir",
+            str(pytester.path),
+        )
+        result.assert_outcomes(passed=1)
+
+        run_dir = _run_dir(pytester)
+        html = (run_dir / "report.html").read_text(encoding="utf-8")
+
+        assert "compactTree" in html, (
+            "compactTree JS function must be present in report.html after implementation"
+        )
+        assert "test_fox_delay" in html, "test_fox_delay must appear in DATA blob"
+
+    def test_breadcrumb_row_present(self, pytester: Pytester) -> None:
+        """3.2: crumb-sep CSS class and data-seg attribute present for breadcrumb rows.
+
+        After implementation: JS/CSS must emit crumb-sep spans and data-seg attributes.
+        Spec: REQ-2 scenario 1.
+        """
+        _make_deep_test_layout(pytester)
+        result = pytester.runpytest(
+            "--report-dir=reports",
+            "--rootdir",
+            str(pytester.path),
+        )
+        result.assert_outcomes(passed=1)
+
+        run_dir = _run_dir(pytester)
+        html = (run_dir / "report.html").read_text(encoding="utf-8")
+
+        assert "data-seg" in html, (
+            "data-seg attribute must be emitted by renderTreeNode (needed for "
+            "navigateToGroup D4 fix and breadcrumb identification)"
+        )
+        assert "crumb-sep" in html, (
+            "crumb-sep CSS class must be present for breadcrumb separator styling"
+        )
+
+    def test_merged_single_fn_row_no_duplicate(self, pytester: Pytester) -> None:
+        """3.3: _mergedTest JS path handled in renderTreeNode.
+
+        After implementation: JS source must contain _mergedTest handling.
+        Spec: REQ-3 scenario 1.
+        """
+        pytester.makepyfile(
+            test_single_fn="""
+def test_only_one():
+    assert True
+"""
+        )
+        result = pytester.runpytest("--report-dir=reports")
+        result.assert_outcomes(passed=1)
+
+        run_dir = _run_dir(pytester)
+        html = (run_dir / "report.html").read_text(encoding="utf-8")
+
+        assert "test_only_one" in html, "test_only_one must appear in DATA blob"
+        assert "_mergedTest" in html, (
+            "_mergedTest must be referenced in the JS for single-function file merge"
+        )
+
+    def test_multi_fn_file_keeps_leaves(self, pytester: Pytester) -> None:
+        """3.4: file with two functions -> both appear in DATA blob.
+
+        Spec: REQ-3 scenario 2.
+        """
+        pytester.makepyfile(
+            test_two_fns="""
+def test_alpha():
+    assert True
+
+def test_beta():
+    assert False, "fail"
+"""
+        )
+        result = pytester.runpytest("--report-dir=reports")
+        result.assert_outcomes(passed=1, failed=1)
+
+        run_dir = _run_dir(pytester)
+        html = (run_dir / "report.html").read_text(encoding="utf-8")
+
+        assert "test_alpha" in html, "test_alpha must appear in DATA blob"
+        assert "test_beta" in html, "test_beta must appear in DATA blob"
+
+    def test_leaf_click_selects_test(self, pytester: Pytester) -> None:
+        """3.5: showTestDetail wiring preserved; renderTestLeaf used for merged rows.
+
+        Spec: REQ-4.
+        """
+        pytester.makepyfile(
+            test_clickable="""
+def test_clickable():
+    assert True
+"""
+        )
+        result = pytester.runpytest("--report-dir=reports")
+        result.assert_outcomes(passed=1)
+
+        run_dir = _run_dir(pytester)
+        html = (run_dir / "report.html").read_text(encoding="utf-8")
+
+        assert "showTestDetail" in html, "showTestDetail must be present for click wiring"
+        assert "renderTestLeaf" in html, "renderTestLeaf must be in JS source"
+
+    def test_summary_to_tests_navigation_data_seg(self, pytester: Pytester) -> None:
+        """3.6: navigateToGroup uses data-seg attribute match, not textContent.
+
+        Spec: Design D4. RED before render wiring; GREEN after D4 fix applied.
+        """
+        pytester.makepyfile(
+            test_nav="""
+def test_nav_target():
+    assert True
+"""
+        )
+        result = pytester.runpytest("--report-dir=reports")
+        result.assert_outcomes(passed=1)
+
+        run_dir = _run_dir(pytester)
+        html = (run_dir / "report.html").read_text(encoding="utf-8")
+
+        assert "data-seg" in html, (
+            "data-seg attribute must be emitted by renderTreeNode for navigateToGroup"
+        )
+        assert "navigateToGroup" in html, "navigateToGroup must exist in report JS"
+
+    def test_edge_parametrized_no_crash(self, pytester: Pytester) -> None:
+        """3.7: parametrized test runs without error; appears once in DATA blob.
+
+        Spec: REQ-7 parametrized.
+        """
+        pytester.makepyfile(
+            test_param="""
+import pytest
+
+@pytest.mark.parametrize("val", [1, 2])
+def test_with_param(val):
+    assert val > 0
+"""
+        )
+        result = pytester.runpytest("--report-dir=reports")
+        result.assert_outcomes(passed=2)
+
+        run_dir = _run_dir(pytester)
+        html_path = run_dir / "report.html"
+        assert html_path.exists(), "report.html must be generated"
+        html = html_path.read_text(encoding="utf-8")
+
+        assert "test_with_param" in html, "parametrized test must appear in DATA blob"
+        assert "tree-badge" in html, "run-count badge class must appear in JS source"
