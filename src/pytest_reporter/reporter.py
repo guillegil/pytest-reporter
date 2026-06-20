@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import time
 import warnings
 from datetime import UTC, datetime
@@ -24,9 +25,40 @@ from ._safety import guard, guard_void
 from ._symlinks import update_latest_copy
 
 try:
-    from pytest_verify import get_check_results  # type: ignore[import-not-found]
+    from pytest_verify import get_check_results
 except ImportError:  # pragma: no cover
     get_check_results = None
+
+try:
+    _VERIFY_INSTALLED = importlib.util.find_spec("pytest_verify") is not None
+except (ImportError, ValueError):  # pragma: no cover
+    _VERIFY_INSTALLED = False
+
+
+def _verify_outdated_warning(get_check_results_fn: object, *, verify_installed: bool) -> str | None:
+    """Return a diagnostic message if pytest-verify is present but too old.
+
+    Distinguishes the dangerous silent case (pytest-verify installed but lacking
+    the public ``get_check_results`` reader, so verification cards are captured
+    by nobody) from the benign case (pytest-verify simply not installed, where
+    no checks are expected). Only the former warrants a warning.
+
+    Args:
+        get_check_results_fn: The imported ``get_check_results`` callable, or
+            ``None`` if the import failed.
+        verify_installed: Whether ``pytest_verify`` is importable at all.
+
+    Returns:
+        A human-readable warning message, or ``None`` if nothing is wrong.
+    """
+    if get_check_results_fn is None and verify_installed:
+        return (
+            "pytest-verify is installed but does not expose get_check_results(); "
+            "verification cards will not appear in the report. Upgrade pytest-verify "
+            "(>=0.2.0)."
+        )
+    return None
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -150,6 +182,12 @@ class Reporter:
         self._session_start_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         self.context.ensure_dirs()
         self._tee = install_capture(self.config)
+
+        # Surface the silent-loss case: pytest-verify present but too old to
+        # expose get_check_results, so verification cards would never appear.
+        msg = _verify_outdated_warning(get_check_results, verify_installed=_VERIFY_INSTALLED)
+        if msg is not None:
+            warnings.warn(f"pytest-reporter: {msg}", stacklevel=2)
 
     def _do_collection_modifyitems(
         self,
