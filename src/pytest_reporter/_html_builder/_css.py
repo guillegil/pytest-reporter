@@ -370,6 +370,7 @@ button { font-family: inherit; }
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
 }
+/* Fixed donut card dimensions prevent layout shift as charts load */
 .chart-card {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
@@ -378,6 +379,8 @@ button { font-family: inherit; }
   text-align: center;
   cursor: pointer;
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+  min-height: 210px;
+  box-sizing: border-box;
 }
 .chart-card:hover {
   border-color: var(--c-border2);
@@ -393,6 +396,22 @@ button { font-family: inherit; }
   white-space: nowrap;
 }
 .chart-card svg { display: block; margin: 0 auto; }
+/* donut-counts: accessible numeric summary below each donut (WCAG SC 1.4.1) */
+.donut-counts {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text2);
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.donut-counts .dc-passed { color: var(--c-passed); }
+.donut-counts .dc-failed { color: var(--c-failed); }
+.donut-counts .dc-skipped { color: var(--c-skipped); }
+.donut-counts .dc-error { color: var(--c-error); }
+.donut-counts .dc-rate { color: var(--c-text2); font-weight: 600; }
 .chart-legend {
   display: flex;
   gap: 12px;
@@ -415,6 +434,59 @@ button { font-family: inherit; }
   display: inline-block;
   flex-shrink: 0;
 }
+/* pass-rate-bar: AAA-grade dense chart (style='bars' or auto-dense heuristic) */
+.pass-rate-bars-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pass-rate-bar {
+  display: grid;
+  grid-template-columns: minmax(80px, 20%) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+}
+.pass-rate-bar:hover { border-color: var(--c-border2); box-shadow: var(--shadow-sm); }
+.pass-rate-bar-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pass-rate-bar-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--c-surface2);
+  overflow: hidden;
+  position: relative;
+}
+.pass-rate-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--c-passed);
+  transition: width 0.3s var(--ease-out);
+}
+.pass-rate-bar-stats {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--c-text2);
+  white-space: nowrap;
+  text-align: right;
+  min-width: 120px;
+}
+.pass-rate-bar-stats .prs-rate { font-weight: 700; font-size: 11px; color: var(--c-text); }
+.pass-rate-bar-stats .prs-passed { color: var(--c-passed); }
+.pass-rate-bar-stats .prs-failed { color: var(--c-failed); }
+.pass-rate-bar-stats .prs-skipped { color: var(--c-skipped); }
+.pass-rate-bar-stats .prs-error { color: var(--c-error); }
 
 @media (max-width: 640px) {
   .summary-hero { flex-direction: column; gap: 20px; padding: 22px 20px; }

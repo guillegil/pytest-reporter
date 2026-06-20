@@ -151,6 +151,166 @@ function legendEl(counts) {
   );
 }
 
+// Accessible numeric counts below a donut (WCAG SC 1.4.1 — not color alone).
+// Shows: ✓N ✕N ⊘N ⚠N  ·  NN% pass
+function donutCountsEl(counts) {
+  const total = counts.passed + counts.failed + counts.skipped + counts.error;
+  const rate = total > 0 ? Math.round((counts.passed / total) * 100) : 0;
+  return el('div', {className:'donut-counts'},
+    el('span', {className:'dc-passed', 'aria-label':'passed'}, '✓' + counts.passed),
+    el('span', {className:'dc-failed', 'aria-label':'failed'}, '✕' + counts.failed),
+    el('span', {className:'dc-skipped', 'aria-label':'skipped'}, '⊘' + counts.skipped),
+    el('span', {className:'dc-error', 'aria-label':'error'}, '⚠' + counts.error),
+    el('span', {className:'dc-rate', 'aria-label':'pass rate'}, '· ' + rate + '%')
+  );
+}
+
+// Walk the buildTree result to the node at path[]; returns null if not found.
+function getNodeAtPath(tree, pathParts) {
+  let node = tree;
+  for (const part of pathParts) {
+    if (!node.children[part]) return null;
+    node = node.children[part];
+  }
+  return node;
+}
+
+// Collect descendant nodes at exactly `depth` levels below `node`.
+// depth=1 → direct children; depth=2 → grandchildren; etc.
+function collectAtDepth(node, depth, pathSoFar) {
+  if (depth === 0) return [{node, path: pathSoFar}];
+  const results = [];
+  Object.entries(node.children).forEach(([name, child]) => {
+    const sub = collectAtDepth(child, depth - 1, pathSoFar + (pathSoFar ? '/' : '') + name);
+    results.push(...sub);
+  });
+  return results;
+}
+
+// Render a donut grid section for an array of {node, path, label} entries.
+function renderDonutGroup(entries, sectionLabel) {
+  if (entries.length === 0) return null;
+  const cards = entries.map(({node, path, label}) => {
+    const a = nodeAgg(node);
+    return el('div', {className:'chart-card', onClick:()=>navigateToGroup(path)},
+      el('h3', null, label),
+      donutSVG(a, 110),
+      donutCountsEl(a),
+      legendEl(a)
+    );
+  });
+  const title = el('div', {className:'charts-section-title'},
+    sectionLabel,
+    el('span', {className:'charts-section-count'}, String(entries.length))
+  );
+  return el('div', {className:'charts-section'}, title, el('div', {className:'charts-grid'}, cards));
+}
+
+// Render a pass-rate bars section for an array of {node, path, label} entries.
+// AAA: values always visible as text (not color alone).
+function renderBarsGroup(entries, sectionLabel) {
+  if (entries.length === 0) return null;
+  const rows = entries.map(({node, path, label}) => {
+    const a = nodeAgg(node);
+    const total = a.total || 1;
+    const rate = Math.round((a.passed / total) * 100);
+    const fillPct = rate.toFixed(1) + '%';
+    return el('div', {className:'pass-rate-bar', onClick:()=>navigateToGroup(path), role:'button', tabindex:'0'},
+      el('span', {className:'pass-rate-bar-name', title:label}, label),
+      el('div', {className:'pass-rate-bar-track'},
+        el('div', {className:'pass-rate-bar-fill', style:'width:' + fillPct})
+      ),
+      el('div', {className:'pass-rate-bar-stats'},
+        el('span', {className:'prs-rate'}, rate + '%'),
+        ' ',
+        el('span', {className:'prs-passed', 'aria-label':'passed'}, '✓' + a.passed),
+        ' ',
+        el('span', {className:'prs-failed', 'aria-label':'failed'}, '✕' + a.failed),
+        a.skipped > 0 ? el('span', {className:'prs-skipped', 'aria-label':'skipped'}, ' ⊘' + a.skipped) : null,
+        a.error > 0 ? el('span', {className:'prs-error', 'aria-label':'error'}, ' ⚠' + a.error) : null
+      )
+    );
+  });
+  const title = el('div', {className:'charts-section-title'},
+    sectionLabel,
+    el('span', {className:'charts-section-count'}, String(entries.length))
+  );
+  return el('div', {className:'charts-section'}, title,
+    el('div', {className:'pass-rate-bars-section'}, rows)
+  );
+}
+
+// Determine renderer for a group based on group.style + density heuristic.
+// 'auto' density heuristic (pinned threshold): depth >= 2 OR child count > 5 → bars; else donuts.
+// Comment kept in sync with design spec: "depth >= 2 OR child count > 5"
+function pickRenderer(style, depth, childCount) {
+  if (style === 'bars') return 'bars';
+  if (style === 'donut') return 'donut';
+  // style === 'auto': density heuristic
+  return (depth >= 2 || childCount > 5) ? 'bars' : 'donut';
+}
+
+// Render all configured dashboard groups from DATA.dashboard.
+// When is_default=true, falls back to built-in default: depth-1 children of
+// each top-level tree node, using style='auto' (no all-tests donut).
+function renderDashboardGroups(dashboard, container, tree) {
+  if (dashboard.is_default) {
+    // Default grouping: depth-1 feature donuts per top-level group (no all-tests donut).
+    const topGroups = Object.entries(tree.children);
+    topGroups.forEach(([groupName, groupNode]) => {
+      const features = Object.entries(groupNode.children);
+      if (features.length === 0) return;
+      const entries = features.map(([fname, fnode]) => ({
+        node: fnode,
+        path: groupName + '/' + fname,
+        label: fname,
+      }));
+      const renderer = pickRenderer('auto', 1, features.length);
+      const sectionLabel = groupName + ' — Features';
+      const section = renderer === 'bars'
+        ? renderBarsGroup(entries, sectionLabel)
+        : renderDonutGroup(entries, sectionLabel);
+      if (section) container.appendChild(section);
+    });
+    return;
+  }
+
+  // Config-driven grouping: iterate groups in order.
+  dashboard.groups.forEach(group => {
+    const pathParts = group.path;
+    const targetNode = getNodeAtPath(tree, pathParts);
+    const groupLabel = group.label || pathParts[pathParts.length - 1] || '';
+
+    // include_self: render an aggregate card for the path node itself.
+    if (group.include_self && targetNode) {
+      const selfPath = pathParts.join('/');
+      const selfSectionLabel = groupLabel + ' (aggregate)';
+      const selfEntries = [{node: targetNode, path: selfPath, label: groupLabel}];
+      const selfRenderer = pickRenderer(group.style, 0, 1);
+      const selfSection = selfRenderer === 'bars'
+        ? renderBarsGroup(selfEntries, selfSectionLabel)
+        : renderDonutGroup(selfEntries, selfSectionLabel);
+      if (selfSection) container.appendChild(selfSection);
+    }
+
+    // Depth-N descendants: collect nodes at group.depth levels below path.
+    if (targetNode && group.depth > 0) {
+      const descendants = collectAtDepth(targetNode, group.depth, pathParts.join('/'));
+      if (descendants.length === 0) return;
+      const entries = descendants.map(({node, path}) => {
+        const parts = path.split('/');
+        return {node, path, label: parts[parts.length - 1]};
+      });
+      const renderer = pickRenderer(group.style, group.depth, entries.length);
+      const sectionLabel = groupLabel + (group.depth > 1 ? ' — Depth ' + group.depth : ' — Features');
+      const section = renderer === 'bars'
+        ? renderBarsGroup(entries, sectionLabel)
+        : renderDonutGroup(entries, sectionLabel);
+      if (section) container.appendChild(section);
+    }
+  });
+}
+
 // ─── Summary Tab ─────────────────────────────────────────────────────
 function renderSummary() {
   const panel = document.getElementById('tab-summary');
@@ -220,57 +380,12 @@ function renderSummary() {
   );
   container.appendChild(counters);
 
-  // ── Overall donut ──
-  const overallSection = el('div', {className:'charts-section'},
-    el('div', {className:'charts-section-title'}, 'Overall'),
-    el('div', {className:'charts-grid'},
-      el('div', {className:'chart-card'}, el('h3', null, 'All Tests'), donutSVG(agg, 150), legendEl(agg))
-    )
-  );
-  container.appendChild(overallSection);
-
-  // ── Per top-level group ──
+  // ── Config-driven dashboard groups (donuts or pass-rate bars per group) ──
+  // NOTE: "All Tests" whole-suite donut REMOVED (configurable-dashboard change).
+  // Top counter cards already convey suite-level totals. Groups are config-driven.
   const tree = buildTree(DATA.tests);
-  const topGroups = Object.entries(tree.children);
-  if (topGroups.length > 0) {
-    const groupCards = topGroups.map(([name, node]) => {
-      const a = nodeAgg(node);
-      return el('div', {className:'chart-card', onClick:()=>navigateToGroup(name)},
-        el('h3', null, name), donutSVG(a, 130), legendEl(a)
-      );
-    });
-    const topTitle = el('div', {className:'charts-section-title'},
-      'Top-Level Groups',
-      el('span', {className:'charts-section-count'}, String(topGroups.length))
-    );
-    const topSection = el('div', {className:'charts-section'},
-      topTitle,
-      el('div', {className:'charts-grid'}, groupCards)
-    );
-    container.appendChild(topSection);
+  renderDashboardGroups(DATA.dashboard, container, tree);
 
-    // Per-feature donuts
-    topGroups.forEach(([groupName, groupNode]) => {
-      const features = Object.entries(groupNode.children);
-      if (features.length > 0) {
-        const featureCards = features.map(([fname, fnode]) => {
-          const a = nodeAgg(fnode);
-          return el('div', {className:'chart-card', onClick:()=>navigateToGroup(groupName+'/'+fname)},
-            el('h3', null, fname), donutSVG(a, 110), legendEl(a)
-          );
-        });
-        const featTitle = el('div', {className:'charts-section-title'},
-          groupName + ' \u2014 Features',
-          el('span', {className:'charts-section-count'}, String(features.length))
-        );
-        const section = el('div', {className:'charts-section'},
-          featTitle,
-          el('div', {className:'charts-grid'}, featureCards)
-        );
-        container.appendChild(section);
-      }
-    });
-  }
   panel.appendChild(container);
 }
 

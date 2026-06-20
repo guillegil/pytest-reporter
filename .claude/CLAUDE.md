@@ -314,7 +314,8 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 - No external CDN dependencies for charts.
 
 ### Four dashboard tabs:
-1. **Summary** — Counters (passed/failed/skipped/error/retried), donut charts (overall + per-feature).
+1. **Summary** — Counters (passed/failed/skipped/error/retried), config-driven donut charts or
+   pass-rate bars per group (no whole-suite "All Tests" donut; top counters convey totals).
 2. **Tests** — Left: collapsible tree (folders → files → functions, with status pills). Right: run pills + detail sub-tabs (Summary, Procedure, Artifacts, Retries).
 3. **Session Logs** — Collapsible tree by child logger name, reconstructed from `source` arrays. Search bar + level filters.
 4. **Report** — Run metadata, versions, platform, command line args, full `pytest.log` viewer.
@@ -333,7 +334,16 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 | Skipped | `#F59E0B` |
 | Error | `#F97316` |
 
-### Feature level for graphs: always depth 1 below top-level group. Fixed, not heuristic.
+### Feature level for graphs: configurable via `pytest_reporter_dashboard` hook / `report_dashboard` fixture.
+
+Each group spec carries `path` (required), `depth` (default 1), `include_self` (default False), `label`,
+and `style` (`"auto"` | `"donut"` | `"bars"`, default `"auto"`). When unconfigured, defaults to
+depth-1 children of each top-level tree node. The whole-suite "All Tests" donut is removed; top counter
+cards convey suite-level totals instead. See `_types.py` (DashboardGroupSpec / NormalizedGroup /
+DashboardConfig) and `_dashboard_config.normalize_dashboard()`.
+
+`"auto"` density heuristic (pinned threshold): `depth >= 2` OR child count > 5 → pass-rate bars;
+else donut grid.
 
 ## Artifact System (§9)
 
@@ -447,4 +457,7 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 - **Retry folders omit `parameters.json`.** Parent folder is the single source of truth.
 - **Aggregate counters use final outcome.** Failed-then-retried-passed = counted as passed.
 - **HTML report is ONE file.** Everything inline. Artifacts base64-encoded. No CDN.
-- **Feature depth for graphs is FIXED at depth 1.** No heuristic tree walking.
+- **Feature depth for graphs is configurable** via `pytest_reporter_dashboard` hook / `report_dashboard`
+  fixture (DashboardGroupSpec: `path`, `depth`, `include_self`, `label`, `style`). Default: depth-1
+  per top-level group. Style `"auto"` uses density heuristic (`depth >= 2` or child count > 5 → bars).
+  Whole-suite "All Tests" donut is removed; top counter cards convey totals.

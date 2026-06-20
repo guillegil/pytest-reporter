@@ -120,6 +120,11 @@ def test_golden_byte_equivalence(pytester: Pytester) -> None:
 
     Note: because pytester runs in a subprocess, we cannot use pytest.warns /
     recwarn for warning capture here.  This test has no warning assertions.
+
+    Golden regenerated: configurable-dashboard — intentional, not a regression.
+    Changes: all-tests whole-suite donut removed; config-driven grouping added;
+    donut-counts accessibility class added to donut cards; DATA.dashboard key
+    added to embedded JSON. The lazy in-process hash capture adapts automatically.
     """
     global _GOLDEN_HASH  # noqa: PLW0603
 
