@@ -67,6 +67,64 @@ function nodeAgg(node) {
   return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e};
 }
 
+// ─── Tree compaction transform (pure — never mutates input) ──────────────
+// Step 1: Strip the longest common leading single-child, no-own-tests prefix.
+function commonPrefixStrip(root) {
+  let node = root;
+  while (true) {
+    const keys = Object.keys(node.children);
+    if (keys.length !== 1) break;
+    if (node.tests && node.tests.length > 0) break;
+    node = node.children[keys[0]];
+  }
+  return node;
+}
+
+// Step 2: Recursively collapse single-child-dir chains into breadcrumb nodes.
+// A node with no own tests and exactly one child dir is merged with that child,
+// accumulating _segments. Stops when the merged node has 2+ children or own tests.
+function collapseChains(node) {
+  // Recurse into children first (post-order)
+  const newChildren = {};
+  Object.entries(node.children).forEach(([k, v]) => { newChildren[k] = collapseChains(v); });
+
+  // Build a working copy (never mutate input)
+  let cur = { name: node.name, _segments: node._segments || [node.name],
+               children: newChildren, tests: node.tests };
+
+  // Merge while single-child-dir and no own tests
+  while (!cur.tests.length && Object.keys(cur.children).length === 1) {
+    const childKey = Object.keys(cur.children)[0];
+    const child = cur.children[childKey];
+    const childSegs = child._segments || [childKey];
+    cur = { name: cur._segments.concat(childSegs).join(' / '),
+            _segments: cur._segments.concat(childSegs),
+            children: child.children,
+            tests: child.tests };
+  }
+  return cur;
+}
+
+// Step 3: Flag file nodes (no child dirs, exactly one test) for merged rendering.
+function flagSingleFnMerges(node) {
+  const newChildren = {};
+  Object.entries(node.children).forEach(([k, v]) => { newChildren[k] = flagSingleFnMerges(v); });
+  const cur = { name: node.name, _segments: node._segments, children: newChildren,
+                tests: node.tests };
+  if (!Object.keys(cur.children).length && cur.tests.length === 1) {
+    cur._mergedTest = cur.tests[0];
+  }
+  return cur;
+}
+
+// Compose all three steps into a single pure transform.
+// rawRoot is never mutated; a new node graph is returned.
+function compactTree(rawRoot) {
+  const stripped = commonPrefixStrip(rawRoot);
+  const collapsed = collapseChains(stripped);
+  return flagSingleFnMerges(collapsed);
+}
+
 // ─── Donut chart ─────────────────────────────────────────────────────
 function donutSVG(counts, size) {
   size = size || 130;
