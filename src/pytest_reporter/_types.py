@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 # --- Metadata panel type alias (report-metadata-panel) ---
 
@@ -148,6 +148,40 @@ class StepJson(TypedDict, total=False):
 
 class ProcedureJson(TypedDict):
     steps: list[StepJson]
+
+
+# --- Dashboard grouping schema (configurable-dashboard) ---
+
+
+class DashboardGroupSpec(TypedDict, total=False):
+    """Raw user-supplied group spec (from hook or fixture).
+
+    Only ``path`` is required; all other keys are optional and default on
+    normalization via ``_dashboard_config.normalize_dashboard``.
+    """
+
+    path: str  # REQUIRED — '/' joined selector, e.g. 'tests/ctec'
+    depth: int  # levels below path expanded into charts. Default 1.
+    include_self: bool  # also render aggregate for path itself. Default False.
+    label: str  # section header label. Default: last path segment.
+    style: Literal["auto", "donut", "bars"]  # chart style per group. Default 'auto'.
+
+
+class NormalizedGroup(TypedDict):
+    """Post-validation, fully-defaulted group embedded as DATA.dashboard.groups[]."""
+
+    path: list[str]  # split selector, e.g. ['tests', 'ctec']
+    depth: int
+    include_self: bool
+    label: str
+    style: Literal["auto", "donut", "bars"]  # always present (defaulted to 'auto')
+
+
+class DashboardConfig(TypedDict):
+    """Validated grouping config embedded as DATA.dashboard in the HTML report."""
+
+    groups: list[NormalizedGroup]  # empty => renderer uses built-in default
+    is_default: bool  # True when no valid config supplied
 
 
 # --- Internal data structures ---
