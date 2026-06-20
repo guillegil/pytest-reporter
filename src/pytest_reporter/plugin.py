@@ -117,6 +117,29 @@ def report_artifacts(request: pytest.FixtureRequest) -> Path:
 
 
 @pytest.fixture(scope="session")
+def report_dashboard(request: pytest.FixtureRequest) -> list[object]:
+    """Provide a mutable session-level list for dashboard group specs.
+
+    Session-scoped fixtures append :class:`~pytest_reporter._types.DashboardGroupSpec`
+    dicts here; they are merged with ``pytest_reporter_dashboard`` hook
+    contributions and embedded in the HTML report at session end.  Fixture
+    values are appended last (after hook contributions) so they take precedence
+    in ordering.
+
+    When ``--report-dir`` is not active (reporter inactive), returns a
+    throwaway list so callers never crash.
+
+    Returns:
+        A mutable list of raw group spec dicts shared across the session.
+    """
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
+    if reporter is None:
+        # Reporter inactive (no --report-dir) — return a throwaway list
+        return []
+    return reporter.dashboard_store
+
+
+@pytest.fixture(scope="session")
 def report_metadata(request: pytest.FixtureRequest) -> dict[str, dict[str, object]]:
     """Provide a mutable session-level metadata dict for the HTML Report tab.
 

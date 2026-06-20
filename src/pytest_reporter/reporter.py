@@ -59,6 +59,8 @@ class Reporter:
         self._items: dict[str, Item] = {}
         # Mutable metadata dict populated via report_metadata fixture or hook
         self.metadata_store: dict[str, dict[str, Any]] = {}
+        # Mutable list populated via report_dashboard fixture
+        self.dashboard_store: list[object] = []
 
     def get_current_run_dir(self, nodeid: str) -> Path | None:
         """Get the current write directory for a test (retry-aware)."""

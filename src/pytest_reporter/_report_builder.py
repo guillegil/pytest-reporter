@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from ._dashboard_config import normalize_dashboard
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -294,6 +296,24 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         )
     system_metadata = merge_metadata(hook_results, reporter.metadata_store)
 
+    # Collect dashboard grouping config from hook + fixture.
+    # Same crash-safety pattern as metadata: a raising hook is warned and its
+    # data is dropped; the fixture-provided dashboard_store is still processed.
+    dashboard_hook_lists: list[list[object]] = []
+    try:
+        raw_dashboard_results: list[object] = reporter.config.hook.pytest_reporter_dashboard()
+        # pluggy returns LIFO (last-registered first); reverse to get
+        # registration order so first-registered hookimpl comes first in groups.
+        for raw in reversed(raw_dashboard_results):
+            if isinstance(raw, list):
+                dashboard_hook_lists.append(raw)
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(
+            f"pytest_reporter_dashboard hook raised an exception and will be ignored: {exc}",
+            stacklevel=2,
+        )
+    dashboard_config = normalize_dashboard(dashboard_hook_lists, reporter.dashboard_store)
+
     return {
         "timestamp": reporter.context.timestamp,
         "duration": round(duration, 2),
@@ -308,4 +328,5 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         "retries_enabled": reporter.max_retries > 0,
         "max_retries": reporter.max_retries,
         "system_metadata": system_metadata,
+        "dashboard": dashboard_config,
     }

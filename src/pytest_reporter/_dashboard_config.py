@@ -16,9 +16,7 @@ _VALID_STYLES = frozenset({"auto", "donut", "bars"})
 _MAX_DEPTH = 8
 
 
-def _validate_style(
-    raw: object, path_label: str
-) -> Literal["auto", "donut", "bars"]:
+def _validate_style(raw: object, path_label: str) -> Literal["auto", "donut", "bars"]:
     """Validate and return style; falls back to 'auto' with a warning on bad input.
 
     Args:
