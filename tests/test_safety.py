@@ -6,11 +6,7 @@ import warnings
 
 import pytest
 
-# These tests run in-process; _safety must be importable once it exists.
-# Until task 1.2 creates the module, these will fail with ImportError — that
-# is the expected RED state.
 from pytest_reporter._safety import guard, guard_void
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,7 +50,11 @@ def test_guard_catches_runtime_error_and_warns() -> None:
     """RuntimeError is caught; UserWarning is emitted; default is returned."""
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        result = guard("pytest_sessionstart", lambda: (_ for _ in ()).throw(RuntimeError("boom")), default="safe")
+
+        def _raise_runtime() -> str:
+            raise RuntimeError("boom")
+
+        result = guard("pytest_sessionstart", _raise_runtime, default="safe")
     assert result == "safe"
     assert len(caught) == 1
     w = caught[0]
@@ -86,7 +86,11 @@ def test_guard_void_catches_exception_and_warns() -> None:
     """guard_void catches an Exception and emits UserWarning; returns None."""
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        result = guard_void("pytest_runtest_logreport", lambda: (_ for _ in ()).throw(ValueError("bad")))
+
+        def _raise_value() -> None:
+            raise ValueError("bad")
+
+        result = guard_void("pytest_runtest_logreport", _raise_value)
     assert result is None
     assert len(caught) == 1
     assert "ValueError" in str(caught[0].message)
@@ -96,7 +100,11 @@ def test_warning_message_format() -> None:
     """Warning message must follow the exact format from the design."""
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        guard("my_hook", lambda: (_ for _ in ()).throw(TypeError("oops")), default=None)
+
+        def _raise_type() -> None:
+            raise TypeError("oops")
+
+        guard("my_hook", _raise_type, default=None)
     msg = str(caught[0].message)
     # Design mandates: "pytest-reporter: {hook_name} failed and was skipped: {ExcType}: {exc}"
     assert msg == "pytest-reporter: my_hook failed and was skipped: TypeError: oops"
@@ -109,8 +117,12 @@ def test_warning_message_format() -> None:
 
 def test_guard_reraises_keyboard_interrupt() -> None:
     """KeyboardInterrupt must propagate — never be swallowed."""
+
+    def _raise_ki() -> None:
+        raise KeyboardInterrupt
+
     with pytest.raises(KeyboardInterrupt):
-        guard("hook", lambda: (_ for _ in ()).throw(KeyboardInterrupt()), default=None)
+        guard("hook", _raise_ki, default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +132,12 @@ def test_guard_reraises_keyboard_interrupt() -> None:
 
 def test_guard_reraises_system_exit() -> None:
     """SystemExit must propagate — never be swallowed."""
+
+    def _raise_se() -> None:
+        raise SystemExit(1)
+
     with pytest.raises(SystemExit):
-        guard("hook", lambda: (_ for _ in ()).throw(SystemExit(1)), default=None)
+        guard("hook", _raise_se, default=None)
 
 
 # ---------------------------------------------------------------------------

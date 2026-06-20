@@ -20,6 +20,7 @@ from ._phase_capture import capture_phase_logs, write_run_finish_files
 from ._procedure import ProcedureTracker, _set_tracker
 from ._report_builder import build_html_data
 from ._retry import run_with_retries
+from ._safety import guard, guard_void
 from ._symlinks import update_latest_copy
 
 try:
@@ -71,11 +72,13 @@ class Reporter:
         run_info = self.collector.get_run_info(nodeid)
         return self.context.run_subdir(run_info.file_path, run_info.function_name, run_info.run_id)
 
+    # ------------------------------------------------------------------
+    # Hook shells — thin wrappers that delegate to _do_* via guard/guard_void
+    # ------------------------------------------------------------------
+
     def pytest_sessionstart(self, session: Session) -> None:
-        self._start_time = time.time()
-        self._session_start_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        self.context.ensure_dirs()
-        self._tee = install_capture(self.config)
+        """Hook shell: crash-safe wrapper around _do_sessionstart."""
+        guard_void("pytest_sessionstart", lambda: self._do_sessionstart(session))
 
     def pytest_collection_modifyitems(
         self,
@@ -83,11 +86,80 @@ class Reporter:
         config: Config,
         items: list[Item],
     ) -> None:
-        self.collector.register_items(items)
+        """Hook shell: crash-safe wrapper around _do_collection_modifyitems."""
+        guard_void(
+            "pytest_collection_modifyitems",
+            lambda: self._do_collection_modifyitems(session, config, items),
+        )
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_setup(self, item: Item) -> None:
-        """Create a fresh logger and procedure tracker for each test."""
+        """Hook shell: crash-safe wrapper around _do_runtest_setup."""
+        guard_void("pytest_runtest_setup", lambda: self._do_runtest_setup(item))
+
+    def pytest_runtest_logreport(self, report: TestReport) -> None:
+        """Hook shell: crash-safe wrapper around _do_runtest_logreport."""
+        guard_void("pytest_runtest_logreport", lambda: self._do_runtest_logreport(report))
+
+    def pytest_runtest_logfinish(
+        self,
+        nodeid: str,
+        location: tuple[str, int | None, str],
+    ) -> None:
+        """Hook shell: crash-safe wrapper around _do_runtest_logfinish."""
+        guard_void(
+            "pytest_runtest_logfinish",
+            lambda: self._do_runtest_logfinish(nodeid, location),
+        )
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_protocol(self, item: Item, nextitem: Item | None) -> bool | None:
+        """Override test protocol to implement retry logic."""
+        return guard(
+            "pytest_runtest_protocol",
+            lambda: run_with_retries(self, item, nextitem),
+            default=None,
+        )
+
+    @pytest.hookimpl(trylast=True)
+    def pytest_sessionfinish(self, session: Session, exitstatus: int) -> None:
+        """Hook shell: crash-safe wrapper around _do_sessionfinish."""
+        guard_void("pytest_sessionfinish", lambda: self._do_sessionfinish(session, exitstatus))
+
+    def pytest_terminal_summary(
+        self,
+        terminalreporter: pytest.TerminalReporter,
+        exitstatus: int,
+        config: Config,
+    ) -> None:
+        """Hook shell: crash-safe wrapper around _do_terminal_summary."""
+        guard_void(
+            "pytest_terminal_summary",
+            lambda: self._do_terminal_summary(terminalreporter, exitstatus, config),
+        )
+
+    # ------------------------------------------------------------------
+    # Real hook bodies — all logic lives here
+    # ------------------------------------------------------------------
+
+    def _do_sessionstart(self, session: Session) -> None:
+        """Real body of pytest_sessionstart."""
+        self._start_time = time.time()
+        self._session_start_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        self.context.ensure_dirs()
+        self._tee = install_capture(self.config)
+
+    def _do_collection_modifyitems(
+        self,
+        session: Session,  # noqa: ARG002
+        config: Config,  # noqa: ARG002
+        items: list[Item],
+    ) -> None:
+        """Real body of pytest_collection_modifyitems."""
+        self.collector.register_items(items)
+
+    def _do_runtest_setup(self, item: Item) -> None:
+        """Real body of pytest_runtest_setup: create fresh logger and tracker per test."""
         nodeid = item.nodeid
         if nodeid not in self.collector._run_map:
             return
@@ -105,7 +177,8 @@ class Reporter:
         self._procedure_trackers[nodeid] = tracker
         _set_tracker(tracker)
 
-    def pytest_runtest_logreport(self, report: TestReport) -> None:
+    def _do_runtest_logreport(self, report: TestReport) -> None:
+        """Real body of pytest_runtest_logreport."""
         nodeid = report.nodeid
         if nodeid not in self.collector._run_map:
             return
@@ -113,24 +186,26 @@ class Reporter:
             return
         capture_phase_logs(self, report)
 
-    def pytest_runtest_logfinish(
+    def _do_runtest_logfinish(
         self,
         nodeid: str,
         location: tuple[str, int | None, str],
     ) -> None:
+        """Real body of pytest_runtest_logfinish."""
         if nodeid not in self.collector._run_map:
             return
         if nodeid in self._finished_runs:
             return
         write_run_finish_files(self, nodeid, location, get_check_results)
 
-    @pytest.hookimpl(tryfirst=True)
-    def pytest_runtest_protocol(self, item: Item, nextitem: Item | None) -> bool | None:
-        """Override test protocol to implement retry logic."""
-        return run_with_retries(self, item, nextitem)
+    def _do_sessionfinish(self, session: Session, exitstatus: int) -> None:  # noqa: ARG002
+        """Real body of pytest_sessionfinish.
 
-    @pytest.hookimpl(trylast=True)
-    def pytest_sessionfinish(self, session: Session, exitstatus: int) -> None:
+        The inner HTML try/except block (C1 guard) is preserved verbatim from the
+        original implementation. It produces a degraded report on HTML build failure
+        and still refreshes 01_latest/. The outer guard (in the hook shell) acts as
+        the last-resort net for any exception OUTSIDE this inner block.
+        """
         duration = time.time() - self._start_time
         session_end_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -182,12 +257,13 @@ class Reporter:
         # guarded write block above so it fires even when the build failed.
         update_latest_copy(self.context.reports_dir, self.context.run_dir)
 
-    def pytest_terminal_summary(
+    def _do_terminal_summary(
         self,
         terminalreporter: pytest.TerminalReporter,
-        exitstatus: int,
-        config: Config,
+        exitstatus: int,  # noqa: ARG002
+        config: Config,  # noqa: ARG002
     ) -> None:
+        """Real body of pytest_terminal_summary."""
         terminalreporter.write_sep("=", "Report")
         terminalreporter.write_line(f"  HTML:  {self.context.run_dir / 'report.html'}")
         terminalreporter.write_line(f"  JUnit: {self.context.run_dir / 'junit.xml'}")
