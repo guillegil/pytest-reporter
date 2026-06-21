@@ -751,3 +751,169 @@ def test_summary_tab_unchanged_after_compaction(pytester: Pytester) -> None:
         "renderDashboardGroups must be called in the JS source"
     )
     assert "renderTests" in rendering_block, "renderTests function must be present"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 / Phase 5: Backtick markup rendering — RED before GREEN
+# ---------------------------------------------------------------------------
+
+
+def test_mono_step_renders_span(pytester: Pytester) -> None:
+    """PTF-1: step with backtick description → report.html contains .proc-mono span."""
+    pytester.makepyfile("""
+        from pytest_reporter import step
+
+        def test_markup():
+            with step("Set `A` to 1"):
+                pass
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+
+    # The JS renders proc-mono spans; since the HTML is JS-rendered, we check
+    # that description_segments are embedded in DATA and renderFormattedDesc is present.
+    # Direct span check: find 'proc-mono' in script block (JS function definition)
+    # and confirm description_segments in DATA JSON.
+    import json as _json  # noqa: PLC0415
+
+    js_blocks = _get_script_blocks(html_content)
+    data_block = next((b for b in js_blocks if "const DATA" in b), None)
+    assert data_block is not None, "const DATA block not found"
+
+    # Extract DATA JSON
+    idx = data_block.find("const DATA = ")
+    json_start = data_block.index("{", idx)
+    depth = 0
+    in_string = False
+    escape = False
+    json_end = json_start
+    for i, ch in enumerate(data_block[json_start:], json_start):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+        if not in_string:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    json_end = i
+                    break
+    data = _json.loads(data_block[json_start : json_end + 1])
+
+    # Check that description_segments is embedded for the formatted step
+    found_segments = False
+    for test in data.get("tests", []):
+        for run in test.get("runs", []):
+            proc = run.get("procedure", {})
+            for st in proc.get("steps", []):
+                if st.get("description_segments"):
+                    for seg in st["description_segments"]:
+                        if seg.get("style") == "mono":
+                            found_segments = True
+    assert found_segments, "description_segments with mono style not found in DATA"
+
+    # Check renderFormattedDesc is defined in the JS rendering block
+    rendering_block = next((b for b in js_blocks if "renderProcedure" in b), None)
+    assert rendering_block is not None, "renderProcedure not found in JS"
+    assert "renderFormattedDesc" in rendering_block, (
+        "renderFormattedDesc function must be defined in the JS"
+    )
+    assert "proc-mono" in rendering_block, "proc-mono class must be assigned in renderFormattedDesc"
+
+
+def test_plain_step_no_proc_mono(pytester: Pytester) -> None:
+    """PTF-3 / RI-1: plain step → no description_segments in DATA JSON, byte-identical fallback."""
+    import json as _json  # noqa: PLC0415
+
+    pytester.makepyfile("""
+        from pytest_reporter import step
+
+        def test_plain():
+            with step("plain description without backticks"):
+                pass
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+
+    js_blocks = _get_script_blocks(html_content)
+    data_block = next((b for b in js_blocks if "const DATA" in b), None)
+    assert data_block is not None
+
+    # Extract only the DATA JSON object (not the whole script which contains JS source)
+    idx = data_block.find("const DATA = ")
+    json_start = data_block.index("{", idx)
+    depth = 0
+    in_string = False
+    escape = False
+    json_end = json_start
+    for i, ch in enumerate(data_block[json_start:], json_start):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+        if not in_string:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    json_end = i
+                    break
+    json_str = data_block[json_start : json_end + 1]
+    data = _json.loads(json_str)
+
+    # description_segments must NOT appear in any step for plain descriptions
+    found_segments = False
+    for test in data.get("tests", []):
+        for run in test.get("runs", []):
+            proc = run.get("procedure", {})
+            for st in proc.get("steps", []):
+                if "description_segments" in st:
+                    found_segments = True
+    assert not found_segments, (
+        "description_segments must be absent from DATA JSON for plain (no-markup) steps"
+    )
+
+
+def test_xss_backtick_script_tag_inert(pytester: Pytester) -> None:
+    """PTF-4 / RI-2: backtick-wrapped </script> is stored as escaped text, never executed.
+
+    The _script_escape pass rewrites "</" to "<\\/" in the REPORT_DATA JSON blob,
+    so description_segments carrying "</script>" inherit this escaping and the
+    document structure is preserved (no raw "</script>" inside a script block).
+    """
+    pytester.makepyfile(r"""
+        from pytest_reporter import step
+
+        def test_xss():
+            with step("Send `</script>` now"):
+                pass
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+    _assert_valid_html(html_content)
+
+    # No raw </script> must appear inside any <script> block (RI-2)
+    for script_block in _get_script_blocks(html_content):
+        assert "</script>" not in script_block, (
+            "Raw </script> found inside a <script> block — XSS via description_segments!"
+        )

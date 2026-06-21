@@ -1225,6 +1225,13 @@ button { font-family: inherit; }
   color: var(--c-text3);
   font-size: 13px;
 }
+.proc-mono {
+  font-family: var(--font-mono);
+  background: var(--c-surface2);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
 .check-badge {
   display: inline-flex;
   align-items: center;

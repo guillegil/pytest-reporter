@@ -251,15 +251,28 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
       "start_time": "...", "end_time": "...", "duration_seconds": 0.0,
       "exc": null,
       "check": { ... },     // Optional — inline check descriptor
+      "description_segments": [   // Optional — absent when no backtick markup
+        {"text": "Set ", "style": null},
+        {"text": "Pulse.Enable", "style": "mono"},
+        {"text": " to 1", "style": null}
+      ],
       "substeps": [
         { "number": "1.1", "description": "...", "outcome": "passed", ... ,
-          "check": { ... }   // Optional — inline check descriptor
+          "check": { ... },  // Optional — inline check descriptor
+          "description_segments": [...]  // Optional — absent when no backtick markup
         }
       ]
     }
   ]
 }
 ```
+
+**`description_segments` rules:**
+- Present only when the description contains at least one backtick-delimited span.
+- Absent (key omitted, not null) for plain descriptions — backward compatible.
+- Each element: `{"text": str, "style": "mono" | null}`. `"mono"` = backtick span, `null` = plain run.
+- Raw `description` field always retained as-is (backticks included).
+- Forward-compatible: new `style` values may be added in future versions.
 
 ## Phase Capture Flow
 

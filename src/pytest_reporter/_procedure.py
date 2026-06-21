@@ -6,6 +6,8 @@ import traceback
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from pytest_reporter._markup import parse_markup
+
 
 class ProcedureError(Exception):
     """Raised when no active procedure tracker is found (via _get_tracker)."""
@@ -31,6 +33,22 @@ def _make_exc(exc: BaseException) -> dict[str, str]:
         "msg": str(exc),
         "tb": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
     }
+
+
+def _attach_segments(node: dict[str, Any], description: str) -> None:
+    """Parse backtick markup in *description* and attach segments to *node*.
+
+    Attaches ``node["description_segments"]`` ONLY when the parsed output
+    contains at least one ``"mono"`` segment.  Plain descriptions produce no
+    key (byte-identical to pre-change behaviour — PTF-3 / RI-1).
+
+    Args:
+        node: The step or substep dict being constructed.
+        description: The raw description string passed to ``step()``/``substep()``.
+    """
+    segs = parse_markup(description)
+    if any(s["style"] is not None for s in segs):
+        node["description_segments"] = segs
 
 
 class ProcedureTracker:
@@ -76,6 +94,7 @@ class ProcedureTracker:
             }
             if check is not None:
                 sub["check"] = check
+            _attach_segments(sub, description)
             parent["substeps"].append(sub)
             return sub
         else:
@@ -92,6 +111,7 @@ class ProcedureTracker:
             }
             if check is not None:
                 s["check"] = check
+            _attach_segments(s, description)
             self._steps.append(s)
             return s
 
@@ -142,6 +162,7 @@ class ProcedureTracker:
                 "exc": None,
                 "substeps": [],
             }
+            _attach_segments(s, description)
             self._steps.append(s)
             self._inside_cm = True
             return s
@@ -158,6 +179,7 @@ class ProcedureTracker:
                 "duration_seconds": 0.0,
                 "exc": None,
             }
+            _attach_segments(sub, description)
             parent["substeps"].append(sub)
             return sub
 

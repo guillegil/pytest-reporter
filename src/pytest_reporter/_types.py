@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from pytest_reporter._markup import Segment
 
 # --- Metadata panel type alias (report-metadata-panel) ---
 
@@ -126,6 +129,7 @@ class ParametersJson(TypedDict):
 class SubstepJson(TypedDict, total=False):
     number: str
     description: str
+    description_segments: list[Segment]
     outcome: str
     start_time: str
     end_time: str
@@ -137,6 +141,7 @@ class SubstepJson(TypedDict, total=False):
 class StepJson(TypedDict, total=False):
     number: str
     description: str
+    description_segments: list[Segment]
     outcome: str
     start_time: str
     end_time: str

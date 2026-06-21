@@ -1169,14 +1169,38 @@ function _appendCheckInline(row, check) {
   }
 }
 
+// renderFormattedDesc \u2014 returns a DocumentFragment (segments present) or a
+// plain TextNode (fallback for no-markup descriptions). Uses textContent only;
+// NEVER innerHTML. XSS-safe: segment text is always assigned via textContent.
+function renderFormattedDesc(node) {
+  const segs = node.description_segments;
+  if (!segs || segs.length === 0) {
+    return document.createTextNode(node.description || '');
+  }
+  const frag = document.createDocumentFragment();
+  segs.forEach(function(seg) {
+    if (seg.style === 'mono') {
+      const sp = document.createElement('span');
+      sp.className = 'proc-mono';
+      sp.textContent = seg.text;
+      frag.appendChild(sp);
+    } else {
+      frag.appendChild(document.createTextNode(seg.text));
+    }
+  });
+  return frag;
+}
+
 function renderProcedure(proc) {
   const list = el('div', {className:'procedure-list'});
   (proc.steps || []).forEach(step => {
     const s = el('div', {className:'procedure-step'});
+    const descSpan = el('span', {className:'procedure-step-desc'});
+    descSpan.appendChild(renderFormattedDesc(step));
     const header = el('div', {className:'procedure-step-header'},
       el('span', {className:`status-dot ${step.outcome || 'passed'}`}),
       el('span', {className:'procedure-step-number'}, step.number + '.'),
-      el('span', {className:'procedure-step-desc'}, step.description)
+      descSpan
     );
     _appendCheckInline(header, step.check);
     if (step.duration_seconds > 0) {
@@ -1191,10 +1215,12 @@ function renderProcedure(proc) {
     if (step.substeps && step.substeps.length > 0) {
       const subs = el('div', {className:'procedure-substeps'});
       step.substeps.forEach(sub => {
+        const subDescSpan = el('span', {className:'procedure-step-desc'});
+        subDescSpan.appendChild(renderFormattedDesc(sub));
         const subEl = el('div', {className:'procedure-substep'},
           el('span', {className:`status-dot ${sub.outcome || 'passed'}`}),
           el('span', {className:'procedure-step-number'}, sub.number),
-          el('span', {className:'procedure-step-desc'}, sub.description)
+          subDescSpan
         );
         _appendCheckInline(subEl, sub.check);
         if (sub.duration_seconds > 0) {
