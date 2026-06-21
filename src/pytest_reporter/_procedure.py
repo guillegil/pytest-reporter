@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 
 class ProcedureError(Exception):
-    """Raised when substep() is called before any step()."""
+    """Raised when no active procedure tracker is found (via _get_tracker)."""
 
 
 class ProcedureNestingError(Exception):
@@ -96,9 +96,14 @@ class ProcedureTracker:
             return s
 
     def record_substep(self, description: str) -> dict[str, Any]:
-        """Record an explicit substep under the current step."""
+        """Record an explicit substep under the most-recently-recorded step.
+
+        If no step has been recorded yet, the call is promoted to a
+        top-level step (preserve, never drop) instead of raising.
+        """
         if not self._steps:
-            raise ProcedureError("substep() called before any step() has been recorded")
+            # No active step: promote to a top-level step (preserve, never drop).
+            return self.record_step(description)
         now = _now()
         parent = self._steps[-1]
         sub_count = len(parent["substeps"]) + 1

@@ -283,7 +283,11 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 - `substep()` or `step()` inside `with step()` → level 2
 - Deeper → `ProcedureNestingError`
 
-### `substep()` before any `step()` → `ProcedureError`
+### `substep()` before any `step()` → promotes to a top-level step
+
+If `substep()` is called before any step has been recorded, it is promoted to a
+top-level step (description preserved, no raise). `substep()` binds to `_steps[-1]` —
+the most-recently-recorded step ("last step wins"), NOT necessarily the open CM step.
 
 ## Check Integration (§6.10 + §15)
 
@@ -415,7 +419,7 @@ else donut grid.
 - Context manager: timing, outcome tracking, exception re-raise
 - check= parameter: substep created from description, check field in JSON
 - Depth limit: >2 raises ProcedureNestingError
-- substep before step: raises ProcedureError
+- substep before step: promotes to a top-level step (no raise); no-active-tracker ProcedureError (from _get_tracker) is unchanged
 - Counter reset per test
 
 ### Artifacts:
@@ -456,6 +460,8 @@ else donut grid.
 - **Non-parametrized = `default/` folder.** Not `01/`.
 - **Retry folders omit `parameters.json`.** Parent folder is the single source of truth.
 - **Aggregate counters use final outcome.** Failed-then-retried-passed = counted as passed.
+- **`substep()` before any `step()` promotes, does NOT raise.** Calling `substep()` with no prior step promotes the call to a top-level step (description preserved). The no-active-tracker `ProcedureError` (raised by `_get_tracker` when called outside a test) is unchanged.
+- **`substep()` binds to the last-recorded step (`_steps[-1]`), not the open CM step.** "Last step wins" — if a plain `step()` was called inside a CM body, `substep()` attaches to that inner step.
 - **HTML report is ONE file.** Everything inline. Artifacts base64-encoded. No CDN.
 - **Feature depth for graphs is configurable** via `pytest_reporter_dashboard` hook / `report_dashboard`
   fixture (DashboardGroupSpec: `path`, `depth`, `include_self`, `label`, `style`). Default: depth-1

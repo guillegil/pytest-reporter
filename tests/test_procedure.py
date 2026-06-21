@@ -136,16 +136,99 @@ def test_step_cm_with_timing(pytester: Pytester) -> None:
     assert step_data["start_time"] != step_data["end_time"]
 
 
-def test_substep_before_step_raises(pytester: Pytester) -> None:
+def test_substep_before_step_promotes(pytester: Pytester) -> None:
+    """substep() with no active step must NOT raise — it promotes to a top-level step."""
     pytester.makepyfile("""
         from pytest_reporter import substep
 
-        def test_bad():
+        def test_promote():
             substep("No step yet")
     """)
     result = pytester.runpytest("--report-dir=reports")
-    result.assert_outcomes(failed=1)
-    result.stdout.fnmatch_lines(["*ProcedureError*"])
+    result.assert_outcomes(passed=1)
+
+    runs = list((pytester.path / "reports" / "runs").iterdir())
+    run_dir = runs[0]
+    proc = (
+        run_dir
+        / "tests"
+        / "test_substep_before_step_promotes.py"
+        / "test_promote"
+        / "default"
+        / "procedure.json"
+    )
+    data = json.loads(proc.read_text())
+
+    assert len(data["steps"]) == 1
+    assert data["steps"][0]["number"] == "1"
+    assert data["steps"][0]["description"] == "No step yet"
+    assert data["steps"][0]["outcome"] == "passed"
+
+
+def test_substep_promotion_numbering(pytester: Pytester) -> None:
+    """Orphan substep -> step '1'; subsequent step() -> '2'; substep attaches to '2' (last wins)."""
+    pytester.makepyfile("""
+        from pytest_reporter import step, substep
+
+        def test_numbering():
+            substep("A")
+            step("B")
+            substep("C")
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    runs = list((pytester.path / "reports" / "runs").iterdir())
+    run_dir = runs[0]
+    proc = (
+        run_dir
+        / "tests"
+        / "test_substep_promotion_numbering.py"
+        / "test_numbering"
+        / "default"
+        / "procedure.json"
+    )
+    data = json.loads(proc.read_text())
+
+    assert len(data["steps"]) == 2
+    assert data["steps"][0]["number"] == "1"
+    assert data["steps"][0]["description"] == "A"
+    assert data["steps"][1]["number"] == "2"
+    assert data["steps"][1]["description"] == "B"
+    # "C" attaches to the last-recorded step ("B", _steps[-1])
+    assert len(data["steps"][1]["substeps"]) == 1
+    assert data["steps"][1]["substeps"][0]["description"] == "C"
+
+
+def test_cm_step_inside_cm_demotes_regression(pytester: Pytester) -> None:
+    """plain step() inside an open with step(): must demote to substep (regression guard)."""
+    pytester.makepyfile("""
+        from pytest_reporter import step
+
+        def test_demote():
+            with step("L1"):
+                step("inner")
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    runs = list((pytester.path / "reports" / "runs").iterdir())
+    run_dir = runs[0]
+    proc = (
+        run_dir
+        / "tests"
+        / "test_cm_step_inside_cm_demotes_regression.py"
+        / "test_demote"
+        / "default"
+        / "procedure.json"
+    )
+    data = json.loads(proc.read_text())
+
+    assert len(data["steps"]) == 1
+    assert data["steps"][0]["number"] == "1"
+    assert data["steps"][0]["description"] == "L1"
+    assert len(data["steps"][0]["substeps"]) == 1
+    assert data["steps"][0]["substeps"][0]["description"] == "inner"
 
 
 def test_nesting_too_deep_raises(pytester: Pytester) -> None:
