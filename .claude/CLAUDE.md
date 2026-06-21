@@ -273,6 +273,10 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 
 ### procedure.json (§6.7)
 
+The schema is **recursive**: every node may contain a `substeps` list of the same shape.
+Leaf nodes omit `substeps` or have an empty list. Old 2-level files (flat leaf substeps)
+remain valid — a 2-level doc is a 3-level doc that never recurses deeper than one level.
+
 ```json
 {
   "steps": [
@@ -280,21 +284,26 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
       "start_time": "...", "end_time": "...", "duration_seconds": 0.0,
       "exc": null,
       "check": { ... },     // Optional — inline check descriptor
-      "description_segments": [   // Optional — absent when no backtick markup
+      "description_segments": [   // Optional — absent for plain str descriptions
         {"text": "Set ", "style": null},
         {"text": "Pulse.Enable", "style": "mono"},
         {"text": " to 1", "style": null}
       ],
-      "substeps": [
+      "substeps": [             // recursive; absent / [] => leaf node
         { "number": "1.1", "description": "...", "outcome": "passed", ... ,
-          "check": { ... },  // Optional — inline check descriptor
-          "description_segments": [...]  // Optional — absent when no backtick markup
+          "check": { ... },  // Optional
+          "description_segments": [...],  // Optional
+          "substeps": [     // L3 children
+            { "number": "1.1.1", "description": "...", "outcome": "passed", ... }
+          ]
         }
       ]
     }
   ]
 }
 ```
+
+Numbering examples: `1` / `1.1` / `1.1.1` / `1.1.2` / `1.2` / `1.2.1` / `2` / `2.1`
 
 **`description_segments` rules (typed constructors):**
 - Present only when `fmt.mono()` or `fmt.text(..., fmt.mono(...), ...)` is passed to `step()`/`substep()`.
@@ -321,16 +330,20 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 - With `check=descriptor`: creates auto substep from `descriptor["description"]`. Does NOT evaluate.
 - Counters reset per test via `pytest_runtest_call`.
 
-### Depth limit: exactly 2 levels.
-- `step()` → level 1
-- `substep()` or `step()` inside `with step()` → level 2
-- Deeper → `ProcedureNestingError`
+### Depth limit: exactly 3 levels (N.N.N).
+- `step()` at root → level 1
+- `step()` or `substep()` inside one open CM → level 2
+- `step()` or `substep()` inside two open CMs → level 3
+- Calls that would produce level 4 are **clamped** to level 3 (node attached as a
+  sibling at L3; no exception raised). `ProcedureNestingError` is retained for
+  import back-compat but is **no longer raised** from the depth-overflow path.
 
 ### `substep()` before any `step()` → promotes to a top-level step
 
-If `substep()` is called before any step has been recorded, it is promoted to a
-top-level step (description preserved, no raise). `substep()` binds to `_steps[-1]` —
-the most-recently-recorded step ("last step wins"), NOT necessarily the open CM step.
+If `substep()` is called before any step has been recorded at the current context
+level, it is promoted to a step at that level (description preserved, no raise).
+`substep()` attaches to the most-recently-recorded step at the current context level
+("last step wins").
 
 ## Check Integration (§6.10 + §15)
 

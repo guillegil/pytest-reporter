@@ -1191,52 +1191,49 @@ function renderFormattedDesc(node) {
   return frag;
 }
 
+// renderNode — recursive procedure node renderer (depth 1..3).
+// depth 1 = L1 step, depth 2 = L2 substep, depth 3 = L3 sub-substep.
+// Preserves renderFormattedDesc, _appendCheckInline, status dots, durations,
+// and exc at every depth. Old 2-level procedure.json is a depth-<=2 tree and
+// renders identically (leaf substeps have no .substeps → recursion terminates).
+function renderNode(node, depth) {
+  const cls = depth === 1 ? 'procedure-step'
+            : depth === 2 ? 'procedure-substep'
+            : 'procedure-substep procedure-subsubstep';
+  const row = el('div', {className: cls});
+  const descSpan = el('span', {className: 'procedure-step-desc'});
+  descSpan.appendChild(renderFormattedDesc(node));
+  const numText = depth === 1 ? node.number + '.' : node.number;
+  const header = el('div', {className: 'procedure-step-header'},
+    el('span', {className: `status-dot ${node.outcome || 'passed'}`}),
+    el('span', {className: 'procedure-step-number'}, numText),
+    descSpan
+  );
+  _appendCheckInline(header, node.check);
+  if (node.duration_seconds > 0) {
+    header.appendChild(el('span', {className: 'procedure-step-duration'},
+      node.duration_seconds.toFixed(2) + 's'));
+  }
+  row.appendChild(header);
+  if (node.exc) {
+    const excEl = el('div', {className: 'procedure-step-exc'});
+    excEl.textContent = node.exc.type + ': ' + node.exc.msg;
+    row.appendChild(excEl);
+  }
+  if (node.substeps && node.substeps.length > 0) {
+    const nextDepth = depth < 3 ? depth + 1 : 3;
+    const kids = el('div', {className: 'procedure-substeps'});
+    node.substeps.forEach(function(child) {
+      kids.appendChild(renderNode(child, nextDepth));
+    });
+    row.appendChild(kids);
+  }
+  return row;
+}
+
 function renderProcedure(proc) {
-  const list = el('div', {className:'procedure-list'});
-  (proc.steps || []).forEach(step => {
-    const s = el('div', {className:'procedure-step'});
-    const descSpan = el('span', {className:'procedure-step-desc'});
-    descSpan.appendChild(renderFormattedDesc(step));
-    const header = el('div', {className:'procedure-step-header'},
-      el('span', {className:`status-dot ${step.outcome || 'passed'}`}),
-      el('span', {className:'procedure-step-number'}, step.number + '.'),
-      descSpan
-    );
-    _appendCheckInline(header, step.check);
-    if (step.duration_seconds > 0) {
-      header.appendChild(el('span', {className:'procedure-step-duration'}, step.duration_seconds.toFixed(2) + 's'));
-    }
-    s.appendChild(header);
-    if (step.exc) {
-      const exc = el('div', {className:'procedure-step-exc'});
-      exc.textContent = step.exc.type + ': ' + step.exc.msg;
-      s.appendChild(exc);
-    }
-    if (step.substeps && step.substeps.length > 0) {
-      const subs = el('div', {className:'procedure-substeps'});
-      step.substeps.forEach(sub => {
-        const subDescSpan = el('span', {className:'procedure-step-desc'});
-        subDescSpan.appendChild(renderFormattedDesc(sub));
-        const subEl = el('div', {className:'procedure-substep'},
-          el('span', {className:`status-dot ${sub.outcome || 'passed'}`}),
-          el('span', {className:'procedure-step-number'}, sub.number),
-          subDescSpan
-        );
-        _appendCheckInline(subEl, sub.check);
-        if (sub.duration_seconds > 0) {
-          subEl.appendChild(el('span', {className:'procedure-step-duration'}, sub.duration_seconds.toFixed(2) + 's'));
-        }
-        if (sub.exc) {
-          const excEl = el('div', {className:'procedure-step-exc'});
-          excEl.textContent = sub.exc.type + ': ' + sub.exc.msg;
-          subEl.appendChild(excEl);
-        }
-        subs.appendChild(subEl);
-      });
-      s.appendChild(subs);
-    }
-    list.appendChild(s);
-  });
+  const list = el('div', {className: 'procedure-list'});
+  (proc.steps || []).forEach(function(s) { list.appendChild(renderNode(s, 1)); });
   return list;
 }
 

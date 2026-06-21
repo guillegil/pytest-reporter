@@ -1207,6 +1207,10 @@ button { font-family: inherit; }
   border-radius: 4px;
 }
 .procedure-substep:hover { background: var(--c-surface3); }
+.procedure-subsubstep {
+  font-size: 0.85em;
+  color: var(--c-text2);
+}
 .procedure-step-exc {
   margin-top: 6px;
   padding: 6px 10px;

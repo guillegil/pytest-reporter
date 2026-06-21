@@ -918,3 +918,163 @@ def test_backtick_literal_no_mono(pytester: Pytester) -> None:
                     found_segments = True
     assert found_description, "Literal backtick description not found in DATA"
     assert not found_segments, "Backtick string must NOT produce description_segments"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: 3-level recursive procedure render tests — RED before GREEN
+# ---------------------------------------------------------------------------
+
+
+def test_three_level_procedure_render(pytester: Pytester) -> None:
+    """3-level canonical fixture → HTML contains numbers 1, 1.1, 1.1.1 at correct depth."""
+    pytester.makepyfile("""
+        from pytest_reporter import step, substep
+
+        def test_three_levels():
+            with step("S"):
+                step("A")
+                substep("B")
+                substep("C")
+                step("D")
+                substep("E")
+            step("Another step")
+            substep("Another substep")
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+    _assert_valid_html(html_content)
+
+    # Verify DATA contains the 3-level tree
+    data = _extract_data_json(html_content)
+    proc: dict = {}
+    for test in data.get("tests", []):
+        for run in test.get("runs", []):
+            if run.get("procedure"):
+                proc = run["procedure"]
+
+    steps = proc.get("steps", [])
+    assert len(steps) == 2, f"Expected 2 top-level steps, got {len(steps)}"
+
+    s1 = steps[0]
+    assert s1["number"] == "1"
+    assert s1["description"] == "S"
+
+    s1_children = s1.get("substeps", [])
+    assert len(s1_children) == 2
+    assert s1_children[0]["number"] == "1.1"
+    assert s1_children[0]["description"] == "A"
+
+    a_children = s1_children[0].get("substeps", [])
+    assert len(a_children) == 2
+    assert a_children[0]["number"] == "1.1.1"
+    assert a_children[0]["description"] == "B"
+    assert a_children[1]["number"] == "1.1.2"
+    assert a_children[1]["description"] == "C"
+
+    # Verify HTML contains 3 distinct CSS depth classes
+    assert "procedure-step" in html_content
+    assert "procedure-substep" in html_content
+    assert "procedure-subsubstep" in html_content
+
+
+def test_two_level_backward_compat_render(pytester: Pytester) -> None:
+    """Old 2-level procedure.json → renders correctly; no JS error path fires."""
+    pytester.makepyfile("""
+        from pytest_reporter import step, substep
+
+        def test_two_levels():
+            with step("parent"):
+                substep("child")
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+    _assert_valid_html(html_content)
+
+    # Step and substep classes must both be present
+    assert "procedure-step" in html_content
+    assert "procedure-substep" in html_content
+    # procedure-subsubstep class is in CSS (always included) but must not appear
+    # in the DATA-driven rendered elements — only used by 3-level reports.
+
+    # DATA must be intact
+    data = _extract_data_json(html_content)
+    proc: dict = {}
+    for test in data.get("tests", []):
+        for run in test.get("runs", []):
+            if run.get("procedure"):
+                proc = run["procedure"]
+
+    steps = proc.get("steps", [])
+    assert len(steps) == 1
+    assert steps[0]["number"] == "1"
+    assert len(steps[0].get("substeps", [])) == 1
+    assert steps[0]["substeps"][0]["number"] == "1.1"
+
+
+def test_fmt_mono_at_depth3_no_innerhtml(pytester: Pytester) -> None:
+    """fmt.mono() at L3 renders via textContent only — no raw HTML injection."""
+    pytester.makepyfile("""
+        import pytest_reporter.fmt as fmt
+        from pytest_reporter import step
+
+        def test_l3_mono():
+            with step("L1"):
+                with step("L2"):
+                    step(fmt.mono("L3-mono-text"))
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+    _assert_valid_html(html_content)
+
+    # DATA must contain description_segments at L3
+    data = _extract_data_json(html_content)
+    proc: dict = {}
+    for test in data.get("tests", []):
+        for run in test.get("runs", []):
+            if run.get("procedure"):
+                proc = run["procedure"]
+
+    steps = proc.get("steps", [])
+    l2 = steps[0]["substeps"][0]
+    l3 = l2["substeps"][0]
+    assert l3["description"] == "L3-mono-text"
+    assert "description_segments" in l3
+    assert l3["description_segments"] == [{"text": "L3-mono-text", "style": "mono"}]
+
+    # The HTML must contain proc-mono span (rendered via textContent, not innerHTML)
+    assert "proc-mono" in html_content
+
+
+def test_xss_at_depth3_escaped(pytester: Pytester) -> None:
+    """L3 description containing </script> is escaped — must not appear unescaped."""
+    pytester.makepyfile("""
+        import pytest_reporter.fmt as fmt
+        from pytest_reporter import step
+
+        def test_xss():
+            with step("L1"):
+                with step("L2"):
+                    step(fmt.mono("</script><script>alert(1)</script>"))
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    html_content = (run_dir / "report.html").read_text(encoding="utf-8")
+    _assert_valid_html(html_content)
+
+    # The literal unescaped </script> must NOT be a free-standing script closer.
+    # It will appear inside the JSON data block (JSON-escaped), but must not
+    # terminate the <script> block prematurely.
+    script_blocks = _get_script_blocks(html_content)
+    for block in script_blocks:
+        assert "</script>" not in block, "Raw </script> found inside a <script> block — XSS at L3!"
