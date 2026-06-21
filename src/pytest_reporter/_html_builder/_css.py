@@ -1201,12 +1201,9 @@ button { font-family: inherit; }
 .procedure-substep {
   padding: 4px 10px;
   font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   border-radius: 4px;
 }
-.procedure-substep:hover { background: var(--c-surface3); }
+.procedure-step-header:hover { background: var(--c-surface3); border-radius: 4px; }
 .procedure-subsubstep {
   font-size: 0.85em;
   color: var(--c-text2);

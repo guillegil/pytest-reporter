@@ -1203,7 +1203,10 @@ function renderNode(node, depth) {
   const row = el('div', {className: cls});
   const descSpan = el('span', {className: 'procedure-step-desc'});
   descSpan.appendChild(renderFormattedDesc(node));
-  const numText = depth === 1 ? node.number + '.' : node.number;
+  const hasKids = node.substeps && node.substeps.length > 0;
+  // Parent nodes (depth 1 or anything with children) get a trailing dot:
+  // "1.", "1.1.", "2." — leaves stay bare: "1.1.1".
+  const numText = (depth === 1 || hasKids) ? node.number + '.' : node.number;
   const header = el('div', {className: 'procedure-step-header'},
     el('span', {className: `status-dot ${node.outcome || 'passed'}`}),
     el('span', {className: 'procedure-step-number'}, numText),
@@ -1220,7 +1223,7 @@ function renderNode(node, depth) {
     excEl.textContent = node.exc.type + ': ' + node.exc.msg;
     row.appendChild(excEl);
   }
-  if (node.substeps && node.substeps.length > 0) {
+  if (hasKids) {
     const nextDepth = depth < 3 ? depth + 1 : 3;
     const kids = el('div', {className: 'procedure-substeps'});
     node.substeps.forEach(function(child) {
