@@ -126,7 +126,15 @@ class ParametersJson(TypedDict):
 # --- procedure.json schema (§6.7) ---
 
 
-class SubstepJson(TypedDict, total=False):
+class ProcedureNodeJson(TypedDict, total=False):
+    """A single node in a recursive procedure tree (step, substep, or sub-substep).
+
+    All fields are optional (total=False) to support both intermediate nodes
+    (which always have substeps) and leaf nodes (which omit or have empty substeps).
+    The ``number`` field is absent before ``serialize()`` and assigned at serialize time.
+    ``substeps`` is absent or empty for leaf nodes; present and non-empty for parents.
+    """
+
     number: str
     description: str
     description_segments: list[Segment]
@@ -136,23 +144,16 @@ class SubstepJson(TypedDict, total=False):
     duration_seconds: float
     exc: dict[str, str] | None
     check: dict[str, Any] | None
+    substeps: list[ProcedureNodeJson]  # recursive; absent / [] => leaf node
 
 
-class StepJson(TypedDict, total=False):
-    number: str
-    description: str
-    description_segments: list[Segment]
-    outcome: str
-    start_time: str
-    end_time: str
-    duration_seconds: float
-    exc: dict[str, str] | None
-    substeps: list[SubstepJson]
-    check: dict[str, Any] | None
+# Back-compat aliases: imports of StepJson / SubstepJson continue to work.
+StepJson = ProcedureNodeJson
+SubstepJson = ProcedureNodeJson
 
 
 class ProcedureJson(TypedDict):
-    steps: list[StepJson]
+    steps: list[ProcedureNodeJson]
 
 
 # --- Dashboard grouping schema (configurable-dashboard) ---

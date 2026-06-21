@@ -17,7 +17,12 @@ class ProcedureError(Exception):
 
 
 class ProcedureNestingError(Exception):
-    """Raised when nesting exceeds two levels."""
+    """Retained for import back-compat.
+
+    Previously raised when nesting exceeded depth 2.  The depth-overflow path now
+    CLAMPS instead of raising; this class is kept only for back-compat imports.
+    It is still raised by ``_get_tracker`` when no active tracker exists.
+    """
 
 
 def _now() -> str:
@@ -91,20 +96,79 @@ def _attach_segments(node: dict[str, Any], description: str | _FormattedText) ->
         node["description_segments"] = segs
 
 
+def _make_node(
+    description: str | _FormattedText,
+    *,
+    check: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a bare procedure node dict.
+
+    Does NOT assign ``number`` — that is computed at serialize time.
+    Attaches ``description_segments`` when styled segments are present.
+
+    Args:
+        description: Plain string or FormattedText.
+        check: Optional check descriptor dict (presentation only).
+
+    Returns:
+        A node dict ready for appending to a parent's ``substeps`` list.
+    """
+    now = _now()
+    node: dict[str, Any] = {
+        "description": _display(description),
+        "outcome": "passed",
+        "start_time": now,
+        "end_time": now,
+        "duration_seconds": 0.0,
+        "exc": None,
+    }
+    if check is not None:
+        node["check"] = check
+    _attach_segments(node, description)
+    return node
+
+
+def _assign_numbers(nodes: list[dict[str, Any]], prefix: str = "") -> None:
+    """Recursively assign dotted ``number`` fields at serialize time.
+
+    Args:
+        nodes: List of sibling nodes.
+        prefix: Parent number prefix (empty string at root).
+    """
+    for i, node in enumerate(nodes):
+        num = f"{prefix}{i + 1}" if not prefix else f"{prefix}.{i + 1}"
+        node["number"] = num
+        children = node.get("substeps")
+        if children:
+            _assign_numbers(children, num)
+
+
 class ProcedureTracker:
-    """Tracks steps and substeps for a single test run."""
+    """Tracks steps and substeps for a single test run using a parent-stack model.
+
+    The tracker maintains a ``_cm_stack`` of open context-manager nodes.
+    The current parent is always ``_cm_stack[-1]`` (or ``_root`` when the stack
+    is empty).  Numbers are NOT assigned during recording; ``serialize()`` does
+    a single recursive walk to assign dotted numbers.
+
+    Max rendered depth is 3 (N.N.N).  Calls that would produce depth 4 are
+    *clamped* — the node is attached as a sibling at depth 3 (no exception raised).
+    """
 
     def __init__(self) -> None:
-        self._steps: list[dict[str, Any]] = []
-        self._step_counter: int = 0
-        self._depth: int = 0
-        self._inside_cm: bool = False
+        # Synthetic root node whose 'substeps' list IS the top-level step list.
+        self._root: dict[str, Any] = {"substeps": []}
+        # Stack of open CM nodes (pushed on __enter__, popped on __exit__).
+        self._cm_stack: list[dict[str, Any]] = []
 
     def reset(self) -> None:
-        self._steps.clear()
-        self._step_counter = 0
-        self._depth = 0
-        self._inside_cm = False
+        """Reset tracker state for a new test run."""
+        self._root = {"substeps": []}
+        self._cm_stack = []
+
+    def _current_parent(self) -> dict[str, Any]:
+        """Return the node whose ``substeps`` list is the current append target."""
+        return self._cm_stack[-1] if self._cm_stack else self._root
 
     def record_step(
         self,
@@ -112,62 +176,44 @@ class ProcedureTracker:
         *,
         check: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Record a step. If inside a CM step, becomes a substep.
+        """Record a step node under the current parent.
 
-        When *check* is provided (a check descriptor dict), it is
-        stored directly on the step/substep entry as inline metadata.
-        The step does NOT evaluate the check.
+        Depth clamp: if ``len(_cm_stack) >= 3`` (would create L4), the node is
+        instead appended to ``_cm_stack[-2]["substeps"]`` — making it a sibling
+        of the current CM node at depth 3.  No exception is raised.
+
+        When *check* is provided (a check descriptor dict), it is stored directly
+        on the step/substep entry as inline metadata.  The step does NOT evaluate
+        the check.
 
         Args:
-            description: Plain string or ``FormattedText`` from ``fmt.text``/``fmt.mono``.
+            description: Plain string or ``FormattedText``.
             check: Optional check descriptor dict (presentation only).
 
         Returns:
-            The step or substep dict that was recorded.
+            The node dict that was recorded.
         """
-        now = _now()
-        display = _display(description)
-        if self._inside_cm and self._steps:
-            # Inside a with-step context -> becomes substep
-            parent = self._steps[-1]
-            sub_count = len(parent["substeps"]) + 1
-            sub: dict[str, Any] = {
-                "number": f"{parent['number']}.{sub_count}",
-                "description": display,
-                "outcome": "passed",
-                "start_time": now,
-                "end_time": now,
-                "duration_seconds": 0.0,
-                "exc": None,
-            }
-            if check is not None:
-                sub["check"] = check
-            _attach_segments(sub, description)
-            parent["substeps"].append(sub)
-            return sub
+        node = _make_node(description, check=check)
+
+        if len(self._cm_stack) >= 3:
+            # Clamp: would be L4 → attach as L3 sibling under _cm_stack[-2].
+            clamp_parent = self._cm_stack[-2]
+            clamp_parent.setdefault("substeps", []).append(node)
         else:
-            self._step_counter += 1
-            s: dict[str, Any] = {
-                "number": str(self._step_counter),
-                "description": display,
-                "outcome": "passed",
-                "start_time": now,
-                "end_time": now,
-                "duration_seconds": 0.0,
-                "exc": None,
-                "substeps": [],
-            }
-            if check is not None:
-                s["check"] = check
-            _attach_segments(s, description)
-            self._steps.append(s)
-            return s
+            parent = self._current_parent()
+            parent.setdefault("substeps", []).append(node)
+
+        return node
 
     def record_substep(self, description: str | _FormattedText) -> dict[str, Any]:
         """Record an explicit substep under the most-recently-recorded step.
 
-        If no step has been recorded yet, the call is promoted to a
-        top-level step (preserve, never drop) instead of raising.
+        Rules:
+        - If no step recorded at the current level → promote to a step at that
+          level (preserve, never drop).
+        - Otherwise attach under the last child of the current parent.
+        - If attaching under that last child would produce depth 4
+          (``len(_cm_stack) >= 2``) → clamp to a sibling at the current level.
 
         Args:
             description: Plain string or ``FormattedText``.
@@ -175,84 +221,72 @@ class ProcedureTracker:
         Returns:
             The substep (or promoted step) dict.
         """
-        if not self._steps:
-            # No active step: promote to a top-level step (preserve, never drop).
-            return self.record_step(description)
-        now = _now()
-        display = _display(description)
-        parent = self._steps[-1]
-        sub_count = len(parent["substeps"]) + 1
-        sub: dict[str, Any] = {
-            "number": f"{parent['number']}.{sub_count}",
-            "description": display,
-            "outcome": "passed",
-            "start_time": now,
-            "end_time": now,
-            "duration_seconds": 0.0,
-            "exc": None,
-        }
-        _attach_segments(sub, description)
-        parent["substeps"].append(sub)
-        return sub
+        parent = self._current_parent()
+        children = parent.get("substeps", [])
 
-    def enter_step_cm(self, description: str | _FormattedText) -> dict[str, Any]:
+        if not children:
+            # No steps at this level → promote to a step here.
+            return self.record_step(description)
+
+        # Last step at this level is the attach target.
+        target = children[-1]
+
+        # Depth check: if attaching under target would create L4 → clamp.
+        # len(_cm_stack) >= 2 means: current level is already L2 (inside one CM),
+        # so target is L2 and its child would be L3; L3's child would be L4.
+        # But we only clamp when target itself is at L3, which means cm_stack depth >= 2.
+        if len(self._cm_stack) >= 2:
+            # Attaching under target (L3) → L4: clamp to sibling instead.
+            node = _make_node(description)
+            children.append(node)
+            return node
+
+        # Safe to attach under target.
+        node = _make_node(description)
+        target.setdefault("substeps", []).append(node)
+        return node
+
+    def enter_step_cm(
+        self,
+        description: str | _FormattedText,
+        *,
+        check: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool]:
         """Enter a step context manager.
+
+        Creates a node via the same ``record_step`` rule (including clamp), then
+        pushes it onto ``_cm_stack`` — unless the node was clamped (to keep depth ≤ 3).
 
         Args:
             description: Plain string or ``FormattedText``.
+            check: Optional check descriptor dict (presentation only).
 
         Returns:
-            The step or substep dict.
+            ``(node, pushed)`` — the node dict and a bool indicating whether it
+            was pushed onto the cm_stack (False when clamped).
         """
-        self._depth += 1
-        if self._depth > 2:
-            self._depth -= 1
-            raise ProcedureNestingError(
-                f"Maximum procedure nesting depth is 2, attempted depth {self._depth + 1}"
-            )
+        was_clamped = len(self._cm_stack) >= 3
+        node = self.record_step(description, check=check)
+        if not was_clamped:
+            self._cm_stack.append(node)
+            return node, True
+        # Clamped: do NOT push — depth would exceed 3.
+        return node, False
 
-        now = _now()
-        display = _display(description)
-        if self._depth == 1:
-            # Top-level step
-            self._step_counter += 1
-            s: dict[str, Any] = {
-                "number": str(self._step_counter),
-                "description": display,
-                "outcome": "passed",
-                "start_time": now,
-                "end_time": now,
-                "duration_seconds": 0.0,
-                "exc": None,
-                "substeps": [],
-            }
-            _attach_segments(s, description)
-            self._steps.append(s)
-            self._inside_cm = True
-            return s
-        else:
-            # Depth 2 -> substep under current step
-            parent = self._steps[-1]
-            sub_count = len(parent["substeps"]) + 1
-            sub: dict[str, Any] = {
-                "number": f"{parent['number']}.{sub_count}",
-                "description": display,
-                "outcome": "passed",
-                "start_time": now,
-                "end_time": now,
-                "duration_seconds": 0.0,
-                "exc": None,
-            }
-            _attach_segments(sub, description)
-            parent["substeps"].append(sub)
-            return sub
-
-    def exit_step_cm(self, step_data: dict[str, Any], exc: BaseException | None) -> None:
+    def exit_step_cm(
+        self,
+        step_data: dict[str, Any],
+        exc: BaseException | None,
+        pushed: bool,
+    ) -> None:
         """Exit a step context manager.
 
+        Records end timing and propagates failure to open ancestor CM nodes.
+
         Args:
-            step_data: The dict returned by ``enter_step_cm``.
+            step_data: The node dict returned by ``enter_step_cm``.
             exc: Exception if the block raised, else ``None``.
+            pushed: Whether this node was pushed onto the CM stack (from enter).
         """
         now = _now()
         step_data["end_time"] = now
@@ -261,16 +295,27 @@ class ProcedureTracker:
         if exc is not None:
             step_data["outcome"] = "failed"
             step_data["exc"] = _make_exc(exc)
-            # If substep failed, mark parent step failed too
-            if self._depth == 2 and self._steps:
-                self._steps[-1]["outcome"] = "failed"
+            # Propagate failure to all open CM ancestors.
+            for ancestor in self._cm_stack:
+                if ancestor is not step_data:
+                    ancestor["outcome"] = "failed"
 
-        self._depth -= 1
-        if self._depth == 0:
-            self._inside_cm = False
+        if pushed:
+            self._cm_stack.pop()
 
     def serialize(self) -> dict[str, Any]:
-        return {"steps": list(self._steps)}
+        """Serialize the procedure tree to a JSON-compatible dict.
+
+        Assigns dotted ``number`` fields via a recursive post-order walk before
+        returning.  The raw node dicts (in ``_root["substeps"]``) are mutated
+        in place to add ``number``.
+
+        Returns:
+            ``{"steps": [...]}`` with all nodes numbered.
+        """
+        steps = self._root.get("substeps", [])
+        _assign_numbers(steps)
+        return {"steps": steps}
 
 
 # --- Module-level active tracker ---
@@ -300,31 +345,23 @@ class _StepProxy:
     ) -> None:
         self._description = description
         self._check = check
-        self._step_data: dict[str, Any] | None = None
         self._tracker = _get_tracker()
-        self._used_as_cm = False
-        # Record immediately as plain step (if used as CM, __enter__ overrides)
+        self._pushed = False
+        # Capture the actual parent's substeps list BEFORE recording, so __enter__
+        # can remove the node from the correct list (avoids duplication).
+        parent = self._tracker._current_parent()
+        self._parent_children: list[dict[str, Any]] = parent.setdefault("substeps", [])
+        # Record immediately as a plain step.
         self._step_data = self._tracker.record_step(description, check=check)
 
     def __enter__(self) -> dict[str, Any]:
-        self._used_as_cm = True
-        # The step was already recorded via record_step; but that was a plain step.
-        # We need to undo that and use the CM path instead.
-        # Remove the last recorded step and re-enter as CM
         tracker = self._tracker
-        # Remove the just-recorded step (it was recorded in __init__)
-        if tracker._steps and tracker._steps[-1] is self._step_data:
-            tracker._steps.pop()
-            tracker._step_counter -= 1
-        elif self._step_data is not None:
-            # It was recorded as a substep inside a parent — remove it
-            if tracker._steps:
-                parent = tracker._steps[-1]
-                subs = parent.get("substeps", [])
-                if subs and subs[-1] is self._step_data:
-                    subs.pop()
-
-        self._step_data = tracker.enter_step_cm(self._description)
+        # Pop-and-re-record: remove the plain node from the parent's substeps list,
+        # then re-create it via enter_step_cm (which also pushes the CM stack).
+        if self._parent_children and self._parent_children[-1] is self._step_data:
+            self._parent_children.pop()
+        # Re-create via the CM entry path.
+        self._step_data, self._pushed = tracker.enter_step_cm(self._description, check=self._check)
         return self._step_data
 
     def __exit__(
@@ -333,7 +370,7 @@ class _StepProxy:
         exc_val: BaseException | None,
         tb: Any,  # noqa: ANN401
     ) -> Literal[False]:
-        self._tracker.exit_step_cm(self._step_data, exc_val)  # type: ignore[arg-type]
+        self._tracker.exit_step_cm(self._step_data, exc_val, self._pushed)
         return False  # Do not swallow exceptions
 
 
@@ -352,7 +389,7 @@ def step(
     Context manager::
 
         with step("Do something"):
-            step("Sub-action")  # becomes substep
+            step("Sub-action")  # becomes child at depth+1
 
     With a check descriptor (presentation only -- does NOT evaluate)::
 
