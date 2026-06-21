@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import traceback
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from pytest_reporter._markup import parse_markup
+if TYPE_CHECKING:
+    from pytest_reporter.fmt import Segment
+
+from pytest_reporter.fmt import FormattedText as _FormattedText
 
 
 class ProcedureError(Exception):
@@ -35,19 +38,56 @@ def _make_exc(exc: BaseException) -> dict[str, str]:
     }
 
 
-def _attach_segments(node: dict[str, Any], description: str) -> None:
-    """Parse backtick markup in *description* and attach segments to *node*.
+def normalize(description: str | _FormattedText) -> list[Segment] | None:
+    """Decide whether *description* produces ``description_segments``.
 
-    Attaches ``node["description_segments"]`` ONLY when the parsed output
-    contains at least one ``"mono"`` segment.  Plain descriptions produce no
-    key (byte-identical to pre-change behaviour — PTF-3 / RI-1).
+    Returns ``None`` when no segments key should be stored (plain str, or a
+    ``FormattedText`` whose every segment has ``style == None``).  Returns the
+    segment list when at least one segment has a non-``None`` style.
+
+    Args:
+        description: Either a plain ``str`` or a ``FormattedText``.
+
+    Returns:
+        ``list[Segment]`` when styled segments are present; ``None`` otherwise.
+    """
+    if isinstance(description, str):
+        return None
+    if any(s["style"] is not None for s in description):
+        return list(description)
+    return None
+
+
+def _display(description: str | _FormattedText) -> str:
+    """Return the display string for *description*.
+
+    For a plain ``str`` this is the string itself.  For a ``FormattedText``
+    this is the concatenation of all segment ``text`` fields.
+
+    Args:
+        description: Either a plain ``str`` or a ``FormattedText``.
+
+    Returns:
+        A plain string suitable for ``node["description"]``.
+    """
+    if isinstance(description, str):
+        return description
+    return "".join(s["text"] for s in description)
+
+
+def _attach_segments(node: dict[str, Any], description: str | _FormattedText) -> None:
+    """Attach ``description_segments`` to *node* when styled segments are present.
+
+    Attaches ``node["description_segments"]`` ONLY when ``normalize`` returns a
+    non-``None`` list.  Plain descriptions produce no key — byte-identical to
+    pre-change behaviour.
 
     Args:
         node: The step or substep dict being constructed.
-        description: The raw description string passed to ``step()``/``substep()``.
+        description: The original description value (str or FormattedText).
     """
-    segs = parse_markup(description)
-    if any(s["style"] is not None for s in segs):
+    segs = normalize(description)
+    if segs is not None:
         node["description_segments"] = segs
 
 
@@ -68,7 +108,7 @@ class ProcedureTracker:
 
     def record_step(
         self,
-        description: str,
+        description: str | _FormattedText,
         *,
         check: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -77,15 +117,23 @@ class ProcedureTracker:
         When *check* is provided (a check descriptor dict), it is
         stored directly on the step/substep entry as inline metadata.
         The step does NOT evaluate the check.
+
+        Args:
+            description: Plain string or ``FormattedText`` from ``fmt.text``/``fmt.mono``.
+            check: Optional check descriptor dict (presentation only).
+
+        Returns:
+            The step or substep dict that was recorded.
         """
         now = _now()
+        display = _display(description)
         if self._inside_cm and self._steps:
             # Inside a with-step context -> becomes substep
             parent = self._steps[-1]
             sub_count = len(parent["substeps"]) + 1
             sub: dict[str, Any] = {
                 "number": f"{parent['number']}.{sub_count}",
-                "description": description,
+                "description": display,
                 "outcome": "passed",
                 "start_time": now,
                 "end_time": now,
@@ -101,7 +149,7 @@ class ProcedureTracker:
             self._step_counter += 1
             s: dict[str, Any] = {
                 "number": str(self._step_counter),
-                "description": description,
+                "description": display,
                 "outcome": "passed",
                 "start_time": now,
                 "end_time": now,
@@ -115,32 +163,47 @@ class ProcedureTracker:
             self._steps.append(s)
             return s
 
-    def record_substep(self, description: str) -> dict[str, Any]:
+    def record_substep(self, description: str | _FormattedText) -> dict[str, Any]:
         """Record an explicit substep under the most-recently-recorded step.
 
         If no step has been recorded yet, the call is promoted to a
         top-level step (preserve, never drop) instead of raising.
+
+        Args:
+            description: Plain string or ``FormattedText``.
+
+        Returns:
+            The substep (or promoted step) dict.
         """
         if not self._steps:
             # No active step: promote to a top-level step (preserve, never drop).
             return self.record_step(description)
         now = _now()
+        display = _display(description)
         parent = self._steps[-1]
         sub_count = len(parent["substeps"]) + 1
         sub: dict[str, Any] = {
             "number": f"{parent['number']}.{sub_count}",
-            "description": description,
+            "description": display,
             "outcome": "passed",
             "start_time": now,
             "end_time": now,
             "duration_seconds": 0.0,
             "exc": None,
         }
+        _attach_segments(sub, description)
         parent["substeps"].append(sub)
         return sub
 
-    def enter_step_cm(self, description: str) -> dict[str, Any]:
-        """Enter a step context manager."""
+    def enter_step_cm(self, description: str | _FormattedText) -> dict[str, Any]:
+        """Enter a step context manager.
+
+        Args:
+            description: Plain string or ``FormattedText``.
+
+        Returns:
+            The step or substep dict.
+        """
         self._depth += 1
         if self._depth > 2:
             self._depth -= 1
@@ -149,12 +212,13 @@ class ProcedureTracker:
             )
 
         now = _now()
+        display = _display(description)
         if self._depth == 1:
             # Top-level step
             self._step_counter += 1
             s: dict[str, Any] = {
                 "number": str(self._step_counter),
-                "description": description,
+                "description": display,
                 "outcome": "passed",
                 "start_time": now,
                 "end_time": now,
@@ -172,7 +236,7 @@ class ProcedureTracker:
             sub_count = len(parent["substeps"]) + 1
             sub: dict[str, Any] = {
                 "number": f"{parent['number']}.{sub_count}",
-                "description": description,
+                "description": display,
                 "outcome": "passed",
                 "start_time": now,
                 "end_time": now,
@@ -184,7 +248,12 @@ class ProcedureTracker:
             return sub
 
     def exit_step_cm(self, step_data: dict[str, Any], exc: BaseException | None) -> None:
-        """Exit a step context manager."""
+        """Exit a step context manager.
+
+        Args:
+            step_data: The dict returned by ``enter_step_cm``.
+            exc: Exception if the block raised, else ``None``.
+        """
         now = _now()
         step_data["end_time"] = now
         step_data["duration_seconds"] = _duration(step_data["start_time"], now)
@@ -223,7 +292,12 @@ def _get_tracker() -> ProcedureTracker:
 class _StepProxy:
     """Returned by step(). Supports use as both a plain call result and context manager."""
 
-    def __init__(self, description: str, *, check: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        description: str | _FormattedText,
+        *,
+        check: dict[str, Any] | None = None,
+    ) -> None:
         self._description = description
         self._check = check
         self._step_data: dict[str, Any] | None = None
@@ -263,12 +337,17 @@ class _StepProxy:
         return False  # Do not swallow exceptions
 
 
-def step(description: str, *, check: dict[str, Any] | None = None) -> _StepProxy:
+def step(
+    description: str | _FormattedText,
+    *,
+    check: dict[str, Any] | None = None,
+) -> _StepProxy:
     """Record a test procedure step. Can be used as a plain call or context manager.
 
     Plain call::
 
         step("Do something")
+        step(fmt.text("Set ", fmt.mono("Pulse.Enable"), " to 1"))
 
     Context manager::
 
@@ -278,10 +357,21 @@ def step(description: str, *, check: dict[str, Any] | None = None) -> _StepProxy
     With a check descriptor (presentation only -- does NOT evaluate)::
 
         step("Verify voltage", check=verify.approx(3.3, 3.3, name="PSU output", units="V"))
+
+    Args:
+        description: Plain string or ``FormattedText`` from ``fmt.text``/``fmt.mono``.
+        check: Optional check descriptor (stored inline; never evaluated by the reporter).
+
+    Returns:
+        A :class:`_StepProxy` usable as a plain call result or context manager.
     """
     return _StepProxy(description, check=check)
 
 
-def substep(description: str) -> None:
-    """Record an explicit substep under the most recent step."""
+def substep(description: str | _FormattedText) -> None:
+    """Record an explicit substep under the most recent step.
+
+    Args:
+        description: Plain string or ``FormattedText`` from ``fmt.text``/``fmt.mono``.
+    """
     _get_tracker().record_substep(description)

@@ -343,104 +343,12 @@ def test_step_with_check_descriptor(pytester: Pytester) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: Parser unit tests (no pytester) — RED before GREEN
-# ---------------------------------------------------------------------------
-
-
-class TestParseMarkup:
-    """Unit tests for parse_markup() — PTF-1 / PTF-3 / PTF-4 / PTF-5 / PTF-6."""
-
-    def test_plain_no_backticks(self) -> None:
-        """PTF-1 / PTF-3: plain text with no backticks → single plain segment."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("Configure timeout to 30")
-        assert segs == [{"text": "Configure timeout to 30", "style": None}]
-
-    def test_single_mono(self) -> None:
-        """PTF-1: single backtick span → 3 segments, middle is mono."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("Set `A` to 1")
-        assert segs == [
-            {"text": "Set ", "style": None},
-            {"text": "A", "style": "mono"},
-            {"text": " to 1", "style": None},
-        ]
-
-    def test_multiple_mono(self) -> None:
-        """PTF-1: two backtick spans → 4 or more segments, both inner are mono."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("Set `A` and `B`")
-        assert segs == [
-            {"text": "Set ", "style": None},
-            {"text": "A", "style": "mono"},
-            {"text": " and ", "style": None},
-            {"text": "B", "style": "mono"},
-        ]
-
-    def test_unclosed_backtick(self) -> None:
-        """PTF-5: single unmatched backtick → one plain segment including literal backtick."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("Set `Pulse")
-        assert segs == [{"text": "Set `Pulse", "style": None}]
-
-    def test_odd_backticks_deterministic(self) -> None:
-        """PTF-5: 3 backticks → first pair matched as mono; unmatched backtick + tail is plain."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("a `b` c `d")
-        assert segs == [
-            {"text": "a ", "style": None},
-            {"text": "b", "style": "mono"},
-            {"text": " c `d", "style": None},
-        ]
-
-    def test_empty_backtick_pair(self) -> None:
-        """PTF-6: empty backtick pair `` dropped — result is empty list."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("``")
-        assert segs == []
-
-    def test_adjacent_backtick_pairs(self) -> None:
-        """PTF-6: adjacent pairs `A``B` → A mono, B mono, no crash."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("`A``B`")
-        assert segs == [
-            {"text": "A", "style": "mono"},
-            {"text": "B", "style": "mono"},
-        ]
-
-    def test_html_inside_backticks(self) -> None:
-        """PTF-4: HTML tag inside backticks → mono segment with raw text (no HTML)."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("Send `</script>` now")
-        assert segs == [
-            {"text": "Send ", "style": None},
-            {"text": "</script>", "style": "mono"},
-            {"text": " now", "style": None},
-        ]
-
-    def test_html_outside_backticks(self) -> None:
-        """PTF-4: HTML tag outside backticks → single plain segment with raw string."""
-        from pytest_reporter._markup import parse_markup
-
-        segs = parse_markup("Click <b>OK</b>")
-        assert segs == [{"text": "Click <b>OK</b>", "style": None}]
-
-
-# ---------------------------------------------------------------------------
-# Phase 3: _attach_segments wiring tests — RED before GREEN
+# Phase 3 / 2.2: _attach_segments wiring tests — typed API (RED before GREEN)
 # ---------------------------------------------------------------------------
 
 
 class TestAttachSegments:
-    """Unit tests for _attach_segments wiring in ProcedureTracker — PTF-2 / PTF-3 / RI-1."""
+    """Unit tests for _attach_segments wiring in ProcedureTracker — typed fmt API."""
 
     def _make_tracker(self) -> object:
         from pytest_reporter._procedure import ProcedureTracker, _set_tracker
@@ -450,7 +358,7 @@ class TestAttachSegments:
         return t
 
     def test_plain_step_no_segments_key(self) -> None:
-        """PTF-3 / RI-1: plain description → NO description_segments key in dict."""
+        """str description → NO description_segments key in node (byte-identical)."""
         tracker = self._make_tracker()
         from pytest_reporter._procedure import ProcedureTracker
 
@@ -458,65 +366,203 @@ class TestAttachSegments:
         node = tracker.record_step("plain description")
         assert "description_segments" not in node
 
-    def test_mono_step_has_segments(self) -> None:
-        """PTF-2: backtick description → description_segments present with correct list."""
+    def test_fmt_mono_step_has_segments(self) -> None:
+        """fmt.mono('x') → description_segments present in record_step node."""
+        import pytest_reporter.fmt as fmt
+
         tracker = self._make_tracker()
         from pytest_reporter._procedure import ProcedureTracker
 
         assert isinstance(tracker, ProcedureTracker)
-        node = tracker.record_step("Set `A` to 1")
+        node = tracker.record_step(fmt.mono("x"))
+        assert "description_segments" in node
+        assert node["description_segments"] == [{"text": "x", "style": "mono"}]
+        assert node["description"] == "x"
+
+    def test_fmt_text_step_has_segments(self) -> None:
+        """fmt.text with mixed parts → description_segments in node."""
+        import pytest_reporter.fmt as fmt
+
+        tracker = self._make_tracker()
+        from pytest_reporter._procedure import ProcedureTracker
+
+        assert isinstance(tracker, ProcedureTracker)
+        node = tracker.record_step(fmt.text("Set ", fmt.mono("A"), " to 1"))
         assert "description_segments" in node
         assert node["description_segments"] == [
             {"text": "Set ", "style": None},
             {"text": "A", "style": "mono"},
             {"text": " to 1", "style": None},
         ]
+        assert node["description"] == "Set A to 1"
 
     def test_cm_step_has_segments(self) -> None:
-        """PTF-1: CM step with backtick → node from enter_step_cm has segments."""
+        """fmt.mono via enter_step_cm → node has description_segments."""
+        import pytest_reporter.fmt as fmt
+
         tracker = self._make_tracker()
         from pytest_reporter._procedure import ProcedureTracker
 
         assert isinstance(tracker, ProcedureTracker)
-        node = tracker.enter_step_cm("Set `A`")
+        node = tracker.enter_step_cm(fmt.mono("cmd"))
         assert "description_segments" in node
-        assert any(s["style"] == "mono" for s in node["description_segments"])
+        assert node["description_segments"] == [{"text": "cmd", "style": "mono"}]
+        assert node["description"] == "cmd"
 
-    def test_substep_has_segments(self) -> None:
-        """PTF-1: substep with backtick → substep dict has description_segments."""
+    def test_substep_inside_cm_has_segments(self) -> None:
+        """substep(fmt.mono('val')) inside CM step → substep node has description_segments."""
+        import pytest_reporter.fmt as fmt
+
         tracker = self._make_tracker()
         from pytest_reporter._procedure import ProcedureTracker
 
         assert isinstance(tracker, ProcedureTracker)
-        # Enter a CM step so we're inside one
         tracker.enter_step_cm("outer")
         # record_step inside CM becomes a substep
-        sub = tracker.record_step("Load `reg`")
+        sub = tracker.record_step(fmt.mono("val"))
         assert "description_segments" in sub
-        assert any(s["style"] == "mono" for s in sub["description_segments"])
+        assert sub["description_segments"] == [{"text": "val", "style": "mono"}]
+        assert sub["description"] == "val"
 
-    def test_promoted_substep_parses_once(self) -> None:
-        """record_substep() promotes to record_step(); parse happens exactly once."""
+    def test_promoted_substep_has_segments(self) -> None:
+        """record_substep(fmt.mono('x')) with no parent → promotes; node has segments."""
+        import pytest_reporter.fmt as fmt
+
         tracker = self._make_tracker()
         from pytest_reporter._procedure import ProcedureTracker
 
         assert isinstance(tracker, ProcedureTracker)
-        # No steps yet → promotes to top-level step
-        node = tracker.record_substep("Load `reg`")
+        node = tracker.record_substep(fmt.mono("x"))
         assert "description_segments" in node
-        expected = [
-            {"text": "Load ", "style": None},
-            {"text": "reg", "style": "mono"},
-        ]
-        assert node["description_segments"] == expected
+        assert node["description_segments"] == [{"text": "x", "style": "mono"}]
 
     def test_cm_depth2_substep_segments(self) -> None:
-        """PTF-1: depth-2 substep in CM → substep dict has description_segments."""
+        """depth-2 enter_step_cm(fmt.mono('inner')) → substep dict has description_segments."""
+        import pytest_reporter.fmt as fmt
+
         tracker = self._make_tracker()
         from pytest_reporter._procedure import ProcedureTracker
 
         assert isinstance(tracker, ProcedureTracker)
         tracker.enter_step_cm("outer")
-        sub = tracker.enter_step_cm("inner `x`")
+        sub = tracker.enter_step_cm(fmt.mono("inner"))
         assert "description_segments" in sub
-        assert any(s["style"] == "mono" for s in sub["description_segments"])
+        assert sub["description_segments"] == [{"text": "inner", "style": "mono"}]
+
+    def test_all_plain_formatted_text_no_segments_key(self) -> None:
+        """FormattedText with all-plain segments → NO description_segments (byte-identical)."""
+        import pytest_reporter.fmt as fmt
+
+        tracker = self._make_tracker()
+        from pytest_reporter._procedure import ProcedureTracker
+
+        assert isinstance(tracker, ProcedureTracker)
+        node = tracker.record_step(fmt.text("hello", " world"))
+        assert "description_segments" not in node
+        assert node["description"] == "hello world"
+
+
+# ---------------------------------------------------------------------------
+# Phase 1.1: fmt constructor unit tests — RED before GREEN
+# ---------------------------------------------------------------------------
+
+
+class TestFmt:
+    """Unit tests for fmt.mono and fmt.text constructors."""
+
+    def test_mono_single_segment(self) -> None:
+        """mono('Pulse.Enable') → [{text: 'Pulse.Enable', style: 'mono'}]."""
+        import pytest_reporter.fmt as fmt
+
+        result = fmt.mono("Pulse.Enable")
+        assert result == [{"text": "Pulse.Enable", "style": "mono"}]
+
+    def test_mono_empty_string(self) -> None:
+        """mono('') → [] (empty string yields empty list)."""
+        import pytest_reporter.fmt as fmt
+
+        result = fmt.mono("")
+        assert result == []
+
+    def test_text_mixed_parts(self) -> None:
+        """text('a', mono('b'), 'c') → 3 ordered segments."""
+        import pytest_reporter.fmt as fmt
+
+        result = fmt.text("Configure ", fmt.mono("X"), " to 1")
+        assert result == [
+            {"text": "Configure ", "style": None},
+            {"text": "X", "style": "mono"},
+            {"text": " to 1", "style": None},
+        ]
+
+    def test_text_no_parts(self) -> None:
+        """text() → []."""
+        import pytest_reporter.fmt as fmt
+
+        result = fmt.text()
+        assert result == []
+
+    def test_text_nested_flattens(self) -> None:
+        """nested text(text('a'), mono('b')) → flat list (spreads, not nests)."""
+        import pytest_reporter.fmt as fmt
+
+        inner = fmt.text(fmt.mono("A"), fmt.mono("B"))
+        result = fmt.text("X", inner)
+        assert result == [
+            {"text": "X", "style": None},
+            {"text": "A", "style": "mono"},
+            {"text": "B", "style": "mono"},
+        ]
+
+    def test_text_only_plain(self) -> None:
+        """text('only plain') → one plain segment with style None."""
+        import pytest_reporter.fmt as fmt
+
+        result = fmt.text("only plain")
+        assert result == [{"text": "only plain", "style": None}]
+
+
+# ---------------------------------------------------------------------------
+# Phase 1.3: normalize and _display unit tests — RED before GREEN
+# ---------------------------------------------------------------------------
+
+
+class TestNormalize:
+    """Unit tests for normalize() and _display() in _procedure."""
+
+    def test_str_returns_none(self) -> None:
+        """str description → normalize returns None (no segments)."""
+        from pytest_reporter._procedure import normalize
+
+        assert normalize("plain text") is None
+
+    def test_all_plain_formatted_text_returns_none(self) -> None:
+        """FormattedText with all-plain segments → normalize returns None."""
+        import pytest_reporter.fmt as fmt
+        from pytest_reporter._procedure import normalize
+
+        ft = fmt.text("hello", " world")
+        assert normalize(ft) is None
+
+    def test_formatted_text_with_mono_returns_list(self) -> None:
+        """FormattedText with a mono segment → normalize returns the list."""
+        import pytest_reporter.fmt as fmt
+        from pytest_reporter._procedure import normalize
+
+        ft = fmt.mono("x")
+        result = normalize(ft)
+        assert result == [{"text": "x", "style": "mono"}]
+
+    def test_display_str_returns_itself(self) -> None:
+        """_display('text') → 'text' unchanged."""
+        from pytest_reporter._procedure import _display
+
+        assert _display("hello world") == "hello world"
+
+    def test_display_formatted_text_joins_texts(self) -> None:
+        """_display(FormattedText) → joined segment texts."""
+        import pytest_reporter.fmt as fmt
+        from pytest_reporter._procedure import _display
+
+        ft = fmt.text("Set ", fmt.mono("Pulse.Enable"), " to 1")
+        assert _display(ft) == "Set Pulse.Enable to 1"

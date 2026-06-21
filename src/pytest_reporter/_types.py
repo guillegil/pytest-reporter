@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 if TYPE_CHECKING:
-    from pytest_reporter._markup import Segment
+    from pytest_reporter.fmt import Segment
 
 # --- Metadata panel type alias (report-metadata-panel) ---
 

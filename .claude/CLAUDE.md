@@ -54,7 +54,8 @@ pytest tests/ --report-dir=reports --report-retries=3  # Enable retries
 
 ```
 pytest_reporter/
-├── __init__.py              # Exports: step, substep, Logger, ReportLogger
+├── __init__.py              # Exports: fmt, step, substep, Logger, ReportLogger, FormattedText
+├── fmt.py                   # Typed formatting constructors: mono(), text(), Segment, FormattedText
 ├── py.typed                 # PEP 561 marker — REQUIRED
 ├── plugin.py                # Plugin registration (pytest11 entry point)
 ├── reporter.py              # Reporter class — main hook orchestrator
@@ -84,15 +85,43 @@ pytest_reporter/
 ### Functions and types (explicit import)
 
 ```python
-from pytest_reporter import step, substep
-from pytest_reporter import ReportLogger  # canonical public name
-from pytest_reporter import Logger        # internal name, kept for compat
+from pytest_reporter import fmt, step, substep
+from pytest_reporter import FormattedText    # public type alias for list[Segment]
+from pytest_reporter import ReportLogger     # canonical public name
+from pytest_reporter import Logger           # internal name, kept for compat
 
-step(description: str, *, check: dict | None = None) -> ContextManager
-substep(description: str) -> None
+# Typed formatting constructors — use instead of backtick strings
+fmt.mono(s: str) -> FormattedText            # monospace segment; empty string → []
+fmt.text(*parts: str | FormattedText) -> FormattedText  # concatenate parts; str → plain seg
+
+# Procedure functions — accept plain str or FormattedText
+step(description: str | FormattedText, *, check: dict | None = None) -> ContextManager
+substep(description: str | FormattedText) -> None
 ```
 
+`FormattedText` is `list[Segment]` where `Segment = {"text": str, "style": str | None}`.
+`"mono"` is the only style value in this version; `None` means plain.
+
 `ReportLogger` is the canonical public name documented for users. `Logger` is the underlying class name in `_logger.py`; both names refer to the same class object (`ReportLogger is Logger`).
+
+#### fmt usage examples
+
+```python
+from pytest_reporter import fmt, step, substep
+
+# Monospace identifier
+step(fmt.mono("Pulse.Enable"))
+
+# Mixed plain + mono
+step(fmt.text("Set ", fmt.mono("Pulse.Enable"), " to 1"))
+
+# Substep with typed formatting
+substep(fmt.mono("0x0F"))
+
+# Context manager
+with step(fmt.text("Configure ", fmt.mono("SPI_CLK"), " frequency")):
+    substep("Write to control register")
+```
 
 ## IDE Autocompletion — CRITICAL REQUIREMENT
 
@@ -267,12 +296,13 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 }
 ```
 
-**`description_segments` rules:**
-- Present only when the description contains at least one backtick-delimited span.
-- Absent (key omitted, not null) for plain descriptions — backward compatible.
-- Each element: `{"text": str, "style": "mono" | null}`. `"mono"` = backtick span, `null` = plain run.
-- Raw `description` field always retained as-is (backticks included).
+**`description_segments` rules (typed constructors):**
+- Present only when `fmt.mono()` or `fmt.text(..., fmt.mono(...), ...)` is passed to `step()`/`substep()`.
+- Absent (key omitted, not null) for plain `str` descriptions — byte-identical to pre-change behaviour.
+- Each element: `{"text": str, "style": "mono" | null}`. `"mono"` = monospace run, `null` = plain run.
+- `description` field is always a plain string (joined segment texts) — never `FormattedText`.
 - Forward-compatible: new `style` values may be added in future versions.
+- Populated via `normalize()` in `_procedure.py` — backtick strings now render literally (no parsing).
 
 ## Phase Capture Flow
 
@@ -475,6 +505,9 @@ else donut grid.
 - **Aggregate counters use final outcome.** Failed-then-retried-passed = counted as passed.
 - **`substep()` before any `step()` promotes, does NOT raise.** Calling `substep()` with no prior step promotes the call to a top-level step (description preserved). The no-active-tracker `ProcedureError` (raised by `_get_tracker` when called outside a test) is unchanged.
 - **`substep()` binds to the last-recorded step (`_steps[-1]`), not the open CM step.** "Last step wins" — if a plain `step()` was called inside a CM body, `substep()` attaches to that inner step.
+- **Backtick strings now render literally.** `step("\`x\`")` produces `description: "\`x\`"` with NO monospace formatting. Use `fmt.mono("x")` instead. The backtick parser (`parse_markup`) is deleted.
+- **`fmt.mono("")` → `[]` (empty list).** An empty string produces no segment (drop, no crash).
+- **`fmt.text(...)` spreads, never nests.** Passing a `FormattedText` as a part spreads its segments flat — no nested lists.
 - **HTML report is ONE file.** Everything inline. Artifacts base64-encoded. No CDN.
 - **Feature depth for graphs is configurable** via `pytest_reporter_dashboard` hook / `report_dashboard`
   fixture (DashboardGroupSpec: `path`, `depth`, `include_self`, `label`, `style`). Default: depth-1
