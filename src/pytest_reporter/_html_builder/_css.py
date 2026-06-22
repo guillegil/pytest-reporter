@@ -1696,12 +1696,34 @@ button { font-family: inherit; }
   gap: 6px;
 }
 .plugin-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 10px;
   background: var(--c-surface2);
   border-radius: 20px;
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--c-text2);
+}
+/* Version badge inside plugin-tag (Slice E) */
+.plugin-ver {
+  padding: 1px 5px;
+  background: var(--c-surface3, var(--c-surface));
+  border-radius: 8px;
+  font-size: 0.85em;
+  color: var(--c-text3, var(--c-text2));
+}
+/* Empty-state for no distributed plugins (Slice E) */
+.plugins-empty {
+  font-size: 12px;
+  color: var(--c-text3, var(--c-text2));
+  font-style: italic;
+}
+/* Plugins collapsible chevron rotation */
+.plugins-collapsible .plugins-chevron {
+  margin-left: auto;
+  transition: transform 0.2s ease;
 }
 
 /* ================================================================

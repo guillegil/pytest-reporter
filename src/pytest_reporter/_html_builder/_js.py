@@ -1647,16 +1647,41 @@ function renderReport() {
     container.appendChild(cmdSection);
   }
 
-  // Plugins
-  if (DATA.plugins && DATA.plugins.length > 0) {
+  // Plugins — collapsible, distributed-only, versioned
+  {
     const plugSection = el('div', {className:'report-section'});
-    const plugHeader = el('div', {className:'report-section-header'});
-    plugHeader.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
+    const plugHeader = el('div', {
+      className: 'report-section-header plugins-collapsible',
+      role: 'button', tabIndex: 0
+    });
+    plugHeader.setAttribute('aria-expanded', 'false');
+    const plugIcon = el('span');
+    plugIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
+    plugHeader.appendChild(plugIcon);
     plugHeader.appendChild(document.createTextNode(' Active Plugins'));
+    plugHeader.appendChild(chevronSvg('plugins-chevron'));
+    const plugBody = el('div', {className:'report-section-body plugins-body'});
+    plugBody.style.display = 'none';
+    const togglePlugins = () => {
+      const open = plugBody.style.display !== 'none';
+      plugBody.style.display = open ? 'none' : '';
+      plugHeader.setAttribute('aria-expanded', open ? 'false' : 'true');
+      const ch = plugHeader.querySelector('.plugins-chevron');
+      if (ch) ch.style.transform = open ? '' : 'rotate(90deg)';
+    };
+    plugHeader.addEventListener('click', togglePlugins);
+    plugHeader.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePlugins(); } });
     plugSection.appendChild(plugHeader);
-    const plugBody = el('div', {className:'report-section-body'});
     const plugList = el('div', {className:'plugin-list'});
-    DATA.plugins.forEach(p => plugList.appendChild(el('span', {className:'plugin-tag'}, p)));
+    if (!DATA.plugins || DATA.plugins.length === 0) {
+      plugList.appendChild(el('span', {className:'plugins-empty'}, 'No distributed plugins detected'));
+    } else {
+      DATA.plugins.forEach(p => {
+        const tag = el('span', {className:'plugin-tag'}, p.name || String(p));
+        if (p.version) tag.appendChild(el('span', {className:'plugin-ver'}, p.version));
+        plugList.appendChild(tag);
+      });
+    }
     plugBody.appendChild(plugList);
     plugSection.appendChild(plugBody);
     container.appendChild(plugSection);

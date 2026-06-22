@@ -267,13 +267,36 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
             }
         )
 
-    # Collect environment info
-    plugin_list = []
-    pm = reporter.config.pluginmanager
-    for plugin in pm.get_plugins():
-        name = pm.get_name(plugin) or getattr(plugin, "__name__", None)
-        if name and not name.startswith("_"):
-            plugin_list.append(name)
+    # Collect distributed plugins via pytest11 entry points.
+    # Only distributions that explicitly advertise a pytest11 entry point are shown.
+    # Each entry: {name: str, version: str}.  Broad except; reporter must never crash.
+    plugin_list: list[dict[str, str]] = []
+    try:
+        from importlib.metadata import distributions
+
+        seen: set[str] = set()
+        for dist in distributions():
+            try:
+                eps = [ep for ep in dist.entry_points if ep.group == "pytest11"]
+                if not eps:
+                    continue
+                name = dist.metadata.get("Name", "") or ""
+                ver = dist.metadata.get("Version", "") or ""
+                if not name or not ver:
+                    continue
+                key = name.lower().replace("-", "_")
+                if key in seen:
+                    continue
+                seen.add(key)
+                plugin_list.append({"name": name, "version": ver})
+            except Exception:  # noqa: BLE001
+                continue  # Skip any malformed dist, never crash
+        plugin_list.sort(key=lambda p: p["name"].lower())
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(
+            f"pytest-reporter: plugin version collection failed: {exc}",
+            stacklevel=2,
+        )
 
     cmdline = reporter.config.invocation_params.args
 
