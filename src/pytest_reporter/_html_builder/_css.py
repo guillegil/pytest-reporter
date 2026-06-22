@@ -232,7 +232,7 @@ button { font-family: inherit; }
 }
 .summary-hero-dur-label {
   font-size: 10px;
-  color: var(--c-text3);
+  color: var(--c-text2);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 700;
@@ -421,7 +421,7 @@ button { font-family: inherit; }
 .chart-card-dur {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--c-text3);
+  color: var(--c-text2);
   margin-top: 6px;
   text-align: center;
 }
@@ -516,7 +516,7 @@ button { font-family: inherit; }
 .pass-rate-bar-stats .prs-failed { color: var(--c-failed); }
 .pass-rate-bar-stats .prs-skipped { color: var(--c-skipped); }
 .pass-rate-bar-stats .prs-error { color: var(--c-error); }
-.pass-rate-bar-stats .prs-dur { font-family: var(--font-mono); color: var(--c-text3); font-size: 10px; }
+.pass-rate-bar-stats .prs-dur { font-family: var(--font-mono); color: var(--c-text2); font-size: 10px; }
 
 @media (max-width: 640px) {
   .summary-hero { flex-direction: column; gap: 20px; padding: 22px 20px; }
@@ -1356,7 +1356,6 @@ button { font-family: inherit; }
   border-top: 1px solid var(--c-border);
 }
 .check-card.expanded .check-card-body { display: block; }
-.check-card.failed .check-card-body { display: block; }
 .check-card-chevron {
   flex-shrink: 0;
   color: var(--c-text3);
@@ -1712,12 +1711,12 @@ button { font-family: inherit; }
   background: var(--c-surface3, var(--c-surface));
   border-radius: 8px;
   font-size: 0.85em;
-  color: var(--c-text3, var(--c-text2));
+  color: var(--c-text2);
 }
 /* Empty-state for no distributed plugins (Slice E) */
 .plugins-empty {
   font-size: 12px;
-  color: var(--c-text3, var(--c-text2));
+  color: var(--c-text2);
   font-style: italic;
 }
 /* Plugins collapsible chevron rotation */
@@ -1725,6 +1724,11 @@ button { font-family: inherit; }
   margin-left: auto;
   transition: transform 0.2s ease;
 }
+@media (prefers-reduced-motion: reduce) { .plugins-collapsible .plugins-chevron { transition: none; } }
+/* Interactive affordances — the header is role="button" (Slice E) */
+.plugins-collapsible { cursor: pointer; }
+.plugins-collapsible:hover { background: var(--c-surface2); }
+.plugins-collapsible:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
 
 /* ================================================================
    Responsive
