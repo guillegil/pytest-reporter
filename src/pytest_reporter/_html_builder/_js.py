@@ -633,17 +633,34 @@ function renderTreeNode(name, node, depth) {
   return container;
 }
 
+// Return the bare display name for a test aggregate (strips class prefix).
+function testDisplayName(agg) {
+  return agg.display_name || agg.function_name;
+}
+
 function renderTestLeaf(test, depth) {
   const container = el('div', {className:'tree-node'});
-  const fn = test.aggregate.function_name;
+  const agg = test.aggregate;
   const outcome = getOverallOutcome(test);
+  const displayName = testDisplayName(agg);
 
   const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`});
   const dot = el('span', {className:`status-dot ${outcome}`});
-  const nameEl = el('span', {className:'tree-name'}, fn);
+
+  // Build name element: optionally prefix with class eyebrow when present
+  let nameEl;
+  if (agg.class_name) {
+    nameEl = el('span', {className:'tree-name'});
+    nameEl.appendChild(el('span', {className:'tree-eyebrow'}, agg.class_name));
+    nameEl.appendChild(el('span', {className:'crumb-sep'}, ' › '));
+    nameEl.appendChild(document.createTextNode(displayName));
+  } else {
+    nameEl = el('span', {className:'tree-name'}, displayName);
+  }
+
   const badges = el('span', {className:'tree-badges'});
-  if (test.aggregate.total_runs > 1) {
-    badges.appendChild(el('span', {className:'tree-badge count'}, String(test.aggregate.total_runs)));
+  if (agg.total_runs > 1) {
+    badges.appendChild(el('span', {className:'tree-badge count'}, String(agg.total_runs)));
   }
   row.appendChild(dot);
   row.appendChild(nameEl);
@@ -677,7 +694,11 @@ function showTestDetail(test) {
     el('span', {className:'status-dot ' + outcome}),
     outcome
   );
-  headerTop.appendChild(el('h2', null, test.aggregate.function_name));
+  // Class eyebrow above the function name (class-based tests only)
+  if (test.aggregate.class_name) {
+    headerTop.appendChild(el('div', {className:'detail-eyebrow'}, test.aggregate.class_name));
+  }
+  headerTop.appendChild(el('h2', null, testDisplayName(test.aggregate)));
   headerTop.appendChild(outcomeBadge);
   header.appendChild(headerTop);
   header.appendChild(el('div', {className:'file-path'}, test.aggregate.file));
@@ -1377,7 +1398,8 @@ function filterTree(query) {
     if (test) {
       const match = !q || test.aggregate.function_name.toLowerCase().includes(q)
         || test.aggregate.file.toLowerCase().includes(q)
-        || test.base_nodeid?.toLowerCase().includes(q);
+        || test.base_nodeid?.toLowerCase().includes(q)
+        || test.aggregate.class_name?.toLowerCase().includes(q);
       node.style.display = match ? '' : 'none';
       // Auto-expand parents if match
       if (match && q) {

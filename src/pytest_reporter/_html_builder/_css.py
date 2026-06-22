@@ -692,6 +692,18 @@ button { font-family: inherit; }
   font-weight: 300;
   pointer-events: none;
 }
+/* Class eyebrow for class-based test names (Slice D) */
+.tree-eyebrow {
+  display: block;
+  font-size: 0.7em;
+  color: var(--c-text2);
+  line-height: 1.2;
+}
+.detail-eyebrow {
+  font-size: 0.85em;
+  color: var(--c-text2);
+  margin-bottom: 0.15em;
+}
 @media (prefers-reduced-motion: reduce) {
   .tree-icon { transition: none; }
 }

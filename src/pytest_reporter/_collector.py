@@ -52,6 +52,14 @@ class DataCollector:
             path_part, _, func_part = item.nodeid.partition("::")
             func_name = func_part.split("[")[0]
 
+            # Derive presentation-only class_name / display_name.
+            # function_name (= func_name) is FROZEN — it is the folder-path key
+            # and must NOT be changed to bare method name.
+            if "::" in func_name:
+                class_name_val, _, display_name_val = func_name.rpartition("::")
+            else:
+                class_name_val, display_name_val = None, func_name
+
             # Extract markers
             markers = [m.name for m in item.iter_markers() if m.name not in ("parametrize",)]
 
@@ -70,6 +78,8 @@ class DataCollector:
                 module_parts=path_part.split("/"),
                 docstring=docstring,
                 markers=markers,
+                class_name=class_name_val,
+                display_name=display_name_val,
             )
             self._run_map[item.nodeid] = run_info
 
@@ -207,7 +217,7 @@ class DataCollector:
         # Get file/function from first run
         first = self._run_map[nodeids[0]]
 
-        return TestLogJson(
+        aggregate = TestLogJson(
             test_id=base_nodeid,
             function_name=first.function_name,
             file=first.file_path,
@@ -219,6 +229,10 @@ class DataCollector:
             total_duration_seconds=round(total_duration, 4),
             runs=runs,
         )
+        # Populate presentation-only fields (class_name is None for plain functions).
+        aggregate["class_name"] = first.class_name
+        aggregate["display_name"] = first.display_name
+        return aggregate
 
     def all_nodeids(self) -> list[str]:
         """Return all nodeids in collection order."""

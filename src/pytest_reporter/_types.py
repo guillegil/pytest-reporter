@@ -97,7 +97,9 @@ class RunEntry(TypedDict, total=False):
 # --- test.log.json schema (§3) ---
 
 
-class TestLogJson(TypedDict):
+class _TestLogJsonRequired(TypedDict):
+    """Required fields for TestLogJson (Python 3.9-compatible split)."""
+
     test_id: str
     function_name: str
     file: str
@@ -108,6 +110,19 @@ class TestLogJson(TypedDict):
     errors: int
     total_duration_seconds: float
     runs: list[RunEntry]
+
+
+class TestLogJson(_TestLogJsonRequired, total=False):
+    """Per-function aggregate (test.log.json §3).
+
+    Optional fields (total=False):
+      class_name   — class containing the test method, or None for plain functions.
+      display_name — bare method name without class prefix (equals function_name
+                     for plain functions).
+    """
+
+    class_name: str | None
+    display_name: str
 
 
 # --- parameters.json schema (§4) ---
@@ -201,11 +216,14 @@ class RunInfo:
     base_nodeid: str  # nodeid without [params]
     parametrize_id: str | None
     params: dict[str, Any]
-    function_name: str
+    function_name: str  # FROZEN: full Class::method or bare name — used for folder paths
     file_path: str
     module_parts: list[str]
     docstring: str | None = None
     markers: list[str] = field(default_factory=list)
+    # Presentation-only: populated by register_items; never affects folder paths.
+    class_name: str | None = None  # class containing the test method, or None
+    display_name: str = ""  # bare method name; equals function_name for plain functions
 
 
 @dataclass
