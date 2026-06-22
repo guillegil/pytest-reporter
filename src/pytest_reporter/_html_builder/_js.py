@@ -71,13 +71,17 @@ function buildTree(tests) {
 }
 
 function nodeAgg(node) {
-  let p=0,f=0,s=0,e=0;
-  node.tests.forEach(t => { p+=t.aggregate.passed; f+=t.aggregate.failed; s+=t.aggregate.skipped; e+=t.aggregate.errors; });
+  let p=0,f=0,s=0,e=0,dur=0;
+  node.tests.forEach(t => {
+    p+=t.aggregate.passed; f+=t.aggregate.failed;
+    s+=t.aggregate.skipped; e+=t.aggregate.errors;
+    dur += t.aggregate.total_duration_seconds || 0;
+  });
   Object.values(node.children).forEach(c => {
     const a = nodeAgg(c);
-    p+=a.passed; f+=a.failed; s+=a.skipped; e+=a.error;
+    p+=a.passed; f+=a.failed; s+=a.skipped; e+=a.error; dur+=a.duration;
   });
-  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e};
+  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e,duration:dur};
 }
 
 // ─── Tree compaction transform (pure — never mutates input) ──────────────
@@ -267,7 +271,8 @@ function renderDonutGroup(entries, sectionLabel) {
       el('h3', null, label),
       donutSVG(a, 110),
       donutCountsEl(a),
-      legendEl(a)
+      legendEl(a),
+      el('div', {className:'chart-card-dur'}, formatDuration(a.duration))
     );
   });
   const title = el('div', {className:'charts-section-title'},
@@ -298,7 +303,9 @@ function renderBarsGroup(entries, sectionLabel) {
         ' ',
         el('span', {className:'prs-failed', 'aria-label':'failed'}, '✕' + a.failed),
         a.skipped > 0 ? el('span', {className:'prs-skipped', 'aria-label':'skipped'}, ' ⊘' + a.skipped) : null,
-        a.error > 0 ? el('span', {className:'prs-error', 'aria-label':'error'}, ' ⚠' + a.error) : null
+        a.error > 0 ? el('span', {className:'prs-error', 'aria-label':'error'}, ' ⚠' + a.error) : null,
+        ' ',
+        el('span', {className:'prs-dur'}, formatDuration(a.duration))
       )
     );
   });
@@ -394,13 +401,19 @@ function renderSummary() {
   let retriedCount = 0;
   DATA.tests.forEach(t => t.runs.forEach(r => { if (r.retries && r.retries.attempts > 0) retriedCount++; }));
 
-  // ── Hero: pass rate + ratio bar ──
+  // ── Hero: pass rate + duration + ratio bar ──
+  const suiteDuration = DATA.tests.reduce((a, t) => a + (t.aggregate.total_duration_seconds || 0), 0);
   const hero = el('div', {className:'summary-hero'});
   const rateSection = el('div', {className:'summary-hero-rate'});
   const rateClass = passRate >= 90 ? 'good' : passRate >= 70 ? 'warn' : 'bad';
   rateSection.appendChild(el('div', {className:'summary-hero-pct ' + rateClass}, passRate + '%'));
   rateSection.appendChild(el('div', {className:'summary-hero-pct-label'}, 'Pass rate'));
   hero.appendChild(rateSection);
+
+  const durSection = el('div', {className:'summary-hero-dur'});
+  durSection.appendChild(el('div', {className:'summary-hero-dur-value'}, formatDuration(suiteDuration)));
+  durSection.appendChild(el('div', {className:'summary-hero-dur-label'}, 'Total time'));
+  hero.appendChild(durSection);
 
   const heroBody = el('div', {className:'summary-hero-body'});
   heroBody.appendChild(el('h3', null, 'Test Results Distribution'));
@@ -673,7 +686,7 @@ function showTestDetail(test) {
   const agg = test.aggregate;
   const stats = el('div', {className:'detail-header-stats'});
   stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, String(agg.total_runs)), ' runs'));
-  stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, agg.total_duration_seconds.toFixed(2) + 's'), ' total'));
+  stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, formatDuration(agg.total_duration_seconds)), ' total'));
   if (agg.passed) stats.appendChild(el('span', {className:'detail-header-stat'},
     el('span', {className:'status-dot passed'}), el('strong', null, String(agg.passed)), ' passed'));
   if (agg.failed) stats.appendChild(el('span', {className:'detail-header-stat'},
@@ -1330,6 +1343,21 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function formatDuration(sec) {
+  if (sec == null || isNaN(sec)) return '—';
+  if (sec < 1) return '<1s';
+  let s = Math.floor(sec);
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600);  s -= h * 3600;
+  const m = Math.floor(s / 60);    s -= m * 60;
+  const parts = [];
+  if (d) parts.push(d + 'd');
+  if (h) parts.push(h + 'h');
+  if (m) parts.push(m + 'm');
+  if (s || !parts.length) parts.push(s + 's');
+  return parts.join(' ');
 }
 
 function openLightbox(src, alt) {

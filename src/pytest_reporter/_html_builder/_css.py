@@ -216,6 +216,28 @@ button { font-family: inherit; }
   color: var(--c-text);
   margin-bottom: 12px;
 }
+.summary-hero-dur {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+.summary-hero-dur-value {
+  font-size: 32px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--c-text2);
+}
+.summary-hero-dur-label {
+  font-size: 10px;
+  color: var(--c-text3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  margin-top: 4px;
+}
 
 /* Ratio bar */
 .ratio-bar-wrap { width: 100%; }
@@ -396,6 +418,13 @@ button { font-family: inherit; }
   white-space: nowrap;
 }
 .chart-card svg { display: block; margin: 0 auto; }
+.chart-card-dur {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text3);
+  margin-top: 6px;
+  text-align: center;
+}
 /* donut-counts: accessible numeric summary below each donut (WCAG SC 1.4.1) */
 .donut-counts {
   font-family: var(--font-mono);
@@ -487,6 +516,7 @@ button { font-family: inherit; }
 .pass-rate-bar-stats .prs-failed { color: var(--c-failed); }
 .pass-rate-bar-stats .prs-skipped { color: var(--c-skipped); }
 .pass-rate-bar-stats .prs-error { color: var(--c-error); }
+.pass-rate-bar-stats .prs-dur { font-family: var(--font-mono); color: var(--c-text3); font-size: 10px; }
 
 @media (max-width: 640px) {
   .summary-hero { flex-direction: column; gap: 20px; padding: 22px 20px; }
