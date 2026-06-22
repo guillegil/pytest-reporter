@@ -36,6 +36,19 @@ function svgEl(tag, attrs) {
   return e;
 }
 
+// Chevron SVG — module-scope helper reused by session-log sections, check-cards,
+// and the plugins collapsible.  cls: CSS class to set on the <svg> element.
+function chevronSvg(cls) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('class', cls || 'chevron');
+  svg.setAttribute('width','16'); svg.setAttribute('height','16');
+  svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('fill','none');
+  svg.setAttribute('stroke','currentColor'); svg.setAttribute('stroke-width','2');
+  svg.setAttribute('stroke-linecap','round'); svg.setAttribute('stroke-linejoin','round');
+  svg.innerHTML = '<polyline points="9 18 15 12 9 6"/>';
+  return svg;
+}
+
 // ─── Aggregate helpers ───────────────────────────────────────────────
 function aggTests(tests) {
   let p=0,f=0,s=0,e=0;
@@ -1258,16 +1271,29 @@ function renderCheckResults(checks) {
   const cards = el('div', {className:'check-cards'});
   checks.forEach((check, idx) => {
     const status = check.passed ? 'passed' : 'failed';
-    const card = el('div', {className:`check-card ${status}`});
+    const isExpanded = status === 'failed';
+    const card = el('div', {className:`check-card ${status}${isExpanded ? ' expanded' : ''}`});
 
     const header = el('div', {className:'check-card-header'});
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('aria-expanded', String(isExpanded));
+    header.appendChild(chevronSvg('check-card-chevron'));
     header.appendChild(el('span', {className:`status-dot ${status}`}));
     header.appendChild(el('span', {className:'check-name'}, check.name || ('Check #' + (idx + 1))));
     if (check.description) {
       header.appendChild(el('span', {className:'check-desc'}, check.description));
     }
     header.appendChild(el('span', {className:'check-type-badge'}, check.check_type || ''));
-    header.addEventListener('click', () => card.classList.toggle('expanded'));
+
+    function toggleCard() {
+      const ex = card.classList.toggle('expanded');
+      header.setAttribute('aria-expanded', String(ex));
+    }
+    header.addEventListener('click', () => toggleCard());
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCard(); }
+    });
     card.appendChild(header);
 
     const body = el('div', {className:'check-card-body'});
@@ -1445,17 +1471,6 @@ function renderSessionLogs() {
     });
     return wrap;
   }
-  function chevronSvg() {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('class','session-log-chevron');
-    svg.setAttribute('width','16'); svg.setAttribute('height','16');
-    svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('fill','none');
-    svg.setAttribute('stroke','currentColor'); svg.setAttribute('stroke-width','2');
-    svg.setAttribute('stroke-linecap','round'); svg.setAttribute('stroke-linejoin','round');
-    svg.innerHTML = '<polyline points="9 18 15 12 9 6"/>';
-    return svg;
-  }
-
   // ── Tree ──
   const treeEl = el('div', {className:'session-log-tree'});
   Object.entries(tree).forEach(([name, data]) => {
@@ -1472,7 +1487,7 @@ function renderSessionLogs() {
 
     const section = el('div', {className:'session-log-section'});
     const header = el('div', {className:'session-log-section-header'});
-    header.appendChild(chevronSvg());
+    header.appendChild(chevronSvg('session-log-chevron'));
     header.appendChild(el('span', {className:'session-log-section-name'}, name));
     header.appendChild(el('span', {className:'session-log-section-count'}, allEntries.length + ' entries'));
     header.appendChild(levelPills(counts));
@@ -1486,7 +1501,7 @@ function renderSessionLogs() {
       const childCounts = levelCounts(childEntries);
       const childSection = el('div', {className:'session-log-section session-log-child'});
       const childHeader = el('div', {className:'session-log-section-header'});
-      childHeader.appendChild(chevronSvg());
+      childHeader.appendChild(chevronSvg('session-log-chevron'));
       childHeader.appendChild(el('span', {className:'session-log-section-name'}, childName));
       childHeader.appendChild(el('span', {className:'session-log-section-count'}, String(childEntries.length)));
       childHeader.appendChild(levelPills(childCounts));

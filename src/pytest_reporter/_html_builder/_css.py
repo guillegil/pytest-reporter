@@ -1315,6 +1315,15 @@ button { font-family: inherit; }
 }
 .check-card.expanded .check-card-body { display: block; }
 .check-card.failed .check-card-body { display: block; }
+.check-card-chevron {
+  flex-shrink: 0;
+  color: var(--c-text3);
+  transition: transform 0.2s var(--ease-out);
+}
+.check-card.expanded > .check-card-header .check-card-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .check-card-chevron { transition: none; } }
+.check-card-header:hover { background: var(--c-surface2); border-radius: 4px; }
+.check-card-header:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; border-radius: 4px; }
 .check-card-detail {
   display: grid;
   grid-template-columns: auto 1fr;
