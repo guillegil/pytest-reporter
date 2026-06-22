@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
 import mimetypes
 import platform
@@ -314,6 +315,41 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         )
     dashboard_config = normalize_dashboard(dashboard_hook_lists, reporter.dashboard_store)
 
+    # Resolve RNG seed (crash-safe at every step).
+    # Precedence: manual fixture > pytest_reporter_seed hook > pytest_strategy > None.
+    seed_raw: int | str | None = None
+
+    # 1. Manual fixture override (highest precedence)
+    fixture_seed = reporter.seed_store.get("value")
+    if fixture_seed is not None:
+        seed_raw = fixture_seed  # type: ignore[assignment]
+    else:
+        # 2. pytest_reporter_seed hook (firstresult)
+        try:
+            hook_seed = reporter.config.hook.pytest_reporter_seed()
+            if hook_seed is not None:
+                seed_raw = hook_seed
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"pytest_reporter_seed hook raised an exception and will be ignored: {exc}",
+                stacklevel=2,
+            )
+
+    if seed_raw is None:
+        # 3. Auto-detect from pytest_strategy
+        try:
+            if importlib.util.find_spec("pytest_strategy") is not None:
+                from pytest_strategy.rng import RNG  # type: ignore[import-not-found]
+
+                seed_raw = RNG.get_seed()
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"pytest_strategy seed auto-detection failed and will be ignored: {exc}",
+                stacklevel=2,
+            )
+
+    seed: str | None = str(seed_raw) if seed_raw is not None else None
+
     return {
         "timestamp": reporter.context.timestamp,
         "duration": round(duration, 2),
@@ -329,4 +365,5 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         "max_retries": reporter.max_retries,
         "system_metadata": system_metadata,
         "dashboard": dashboard_config,
+        "seed": seed,
     }

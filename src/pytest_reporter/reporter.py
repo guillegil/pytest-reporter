@@ -93,6 +93,9 @@ class Reporter:
         self.metadata_store: dict[str, dict[str, Any]] = {}
         # Mutable list populated via report_dashboard fixture
         self.dashboard_store: list[object] = []
+        # Mutable dict for manual seed override via report_seed fixture
+        # Set report_seed["value"] = <int|str> to override auto-detected seed.
+        self.seed_store: dict[str, object] = {}
 
     def get_current_run_dir(self, nodeid: str) -> Path | None:
         """Get the current write directory for a test (retry-aware)."""

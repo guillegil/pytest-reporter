@@ -13,6 +13,28 @@ if TYPE_CHECKING:
 class ReporterSpec:
     """Hookspecs defined by pytest-reporter for external contribution."""
 
+    @pytest.hookspec(firstresult=True)
+    def pytest_reporter_seed(self) -> int | str | None:
+        """Return the active RNG seed for this test session.
+
+        The first non-None return value from any registered implementation wins
+        (``firstresult=True``).  The ``report_seed`` fixture overrides all hook
+        contributions: setting ``report_seed["value"]`` bypasses the hook entirely.
+
+        Return ``None`` to pass control to the next registered implementation.
+        When all implementations return ``None`` and ``pytest_strategy`` is not
+        installed, the report shows ``\"Not Provided\"``.
+
+        Example (conftest.py)::
+
+            def pytest_reporter_seed():
+                return 12345
+
+        Returns:
+            An int or str seed value, or ``None`` to pass control downstream.
+        """
+        ...
+
     @pytest.hookspec(firstresult=False)
     def pytest_reporter_metadata(self) -> dict[str, dict[str, object]]:  # type: ignore[empty-body]
         """Return session-level metadata sections for the HTML Report tab.

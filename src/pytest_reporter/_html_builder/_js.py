@@ -1602,6 +1602,13 @@ function renderReport() {
       el('span', {className:'report-info-value'}, value)
     ));
   });
+  // Seed row (rendered separately to support conditional mono / not-provided styling)
+  metaBody.appendChild(el('div', {className:'report-info-row'},
+    el('span', {className:'report-info-label'}, 'Seed'),
+    DATA.seed != null
+      ? el('span', {className:'report-info-value mono'}, DATA.seed)
+      : el('span', {className:'report-info-not-provided'}, 'Not Provided')
+  ));
   metaSection.appendChild(metaBody);
   container.appendChild(metaSection);
 

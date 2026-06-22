@@ -159,3 +159,29 @@ def report_metadata(request: pytest.FixtureRequest) -> dict[str, dict[str, objec
         # Reporter inactive (no --report-dir) -- return a throwaway dict
         return {}
     return reporter.metadata_store
+
+
+@pytest.fixture(scope="session")
+def report_seed(request: pytest.FixtureRequest) -> dict[str, object]:
+    """Provide a mutable seed holder for the HTML Report tab's Seed row.
+
+    Set ``report_seed["value"]`` to an ``int`` or ``str`` to override the
+    auto-detected RNG seed (from ``pytest_reporter_seed`` hook or
+    ``pytest_strategy``).  Manual fixture value takes highest precedence.
+
+    When ``--report-dir`` is not active (reporter inactive), returns a
+    throwaway dict so callers never crash.
+
+    Example::
+
+        def test_something(report_seed):
+            report_seed["value"] = 42  # forces 'Seed: 42' in the report
+
+    Returns:
+        A mutable ``{"value": <int|str>}`` dict shared across the session.
+    """
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
+    if reporter is None:
+        # Reporter inactive (no --report-dir) -- return a throwaway dict
+        return {}
+    return reporter.seed_store

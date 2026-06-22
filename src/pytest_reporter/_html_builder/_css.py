@@ -1646,6 +1646,8 @@ button { font-family: inherit; }
 .report-info-row:last-child { border-bottom: none; }
 .report-info-label { color: var(--c-text3); font-weight: 500; }
 .report-info-value { color: var(--c-text); font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.report-info-value.mono { font-family: var(--font-mono); }
+.report-info-not-provided { color: var(--c-text3); font-style: italic; font-size: 12px; text-align: right; }
 .log-viewer {
   background: var(--c-bg);
   border: 1px solid var(--c-border);
