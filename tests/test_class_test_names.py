@@ -185,7 +185,7 @@ def test_js_render_helpers_present(pytester: Pytester) -> None:
     html = _report_html(pytester)
 
     assert "testDisplayName" in html, "JS must define testDisplayName helper"
-    assert "tree-eyebrow" in html, "JS must render tree-eyebrow element"
+    assert "tree-class" in html, "JS must render class grouping node (tree-class)"
     assert "detail-eyebrow" in html, "JS must render detail-eyebrow element"
 
 
@@ -205,5 +205,5 @@ def test_css_eyebrow_classes_defined(pytester: Pytester) -> None:
 
     html = _report_html(pytester)
 
-    assert ".tree-eyebrow" in html, "CSS must define .tree-eyebrow"
+    assert ".tree-class" in html, "CSS must define .tree-class"
     assert ".detail-eyebrow" in html, "CSS must define .detail-eyebrow"

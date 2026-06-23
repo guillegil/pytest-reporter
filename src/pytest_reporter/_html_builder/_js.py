@@ -65,7 +65,16 @@ function buildTree(tests) {
       if (!node.children[part]) node.children[part] = {name:part,children:{},tests:[]};
       node = node.children[part];
     });
-    node.tests.push(t);
+    // Class-based tests are grouped under a synthetic class node on the file
+    // node (file -> class -> method), so the class label is shown once instead
+    // of repeated on every method leaf. Plain functions attach to the file.
+    const cls = t.aggregate.class_name;
+    if (cls) {
+      if (!node.children[cls]) node.children[cls] = {name:cls,children:{},tests:[],_isClass:true};
+      node.children[cls].tests.push(t);
+    } else {
+      node.tests.push(t);
+    }
   });
   return root;
 }
@@ -107,12 +116,14 @@ function collapseChains(node) {
 
   // Build a working copy (never mutate input)
   let cur = { name: node.name, _segments: node._segments || [node.name],
-               children: newChildren, tests: node.tests };
+               children: newChildren, tests: node.tests, _isClass: node._isClass };
 
-  // Merge while single-child-dir and no own tests
+  // Merge while single-child-dir and no own tests. A class node is NOT a
+  // directory — never fold it into the file's breadcrumb.
   while (!cur.tests.length && Object.keys(cur.children).length === 1) {
     const childKey = Object.keys(cur.children)[0];
     const child = cur.children[childKey];
+    if (child._isClass) break;
     const childSegs = child._segments || [childKey];
     cur = { name: cur._segments.concat(childSegs).join(' / '),
             _segments: cur._segments.concat(childSegs),
@@ -127,8 +138,10 @@ function flagSingleFnMerges(node) {
   const newChildren = {};
   Object.entries(node.children).forEach(([k, v]) => { newChildren[k] = flagSingleFnMerges(v); });
   const cur = { name: node.name, _segments: node._segments, children: newChildren,
-                tests: node.tests };
-  if (!Object.keys(cur.children).length && cur.tests.length === 1) {
+                tests: node.tests, _isClass: node._isClass };
+  // Merge single-function FILE nodes into one leaf. Never merge a class node —
+  // its label must stay visible even with a single method.
+  if (!cur._isClass && !Object.keys(cur.children).length && cur.tests.length === 1) {
     cur._mergedTest = cur.tests[0];
   }
   return cur;
@@ -410,6 +423,8 @@ function renderSummary() {
   rateSection.appendChild(el('div', {className:'summary-hero-pct-label'}, 'Pass rate'));
   hero.appendChild(rateSection);
 
+  hero.appendChild(el('div', {className:'summary-hero-divider'}));
+
   const durSection = el('div', {className:'summary-hero-dur'});
   durSection.appendChild(el('div', {className:'summary-hero-dur-value'}, formatDuration(suiteDuration)));
   durSection.appendChild(el('div', {className:'summary-hero-dur-label'}, 'Total time'));
@@ -577,9 +592,13 @@ function renderTreeNode(name, node, depth) {
 
   const hasChildren = Object.keys(node.children).length > 0 || node.tests.length > 0;
   const agg = nodeAgg(node);
+  const isClass = !!node._isClass;
   const container = el('div', {className:'tree-node'});
 
-  const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`});
+  const row = el('div', {
+    className: 'tree-row' + (isClass ? ' tree-class-row' : ''),
+    style: `padding-left:${16 + depth * 16}px`,
+  });
 
   // Chevron icon for expandable nodes
   const icon = el('span', {className:'tree-icon'});
@@ -591,7 +610,7 @@ function renderTreeNode(name, node, depth) {
 
   // Build label: breadcrumb for collapsed chains (_segments), plain name otherwise.
   // Each segment emits a data-seg attribute for navigateToGroup D4 matching.
-  const nameEl = el('span', {className:'tree-name'});
+  const nameEl = el('span', {className:'tree-name' + (isClass ? ' tree-class' : '')});
   const segs = node._segments || [name];
   segs.forEach((seg, i) => {
     nameEl.appendChild(el('span', {'data-seg': seg}, seg));
@@ -647,16 +666,9 @@ function renderTestLeaf(test, depth) {
   const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`});
   const dot = el('span', {className:`status-dot ${outcome}`});
 
-  // Build name element: optionally prefix with class eyebrow when present
-  let nameEl;
-  if (agg.class_name) {
-    nameEl = el('span', {className:'tree-name'});
-    nameEl.appendChild(el('span', {className:'tree-eyebrow'}, agg.class_name));
-    nameEl.appendChild(el('span', {className:'crumb-sep'}, ' › '));
-    nameEl.appendChild(document.createTextNode(displayName));
-  } else {
-    nameEl = el('span', {className:'tree-name'}, displayName);
-  }
+  // Class context comes from the parent class node (file -> class -> method),
+  // so the leaf shows just the bare method/function name — aligned with peers.
+  const nameEl = el('span', {className:'tree-name'}, displayName);
 
   const badges = el('span', {className:'tree-badges'});
   if (agg.total_runs > 1) {
@@ -1381,6 +1393,28 @@ function formatDuration(sec) {
   return parts.join(' ');
 }
 
+// Format the run timestamp (YYYY_MM_DD_HH_MM_SS, UTC) into a legible string:
+// "Monday, June 23rd of 2026 at 23:01:42". Falls back to the raw value if it
+// doesn't match the expected shape.
+function ordinalSuffix(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return 'th';
+  return ({1:'st', 2:'nd', 3:'rd'})[n % 10] || 'th';
+}
+function formatTimestamp(ts) {
+  if (!ts) return '—';
+  const m = /^(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})$/.exec(ts);
+  if (!m) return ts;
+  const [, y, mo, d, hh, mm, ss] = m;
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dt = new Date(Date.UTC(+y, +mo - 1, +d, +hh, +mm, +ss));
+  const day = +d;
+  return `${DAYS[dt.getUTCDay()]}, ${MONTHS[+mo - 1]} ${day}${ordinalSuffix(day)} `
+       + `of ${y} at ${hh}:${mm}:${ss}`;
+}
+
 function openLightbox(src, alt) {
   const overlay = el('div', {className:'lightbox-overlay'});
   overlay.appendChild(el('img', {src, alt}));
@@ -1611,8 +1645,8 @@ function renderReport() {
   metaSection.appendChild(metaHeader);
   const metaBody = el('div', {className:'report-section-body'});
   const metaRows = [
-    ['Timestamp', DATA.timestamp],
-    ['Duration', DATA.duration + 's'],
+    ['Timestamp', formatTimestamp(DATA.timestamp)],
+    ['Duration', formatDuration(DATA.duration)],
     ['Exit Code', String(DATA.exit_code)],
     ['Python', DATA.python_version],
     ['Pytest', DATA.pytest_version],
@@ -1732,8 +1766,7 @@ document.querySelector('.tabs').addEventListener('keydown', (e) => {
 // ─── Header ──────────────────────────────────────────────────────────
 (function() {
   const metaEl = document.getElementById('header-meta');
-  const ts = DATA.timestamp.replace(/_/g, '-');
-  const formatted = ts.slice(0,10) + ' ' + ts.slice(11).replace(/-/g,':');
+  const formatted = formatTimestamp(DATA.timestamp);
 
   const agg = aggTests(DATA.tests);
   const badgeClass = agg.failed > 0 || agg.error > 0 ? 'fail' : agg.total === 0 ? 'mix' : 'pass';
@@ -1741,7 +1774,7 @@ document.querySelector('.tabs').addEventListener('keydown', (e) => {
     ? `${agg.failed + agg.error} failed`
     : `${agg.passed} passed`;
 
-  metaEl.innerHTML = `<span>${formatted} UTC</span><span>\u00b7</span><span>${DATA.duration}s</span>`;
+  metaEl.innerHTML = `<span>${formatted} UTC</span><span>\u00b7</span><span>${formatDuration(DATA.duration)}</span>`;
   const badge = el('span', {className: `meta-badge ${badgeClass}`}, badgeText);
   metaEl.appendChild(badge);
 })();

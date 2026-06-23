@@ -209,6 +209,13 @@ button { font-family: inherit; }
   font-weight: 700;
   margin-top: 4px;
 }
+.summary-hero-divider {
+  align-self: stretch;
+  width: 1px;
+  background: var(--c-border);
+  flex-shrink: 0;
+  margin: 4px 0;
+}
 .summary-hero-body { flex: 1; min-width: 0; }
 .summary-hero-body h3 {
   font-size: 14px;
@@ -223,10 +230,10 @@ button { font-family: inherit; }
   flex-shrink: 0;
 }
 .summary-hero-dur-value {
-  font-size: 32px;
-  font-weight: 800;
+  font-size: 22px;
+  font-weight: 700;
   font-family: var(--font-mono);
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--c-text2);
 }
@@ -692,12 +699,27 @@ button { font-family: inherit; }
   font-weight: 300;
   pointer-events: none;
 }
-/* Class eyebrow for class-based test names (Slice D) */
-.tree-eyebrow {
-  display: block;
+/* Class grouping node in the Tests tree (file -> class -> method).
+   The class label is shown once as a parent node, with a small "class" tag,
+   instead of a per-method eyebrow. */
+.tree-class {
+  font-family: var(--font-mono);
+  color: var(--c-text);
+  font-weight: 500;
+}
+.tree-class::before {
+  content: 'class';
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
   font-size: 0.7em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--c-text2);
-  line-height: 1.2;
+  background: var(--c-surface3);
+  border-radius: 4px;
+  vertical-align: middle;
 }
 .detail-eyebrow {
   font-size: 0.85em;
