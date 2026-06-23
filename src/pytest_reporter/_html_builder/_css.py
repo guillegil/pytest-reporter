@@ -1402,6 +1402,74 @@ button { font-family: inherit; }
   color: var(--c-text);
   font-size: 11px;
 }
+/* Guard check (if/elif/else chain) rendering */
+.guard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guard-branch {
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--c-surface2);
+  opacity: 0.65;
+}
+.guard-branch.chosen {
+  opacity: 1;
+  border-color: var(--c-accent, var(--c-passed));
+  background: var(--c-surface3);
+}
+.guard-branch-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.guard-kw {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--c-text2);
+}
+.guard-label { color: var(--c-text); font-weight: 500; }
+.guard-cond {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 8px;
+  line-height: 16px;
+}
+.guard-cond.true { background: var(--c-passed-dim); color: var(--c-passed); }
+.guard-cond.false { background: var(--c-surface); color: var(--c-text2); }
+.guard-chosen-tag {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--c-accent-dim, var(--c-surface));
+  color: var(--c-accent, var(--c-text));
+}
+.guard-check { margin-top: 6px; }
+.guard-check-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.guard-check-name { font-weight: 600; color: var(--c-text); }
+.guard-check-desc { color: var(--c-text2); }
+.guard-check .check-card-detail { margin-top: 6px; }
+.guard-nomatch {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--c-failed);
+}
 .check-card-longrepr {
   margin-top: 8px;
   padding: 8px 10px;

@@ -1343,32 +1343,92 @@ function renderCheckResults(checks) {
     card.appendChild(header);
 
     const body = el('div', {className:'check-card-body'});
-    const detail = el('div', {className:'check-card-detail'});
-
-    // Add relevant fields based on check_type
-    const fields = [
-      ['actual', 'Actual'], ['expected', 'Expected'],
-      ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
-      ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],
-      ['units', 'Units'], ['inclusive', 'Inclusive'],
-      ['expected_type', 'Expected type'], ['actual_length', 'Actual length'],
-      ['haystack', 'Haystack'], ['needle', 'Needle'], ['pattern', 'Pattern'],
-      ['msg', 'Message'],
-    ];
-    fields.forEach(([key, label]) => {
-      if (check[key] !== undefined && check[key] !== null) {
-        detail.appendChild(el('span', {className:'label'}, label));
-        const v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
-        detail.appendChild(el('span', {className:'value'}, v));
-      }
-    });
-
-    body.appendChild(detail);
+    // Guard checks (if/elif/else chains) carry branches/default/matched_index,
+    // not the flat leaf fields — render the branch chain instead.
+    body.appendChild(check.check_type === 'guard'
+      ? renderGuardBody(check)
+      : renderCheckDetail(check));
     card.appendChild(body);
     cards.appendChild(card);
   });
   container.appendChild(cards);
   return container;
+}
+
+// Leaf check detail — the flat field grid for a single (non-guard) descriptor.
+function renderCheckDetail(check) {
+  const detail = el('div', {className:'check-card-detail'});
+  const fields = [
+    ['actual', 'Actual'], ['expected', 'Expected'],
+    ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
+    ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],
+    ['units', 'Units'], ['inclusive', 'Inclusive'],
+    ['expected_type', 'Expected type'], ['actual_length', 'Actual length'],
+    ['haystack', 'Haystack'], ['needle', 'Needle'], ['pattern', 'Pattern'],
+    ['msg', 'Message'],
+  ];
+  fields.forEach(([key, label]) => {
+    if (check[key] !== undefined && check[key] !== null) {
+      detail.appendChild(el('span', {className:'label'}, label));
+      const v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
+      detail.appendChild(el('span', {className:'value'}, v));
+    }
+  });
+  return detail;
+}
+
+// Render a nested check descriptor inside a guard branch. The chosen branch is
+// expanded with its full detail; recurse when the nested check is itself a guard.
+function renderGuardCheck(check, expand) {
+  const box = el('div', {className:'guard-check'});
+  if (!check) { box.appendChild(el('span', {className:'guard-check-desc'}, '—')); return box; }
+  const meta = el('div', {className:'guard-check-meta'});
+  meta.appendChild(el('span', {className:'check-type-badge'}, check.check_type || ''));
+  if (check.name) meta.appendChild(el('span', {className:'guard-check-name'}, check.name));
+  if (check.description) meta.appendChild(el('span', {className:'guard-check-desc'}, check.description));
+  box.appendChild(meta);
+  if (expand) {
+    box.appendChild(check.check_type === 'guard'
+      ? renderGuardBody(check)
+      : renderCheckDetail(check));
+  }
+  return box;
+}
+
+// Render a guard descriptor body: the ordered if/elif/else branch chain, the
+// evaluated branch marked via matched_index (or the default when null).
+function renderGuardBody(check) {
+  const wrap = el('div', {className:'guard-body'});
+  const branches = check.branches || [];
+  const matched = check.matched_index;  // int | null
+  branches.forEach((b, i) => {
+    const chosen = matched === i;
+    const row = el('div', {className:'guard-branch' + (chosen ? ' chosen' : '')});
+    const head = el('div', {className:'guard-branch-head'});
+    head.appendChild(el('span', {className:'guard-kw'}, i === 0 ? 'if' : 'elif'));
+    head.appendChild(el('span', {className:'guard-label'}, b.label || ''));
+    head.appendChild(el('span', {className:'guard-cond ' + (b.condition ? 'true' : 'false')},
+      b.condition ? 'true' : 'false'));
+    if (chosen) head.appendChild(el('span', {className:'guard-chosen-tag'}, 'evaluated'));
+    row.appendChild(head);
+    row.appendChild(renderGuardCheck(b.check, chosen));
+    wrap.appendChild(row);
+  });
+  if (check.default) {
+    const chosen = matched == null;
+    const row = el('div', {className:'guard-branch guard-default' + (chosen ? ' chosen' : '')});
+    const head = el('div', {className:'guard-branch-head'});
+    head.appendChild(el('span', {className:'guard-kw'}, 'else'));
+    head.appendChild(el('span', {className:'guard-label'}, check.default.name || 'default'));
+    if (chosen) head.appendChild(el('span', {className:'guard-chosen-tag'}, 'evaluated'));
+    row.appendChild(head);
+    row.appendChild(renderGuardCheck(check.default, chosen));
+    wrap.appendChild(row);
+  } else if (matched == null) {
+    wrap.appendChild(el('div', {className:'guard-nomatch'},
+      'No branch matched and no default — check fails.'));
+  }
+  return wrap;
 }
 
 function formatSize(bytes) {
