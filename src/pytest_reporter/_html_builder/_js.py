@@ -80,17 +80,18 @@ function buildTree(tests) {
 }
 
 function nodeAgg(node) {
-  let p=0,f=0,s=0,e=0,dur=0;
+  let p=0,f=0,s=0,e=0,dur=0,retr=0;
   node.tests.forEach(t => {
     p+=t.aggregate.passed; f+=t.aggregate.failed;
     s+=t.aggregate.skipped; e+=t.aggregate.errors;
     dur += t.aggregate.total_duration_seconds || 0;
+    retr += t.runs.filter(r => r.retries && r.retries.attempts > 0).length;
   });
   Object.values(node.children).forEach(c => {
     const a = nodeAgg(c);
-    p+=a.passed; f+=a.failed; s+=a.skipped; e+=a.error; dur+=a.duration;
+    p+=a.passed; f+=a.failed; s+=a.skipped; e+=a.error; dur+=a.duration; retr+=a.retried;
   });
-  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e,duration:dur};
+  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e,duration:dur,retried:retr};
 }
 
 // ─── Tree compaction transform (pure — never mutates input) ──────────────
@@ -621,6 +622,12 @@ function renderTreeNode(name, node, depth) {
 
   // Colored count badges
   const badges = el('span', {className:'tree-badges'});
+  if (agg.retried) {
+    badges.appendChild(el('span', {
+      className: 'tree-badge retried',
+      title: 'Retried tests in this group: ' + agg.retried,
+    }, '↻' + agg.retried));
+  }
   if (agg.passed) badges.appendChild(el('span', {className:'tree-badge passed'}, String(agg.passed)));
   if (agg.failed) badges.appendChild(el('span', {className:'tree-badge failed'}, String(agg.failed)));
   if (agg.skipped) badges.appendChild(el('span', {className:'tree-badge skipped'}, String(agg.skipped)));
@@ -671,6 +678,16 @@ function renderTestLeaf(test, depth) {
   const nameEl = el('span', {className:'tree-name'}, displayName);
 
   const badges = el('span', {className:'tree-badges'});
+  // Flaky marker: any run that needed retries gets a ↻ pill so passed-on-retry
+  // tests are visible at a glance in the tree (final outcome alone hides them).
+  const anyRetried = test.runs.some(r => r.retries && r.retries.attempts > 0);
+  if (anyRetried) {
+    const n = test.runs.reduce((a, r) => a + ((r.retries && r.retries.attempts) || 0), 0);
+    badges.appendChild(el('span', {
+      className: 'tree-badge retried',
+      title: 'Retried (' + n + ' attempt' + (n === 1 ? '' : 's') + ')',
+    }, '↻' + n));
+  }
   if (agg.total_runs > 1) {
     badges.appendChild(el('span', {className:'tree-badge count'}, String(agg.total_runs)));
   }

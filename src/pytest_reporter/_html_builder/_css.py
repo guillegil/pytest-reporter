@@ -690,6 +690,11 @@ button { font-family: inherit; }
   background: var(--c-surface3);
   color: var(--c-text3);
 }
+/* Flaky marker: a test/group that needed retries (final outcome may be pass) */
+.tree-badge.retried {
+  background: var(--c-skipped-dim);
+  color: var(--c-skipped);
+}
 .tree-children { display: none; }
 .tree-node.expanded > .tree-children { display: block; }
 /* Breadcrumb separator for collapsed chain nodes (tests-tree-cleanup) */
