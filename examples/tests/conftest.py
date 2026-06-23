@@ -8,6 +8,11 @@ import time
 import pytest
 
 
+def pytest_reporter_seed() -> int:
+    """Demonstrate the manual RNG seed override shown in Run Information."""
+    return 1337
+
+
 @pytest.fixture(scope="session")
 def testbench(session_log):
     """Simulate a hardware testbench with instrument discovery."""
