@@ -1343,11 +1343,9 @@ function renderCheckResults(checks) {
     card.appendChild(header);
 
     const body = el('div', {className:'check-card-body'});
-    // Guard checks (if/elif/else chains) carry branches/default/matched_index,
-    // not the flat leaf fields — render the branch chain instead.
-    body.appendChild(check.check_type === 'guard'
-      ? renderGuardBody(check)
-      : renderCheckDetail(check));
+    // Composite checks (guard/conditional/all_satisfy) carry branches/cases/
+    // child_checks — not the flat leaf fields — so render their chain instead.
+    body.appendChild(renderCheckBody(check));
     card.appendChild(body);
     cards.appendChild(card);
   });
@@ -1377,8 +1375,18 @@ function renderCheckDetail(check) {
   return detail;
 }
 
-// Render a nested check descriptor inside a guard branch. The chosen branch is
-// expanded with its full detail; recurse when the nested check is itself a guard.
+// Dispatch a check descriptor to its body renderer (composite chain or leaf grid).
+function renderCheckBody(check) {
+  switch (check.check_type) {
+    case 'guard': return renderGuardBody(check);
+    case 'conditional': return renderConditionalBody(check);
+    case 'all_satisfy': return renderAllSatisfyBody(check);
+    default: return renderCheckDetail(check);
+  }
+}
+
+// Render a nested check descriptor inside a composite branch/case. The chosen
+// one is expanded with its full body; recurses for nested composites.
 function renderGuardCheck(check, expand) {
   const box = el('div', {className:'guard-check'});
   if (!check) { box.appendChild(el('span', {className:'guard-check-desc'}, '—')); return box; }
@@ -1387,11 +1395,7 @@ function renderGuardCheck(check, expand) {
   if (check.name) meta.appendChild(el('span', {className:'guard-check-name'}, check.name));
   if (check.description) meta.appendChild(el('span', {className:'guard-check-desc'}, check.description));
   box.appendChild(meta);
-  if (expand) {
-    box.appendChild(check.check_type === 'guard'
-      ? renderGuardBody(check)
-      : renderCheckDetail(check));
-  }
+  if (expand) box.appendChild(renderCheckBody(check));
   return box;
 }
 
@@ -1428,6 +1432,65 @@ function renderGuardBody(check) {
     wrap.appendChild(el('div', {className:'guard-nomatch'},
       'No branch matched and no default — check fails.'));
   }
+  return wrap;
+}
+
+// Render a conditional descriptor: a switch over named cases, the matched case
+// (matched_case, or the default when null) marked as evaluated.
+function renderConditionalBody(check) {
+  const wrap = el('div', {className:'guard-body'});
+  wrap.appendChild(el('div', {className:'guard-switch'},
+    el('span', {className:'guard-kw'}, 'switch'),
+    el('span', {className:'guard-switch-val'}, String(check.switch_value))));
+  const cases = check.cases || {};
+  const matched = check.matched_case;  // str | null
+  Object.keys(cases).forEach(key => {
+    const chosen = matched === key;
+    const row = el('div', {className:'guard-branch' + (chosen ? ' chosen' : '')});
+    const head = el('div', {className:'guard-branch-head'});
+    head.appendChild(el('span', {className:'guard-kw'}, 'case'));
+    head.appendChild(el('span', {className:'guard-label'}, key));
+    if (chosen) head.appendChild(el('span', {className:'guard-chosen-tag'}, 'evaluated'));
+    row.appendChild(head);
+    row.appendChild(renderGuardCheck(cases[key], chosen));
+    wrap.appendChild(row);
+  });
+  if (check.default) {
+    const chosen = matched == null;
+    const row = el('div', {className:'guard-branch guard-default' + (chosen ? ' chosen' : '')});
+    const head = el('div', {className:'guard-branch-head'});
+    head.appendChild(el('span', {className:'guard-kw'}, 'default'));
+    head.appendChild(el('span', {className:'guard-label'}, check.default.name || 'default'));
+    if (chosen) head.appendChild(el('span', {className:'guard-chosen-tag'}, 'evaluated'));
+    row.appendChild(head);
+    row.appendChild(renderGuardCheck(check.default, chosen));
+    wrap.appendChild(row);
+  } else if (matched == null) {
+    wrap.appendChild(el('div', {className:'guard-nomatch'},
+      'No case matched and no default — check fails.'));
+  }
+  return wrap;
+}
+
+// Render an all_satisfy descriptor: every child is evaluated (AND); failures are
+// expanded so the offending item is visible.
+function renderAllSatisfyBody(check) {
+  const wrap = el('div', {className:'guard-body'});
+  const kids = check.child_checks || [];
+  wrap.appendChild(el('div', {className:'guard-switch'},
+    el('span', {className:'guard-kw'}, 'all of'),
+    el('span', {className:'guard-switch-val'}, kids.length + ' items')));
+  kids.forEach((c, i) => {
+    const ok = !!(c && c.passed);
+    // every child is evaluated → full opacity (.chosen); expand failures.
+    const row = el('div', {className:'guard-branch chosen'});
+    const head = el('div', {className:'guard-branch-head'});
+    head.appendChild(el('span', {className:`status-dot ${ok ? 'passed' : 'failed'}`}));
+    head.appendChild(el('span', {className:'guard-label'}, '#' + (i + 1)));
+    row.appendChild(head);
+    row.appendChild(renderGuardCheck(c, !ok));
+    wrap.appendChild(row);
+  });
   return wrap;
 }
 

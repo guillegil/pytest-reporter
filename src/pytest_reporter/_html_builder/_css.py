@@ -1454,6 +1454,18 @@ button { font-family: inherit; }
   background: var(--c-accent-dim, var(--c-surface));
   color: var(--c-accent, var(--c-text));
 }
+.guard-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.guard-switch-val {
+  font-family: var(--font-mono);
+  color: var(--c-text);
+  font-weight: 600;
+}
 .guard-check { margin-top: 6px; }
 .guard-check-meta {
   display: flex;

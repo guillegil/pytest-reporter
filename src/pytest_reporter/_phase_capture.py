@@ -18,6 +18,61 @@ if TYPE_CHECKING:
     from .reporter import Reporter
 
 
+def _composite_child_descriptors(descriptor: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the child check descriptors a composite check consumes.
+
+    Mirrors pytest-verify's own ``_child_descriptors``: a ``guard``/``conditional``
+    appends its ``default``; ``all_satisfy`` exposes only ``child_checks``.
+
+    Args:
+        descriptor: A single check descriptor dict.
+
+    Returns:
+        The nested child descriptor dicts (empty for non-composite checks).
+    """
+    check_type = descriptor.get("check_type")
+    if check_type == "guard":
+        children = [b.get("check") for b in descriptor.get("branches", []) if isinstance(b, dict)]
+    elif check_type == "conditional":
+        children = list(descriptor.get("cases", {}).values())
+    elif check_type == "all_satisfy":
+        return [c for c in descriptor.get("child_checks", []) if isinstance(c, dict)]
+    else:
+        return []
+    default = descriptor.get("default")
+    if default is not None:
+        children.append(default)
+    return [c for c in children if isinstance(c, dict)]
+
+
+def _strip_nested_check_children(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop top-level descriptors that are nested children of a composite check.
+
+    Some pytest-verify versions auto-record the child checks of a
+    ``guard``/``conditional``/``all_satisfy`` as independent stash entries. Those
+    children are already rendered inside their parent, so surfacing them as
+    standalone cards is misleading (and an unmatched branch would read as an
+    independent failure). They are filtered by object identity — reliable here
+    because capture happens in-memory before JSON serialization, where the leaked
+    entry and the nested reference are the same object.
+
+    Args:
+        checks: The check descriptors captured from the verify stash.
+
+    Returns:
+        The list with nested children removed, order preserved. Independent
+        checks (and the composites themselves) are kept.
+    """
+    child_ids: set[int] = set()
+    worklist = [c for c in checks if isinstance(c, dict)]
+    while worklist:
+        desc = worklist.pop()
+        for child in _composite_child_descriptors(desc):
+            child_ids.add(id(child))
+            worklist.append(child)
+    return [c for c in checks if id(c) not in child_ids]
+
+
 def flush_table_artifacts(logger: Logger, run_dir: Path) -> None:
     """Write any pending table HTML artifacts from the logger and reset it.
 
@@ -134,7 +189,7 @@ def write_run_finish_files(
         if item is not None:
             checks = get_check_results(item)
             if checks:
-                reporter._check_results[nodeid] = checks
+                reporter._check_results[nodeid] = _strip_nested_check_children(checks)
 
     # Create artifacts directory
     (run_dir / "artifacts").mkdir(parents=True, exist_ok=True)
