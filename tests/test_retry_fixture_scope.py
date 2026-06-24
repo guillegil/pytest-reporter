@@ -71,3 +71,35 @@ def test_next_test_runs_cleanly_after_a_retried_test(pytester: Pytester) -> None
     result = pytester.runpytest("--report-dir=reports", "--report-retries=2")
     # test_flaky fails after retries; test_after must still PASS (not error).
     result.assert_outcomes(failed=1, passed=1)
+
+
+def test_retry_repopulates_parametrize_funcargs(pytester: Pytester) -> None:
+    """Retried parametrized tests must keep their params (no funcargs KeyError).
+
+    Regression guard: an earlier attempt at the fix used nextitem=item, which
+    left the item 'set up' so the retry's setup did not repopulate funcargs —
+    a fixture depending on a parametrize arg raised KeyError on re-run.
+    """
+    pytester.makeconftest("""
+        import pytest
+
+        @pytest.fixture(scope="session")
+        def backend():
+            yield {"conn": 1}
+
+        @pytest.fixture
+        def device(backend, emin):  # depends on a parametrize arg
+            return {"emin": emin}
+    """)
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.mark.parametrize("emin,emax", [(975, 9944), (100, 200)])
+        def test_fox(device, emin, emax):
+            assert device["emin"] == emin  # uses both param and param-derived fixture
+            assert emin < 0  # always fails -> retried
+    """)
+    result = pytester.runpytest("--report-dir=reports", "--report-retries=2")
+    # Both variants fail on the assertion (not on a KeyError/error).
+    result.assert_outcomes(failed=2)
+    result.stdout.no_fnmatch_line("*KeyError*")

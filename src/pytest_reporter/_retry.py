@@ -149,8 +149,13 @@ def run_with_retries(
         reporter._procedure_trackers[nodeid] = tracker
         _set_tracker(tracker)
 
-        # Re-execute the test
-        retry_reports = runtestprotocol(item, nextitem=item, log=False)
+        # Re-execute the test. Use the REAL nextitem (not None): this tears down
+        # only function-scoped fixtures (so setup re-runs fresh next attempt and
+        # parametrize funcargs are repopulated) while KEEPING module/session
+        # fixtures alive — they are shared with nextitem — so a backend they own
+        # (threads, processes, connections) is not recycled between attempts.
+        # (nextitem=None, the old value, tore down everything incl. session.)
+        retry_reports = runtestprotocol(item, nextitem=nextitem, log=False)
 
         # Write retry phase logs directly to disk (don't overwrite collector)
         for report in retry_reports:
@@ -201,15 +206,10 @@ def run_with_retries(
     # Clean up retry path
     reporter._retry_paths.pop(nodeid, None)
 
-    # Retry attempts ran with nextitem=item so module/session fixtures (and any
-    # backend they own — threads, processes, instrument connections) stay alive
-    # across attempts instead of being torn down and recreated each time. Now
-    # transition fixture teardown to the REAL nextitem exactly once, mirroring a
-    # normal protocol end, so the next test starts from a consistent state.
-    # (Edge: if the retried test is the LAST item, the first run already tore
-    # down via nextitem=None; the retry loop then recreates session fixtures.
-    # That only affects a failing final test and is acceptable.)
-    item.session._setupstate.teardown_exact(nextitem)
+    # Note: each attempt ran runtestprotocol(nextitem=nextitem), so the last
+    # attempt already transitioned fixture teardown to the real nextitem (only
+    # function-scoped torn down; module/session kept when shared with nextitem).
+    # No extra teardown is needed here.
 
     # Store retry data
     reporter.collector.set_retry_data(nodeid, retry_data)
