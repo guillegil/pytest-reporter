@@ -59,7 +59,7 @@ def run_with_retries(
 
     from _pytest.runner import runtestprotocol
 
-    # Run the test normally first (log=False so we control report dispatch)
+    # Run the test normally first (log=False so we control report dispatch).
     reports = runtestprotocol(item, nextitem=nextitem, log=False)
 
     # Process reports: since log=False, the logger was NOT reset between
@@ -107,6 +107,8 @@ def run_with_retries(
             break
 
     if call_report is None or not call_report.failed:
+        # Passed (or no call phase) — no retry, normal first-run teardown already
+        # happened inside runtestprotocol(nextitem). Nothing extra to do.
         # Mark finished BEFORE dispatching to prevent our own
         # logreport hook from re-processing (and overwriting entries)
         reporter._finished_runs.add(nodeid)
@@ -148,7 +150,7 @@ def run_with_retries(
         _set_tracker(tracker)
 
         # Re-execute the test
-        retry_reports = runtestprotocol(item, nextitem=None, log=False)
+        retry_reports = runtestprotocol(item, nextitem=item, log=False)
 
         # Write retry phase logs directly to disk (don't overwrite collector)
         for report in retry_reports:
@@ -198,6 +200,16 @@ def run_with_retries(
 
     # Clean up retry path
     reporter._retry_paths.pop(nodeid, None)
+
+    # Retry attempts ran with nextitem=item so module/session fixtures (and any
+    # backend they own — threads, processes, instrument connections) stay alive
+    # across attempts instead of being torn down and recreated each time. Now
+    # transition fixture teardown to the REAL nextitem exactly once, mirroring a
+    # normal protocol end, so the next test starts from a consistent state.
+    # (Edge: if the retried test is the LAST item, the first run already tore
+    # down via nextitem=None; the retry loop then recreates session fixtures.
+    # That only affects a failing final test and is acceptable.)
+    item.session._setupstate.teardown_exact(nextitem)
 
     # Store retry data
     reporter.collector.set_retry_data(nodeid, retry_data)
