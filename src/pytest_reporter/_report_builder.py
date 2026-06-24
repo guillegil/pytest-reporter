@@ -280,8 +280,10 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                 eps = [ep for ep in dist.entry_points if ep.group == "pytest11"]
                 if not eps:
                     continue
-                name = dist.metadata.get("Name", "") or ""
-                ver = dist.metadata.get("Version", "") or ""
+                # dist.name/.version are version-portable; PackageMetadata.get
+                # is not present in the 3.11 type stubs (mypy --python-version 3.11).
+                name = dist.name or ""
+                ver = dist.version or ""
                 if not name or not ver:
                     continue
                 key = name.lower().replace("-", "_")

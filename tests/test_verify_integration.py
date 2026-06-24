@@ -8,11 +8,36 @@ Covers:
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 if TYPE_CHECKING:
     from pytest import MonkeyPatch, Pytester
+
+
+def _verify_exposes_get_check_results() -> bool:
+    """True only if the installed pytest-verify exposes the public reader.
+
+    The reporter reads checks via ``pytest_verify.get_check_results``; older /
+    differently-packaged verify builds (e.g. the published git main) do not
+    expose it, so verification cards cannot be captured. Tests that require real
+    card rendering are skipped in that case — the reporter degrades gracefully,
+    which is covered by ``test_reporter_runs_cleanly_when_verify_absent``.
+    """
+    if importlib.util.find_spec("pytest_verify") is None:
+        return False
+    import pytest_verify
+
+    return hasattr(pytest_verify, "get_check_results")
+
+
+requires_get_check_results = pytest.mark.skipif(
+    not _verify_exposes_get_check_results(),
+    reason="installed pytest-verify does not expose get_check_results()",
+)
 
 
 def test_reporter_runs_cleanly_when_verify_absent(
@@ -52,6 +77,7 @@ def test_reporter_runs_cleanly_when_verify_absent(
     assert (reports_dir / "01_latest").is_dir(), "01_latest hard copy must exist"
 
 
+@requires_get_check_results
 def test_verification_cards_rendered_when_verify_present(pytester: Pytester) -> None:
     """Scenario 6: reporter renders verification card data when verify is installed.
 
