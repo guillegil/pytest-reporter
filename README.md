@@ -2,6 +2,10 @@
 
 A pytest plugin that turns every test run into a self-contained, structured report — JSON logs, JUnit XML, an interactive HTML dashboard, embedded artifacts, retries, and rich tables — all generated locally with zero external dependencies beyond pytest.
 
+[![CI](https://github.com/guillegil/pytest-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/guillegil/pytest-reporter/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 > **Status:** Alpha · Python 3.11+ · MIT license
 
 ---
@@ -103,7 +107,7 @@ Open `reports/01_latest/report.html` to see the dashboard.
 
 ## Public API
 
-The plugin auto-registers three fixtures (no imports needed) and exports two functions:
+The plugin auto-registers fixtures (no imports needed) and exports a small set of functions:
 
 ### Fixtures
 
@@ -112,12 +116,35 @@ The plugin auto-registers three fixtures (no imports needed) and exports two fun
 | `log` | test | `Logger` | Structured logging during a test. |
 | `session_log` | session | `Logger` | Structured logging from session-scoped fixtures. |
 | `report_artifacts` | test | `pathlib.Path` | Directory to save artifacts (images, HTML, CSV, anything). |
+| `report_metadata` | session | `dict` | Mutable `{section: {label: value}}` shown in the Report tab. |
+| `report_seed` | session | `dict` | Set `report_seed["value"]` to pin the RNG seed shown in Run Information. |
 
 ### Functions
 
 ```python
-from pytest_reporter import step, substep
+from pytest_reporter import step, substep       # procedure tracking
+from pytest_reporter import fmt, FormattedText   # typed rich-text for step/substep descriptions
 ```
+
+Use `fmt` to add monospace runs to descriptions instead of raw backtick strings:
+
+```python
+from pytest_reporter import fmt, step
+
+step(fmt.text("Set ", fmt.mono("Pulse.Enable"), " to 1"))
+```
+
+### Extensibility hooks
+
+Implement these in a `conftest.py` to enrich the report (all optional):
+
+| Hook | Purpose |
+|---|---|
+| `pytest_reporter_metadata()` | Return `{section: {label: value}}` for the Report tab. |
+| `pytest_reporter_seed()` | Return the RNG seed (`int` / `str`) shown in Run Information. |
+| `pytest_reporter_dashboard()` | Configure the Summary chart groups (path, depth, style). |
+
+The `report_metadata` / `report_seed` fixtures do the same per-session and override the hooks on collision. If `pytest-strategies` is installed, the seed is auto-detected.
 
 ---
 
@@ -200,7 +227,7 @@ def test_voltage_sweep(log, verify):
 - Used as a **context manager** (`with step(...)`) it captures timing and propagates exceptions.
 - Used as a **plain call** it just records the step.
 - `step(check=...)` attaches a verification descriptor (presentation only — `pytest-reporter` never determines pass/fail; that's `pytest-verify`'s job).
-- Maximum nesting depth: 2 (`step` → `substep`/`step`-inside-`with`).
+- Nesting depth: up to 3 levels (`1` / `1.1` / `1.1.1`). Calls that would go deeper are clamped to level 3 — never raised.
 
 ---
 
@@ -262,10 +289,10 @@ Behavior:
 
 The `report.html` is a single self-contained file with four tabs:
 
-1. **Summary** — pass-rate hero, ratio bar, status counters with percentages, donut charts (overall, top-level groups, per-feature).
-2. **Tests** — collapsible test tree with status badges; per-test detail panel with sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, and **Checks** (when `pytest-verify` is installed).
+1. **Summary** — pass-rate hero, ratio bar, status counters with percentages, and configurable donut/bar chart groups.
+2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, and **Checks** (when `pytest-verify` is installed).
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
-4. **Report** — run metadata (duration, exit code, Python/pytest versions, command line, full `pytest.log`).
+4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 
 Tables logged via `log.table()` appear inline in the chronological log position **and** as full HTML artifacts in the Artifacts tab.
 
@@ -287,20 +314,31 @@ pip install "pytest-reporter[verify]"
 
 ```
 src/pytest_reporter/
-├── __init__.py             # Public API (step, substep, exceptions)
-├── plugin.py               # Hooks, fixtures, CLI options
+├── __init__.py             # Public API: fmt, step, substep, Logger/ReportLogger, FormattedText
+├── fmt.py                  # Typed rich-text constructors (mono, text)
+├── plugin.py               # Hooks, fixtures, CLI options, entry point
+├── _hookspecs.py           # pytest_reporter_* hook specifications
 ├── reporter.py             # Orchestrator
+├── _report_builder.py      # Assembles the HTML data model at session end
 ├── _logger.py              # Hierarchical Logger + table()
 ├── _procedure.py           # step/substep tracking
 ├── _collector.py           # Test indexing, run IDs, parametrization
-├── _context.py             # Path/timestamp management
+├── _phase_capture.py       # setup/call/teardown capture + verify check dedup
+├── _retry.py               # --report-retries engine
+├── _context.py             # Path/timestamp management + filename sanitization
 ├── _json_writer.py         # Phase / parameters / aggregate writers
 ├── _junit_writer.py        # JUnit XML
-├── _html_builder.py        # Self-contained HTML dashboard
+├── _dashboard_config.py    # Summary dashboard group normalization
 ├── _table.py               # DataFrame normalization + HTML artifacts
 ├── _console_capture.py     # pytest.log tee
 ├── _symlinks.py            # 01_latest/ hard-copy refresh
+├── _safety.py              # Crash-safety guard — the observer never breaks the run
 ├── _types.py               # TypedDicts and dataclasses
+├── _html_builder/          # Self-contained HTML dashboard (package)
+│   ├── _template.py        #   HTML skeleton + data embedding
+│   ├── _css.py             #   Inline styles
+│   ├── _js.py              #   Inline dashboard logic
+│   └── _degraded.py        #   Minimal fallback report
 └── py.typed
 ```
 
