@@ -49,6 +49,46 @@ function chevronSvg(cls) {
   return svg;
 }
 
+// Copy-to-clipboard helper for the "run this test" command box.
+// navigator.clipboard needs a secure context (file:// qualifies) + a user
+// gesture (the click); the execCommand fallback covers older/edge browsers.
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).catch(function() { return fallbackCopy(text); });
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  } catch (e) { /* clipboard unavailable — silent no-op */ }
+}
+// Build the exact single-test pytest command for a run's nodeid.
+// Quoted because parametrize ids ([...]) are glob/shell-special.
+function testCommand(nodeid) {
+  return 'pytest "' + nodeid + '"';
+}
+// Copy the command shown in a .detail-cmd row, with transient feedback.
+function copyCommandRow(rowEl) {
+  const codeEl = rowEl.querySelector('.detail-cmd-code');
+  if (!codeEl) return;
+  copyToClipboard(codeEl.textContent);
+  const hint = rowEl.querySelector('.detail-cmd-hint');
+  rowEl.classList.add('copied');
+  if (hint) hint.textContent = 'Copied!';
+  setTimeout(function() {
+    rowEl.classList.remove('copied');
+    if (hint) hint.textContent = 'Copy';
+  }, 1400);
+}
+
 // ─── Aggregate helpers ───────────────────────────────────────────────
 function aggTests(tests) {
   let p=0,f=0,s=0,e=0;
@@ -732,6 +772,22 @@ function showTestDetail(test) {
   header.appendChild(headerTop);
   header.appendChild(el('div', {className:'file-path'}, test.aggregate.file));
 
+  // Exact "run only this test" command — updates with the selected run's nodeid.
+  const firstRun = test.runs.length > 0 ? test.runs[0] : null;
+  const initialCmd = testCommand(firstRun ? firstRun.nodeid : test.base_nodeid);
+  const cmdRow = el('div', {
+    className:'detail-cmd', id:'detail-cmd', role:'button', tabindex:'0',
+    'aria-label':'Copy command to run this test'
+  },
+    el('code', {className:'detail-cmd-code'}, initialCmd),
+    el('span', {className:'detail-cmd-hint'}, 'Copy')
+  );
+  cmdRow.addEventListener('click', function() { copyCommandRow(cmdRow); });
+  cmdRow.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); copyCommandRow(cmdRow); }
+  });
+  header.appendChild(cmdRow);
+
   // Stats row
   const agg = test.aggregate;
   const stats = el('div', {className:'detail-header-stats'});
@@ -837,6 +893,9 @@ function refreshRunPills(test, panel) {
 
 function showRunDetail(run) {
   selectedRun = run;
+  // Keep the header command in sync with the selected run's exact nodeid.
+  const cmdCode = document.querySelector('#detail-cmd .detail-cmd-code');
+  if (cmdCode) cmdCode.textContent = testCommand(run.nodeid);
   // Update pill selection
   document.querySelectorAll('#run-pills .run-pill').forEach(p => {
     p.classList.toggle('selected', p.textContent.startsWith(run.run_id));

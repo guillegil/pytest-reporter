@@ -801,6 +801,50 @@ button { font-family: inherit; }
   font-family: var(--font-mono);
   margin-top: 6px;
 }
+.detail-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 5px 10px;
+  max-width: 100%;
+  background: var(--c-surface2);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.detail-cmd:hover,
+.detail-cmd:focus-visible {
+  border-color: var(--c-accent);
+  background: var(--c-surface3);
+  outline: none;
+}
+.detail-cmd.copied {
+  border-color: var(--c-passed);
+}
+.detail-cmd-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-cmd-hint {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-text3);
+}
+.detail-cmd.copied .detail-cmd-hint {
+  color: var(--c-passed);
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-cmd { transition: none; }
+}
 .detail-header-stats {
   display: flex;
   gap: 16px;
