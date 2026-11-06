@@ -1898,6 +1898,197 @@ button { font-family: inherit; }
 .plugins-collapsible:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
 
 /* ================================================================
+   Failure-first triage: Summary failures list, run failure strip
+   ================================================================ */
+:root {
+  --c-failed-text: #FCA5A5;   /* red text on red-tinted surfaces (>= 4.5:1) */
+  --c-failed-line: rgba(239,68,68,0.32);
+}
+
+/* Counter cards that filter the Tests tab */
+button.counter-card {
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  cursor: pointer;
+}
+button.counter-card:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.strip-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border2);
+  background: var(--c-surface2);
+  color: var(--c-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s var(--ease-out), background 0.15s var(--ease-out);
+}
+.strip-btn:hover { border-color: var(--c-text2); background: var(--c-surface3); }
+.strip-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+.failures-panel {
+  background: var(--c-surface);
+  border: 1px solid var(--c-failed-line);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px 12px;
+  margin-bottom: 28px;
+}
+.failures-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 10px;
+}
+.failures-head h2 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--c-text);
+}
+.failures-count {
+  font-size: 13px;
+  color: var(--c-text2);
+  font-variant-numeric: tabular-nums;
+}
+.failures-copy { margin-left: auto; }
+.failures-list { list-style: none; }
+.failure-row {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 2fr) minmax(0, 3fr);
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 11px 10px;
+  border: 0;
+  border-top: 1px solid var(--c-border);
+  background: none;
+  cursor: pointer;
+  border-radius: 0;
+}
+.failures-list li:first-child .failure-row { border-top: 0; }
+.failure-row:hover { background: var(--c-surface2); }
+.failure-row:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.failure-row .status-dot { align-self: center; }
+.failure-row-main { display: flex; flex-direction: column; min-width: 0; }
+.failure-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+.failure-row-file {
+  font-size: 12px;
+  color: var(--c-text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.failure-row-reason {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--c-failed-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.failures-more {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text2);
+  background: none;
+  border: 0;
+  padding: 10px 10px 6px;
+  cursor: pointer;
+}
+.failures-more:hover { color: var(--c-text); }
+.failures-more:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+.filter-chip {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent-dim);
+  color: #BFDBFE;
+  cursor: pointer;
+}
+.filter-chip[hidden] { display: none; }
+.filter-chip:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+/* Failure strip at the top of a failed run */
+.failure-strip {
+  background: var(--c-failed-dim);
+  border: 1px solid var(--c-failed-line);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.failure-strip.error {
+  background: var(--c-error-dim);
+  border-color: rgba(249,115,22,0.32);
+}
+.failure-strip-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-failed-text);
+  margin-bottom: 4px;
+}
+.failure-strip.error .failure-strip-label { color: #FDBA74; }
+.failure-strip-reason {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.failure-strip-checks {
+  list-style: none;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.failure-strip-checks li { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
+.failure-strip-check-name { color: var(--c-text); font-weight: 600; }
+.failure-strip-check-detail { font-family: var(--font-mono); font-size: 12px; color: var(--c-failed-text); }
+.failure-strip-check-loc { font-family: var(--font-mono); font-size: 12px; color: var(--c-text2); overflow-wrap: anywhere; }
+.failure-strip-more { color: var(--c-text2); font-size: 12px; }
+.failure-strip-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+@media (max-width: 640px) {
+  .failures-panel { padding: 16px 14px 10px; }
+  .failures-copy { margin-left: 0; }
+  .failure-row { grid-template-columns: 10px minmax(0, 1fr); }
+  .failure-row-reason { grid-column: 2; }
+  .detail-panel { scroll-margin-top: 8px; }
+}
+
+/* ================================================================
    Responsive
    ================================================================ */
 @media (max-width: 768px) {

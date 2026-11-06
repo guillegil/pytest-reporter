@@ -499,6 +499,9 @@ function renderSummary() {
   hero.appendChild(heroBody);
   container.appendChild(hero);
 
+  const failures = renderFailuresPanel();
+  if (failures) container.appendChild(failures);
+
   // ── Counter cards ──
   const counterDefs = [{k:'passed',l:'Passed'},{k:'failed',l:'Failed'},{k:'skipped',l:'Skipped'},{k:'error',l:'Errors'}];
   if (DATA.retries_enabled) counterDefs.push({k:'retried',l:'Retried'});
@@ -507,10 +510,22 @@ function renderSummary() {
   const counters = el('div', {className:'counters'},
     counterDefs.map(c => {
       const val = counterData[c.k];
-      const card = el('div', {className:'counter-card ' + c.k},
+      // Cards with something behind them open the Tests tab filtered to it.
+      const clickable = val > 0;
+      const card = el(clickable ? 'button' : 'div', {className:'counter-card ' + c.k},
         el('div', {className:'value'}, String(val)),
         el('div', {className:'label'}, c.l)
       );
+      if (clickable) {
+        card.type = 'button';
+        card.title = c.k === 'total' ? 'Show all tests' : 'Show ' + c.l.toLowerCase() + ' tests';
+        card.addEventListener('click', () => {
+          if (c.k === 'total') showTreeSubset(STATUSES, false);
+          else if (c.k === 'retried') showTreeSubset(STATUSES, true);
+          else if (c.k === 'failed' || c.k === 'error') showTreeSubset(['failed', 'error'], false);
+          else showTreeSubset([c.k], false);
+        });
+      }
       if (c.k !== 'total' && total > 0) {
         const pct = Math.round((val / total) * 100);
         card.appendChild(el('div', {className:'counter-pct'}, pct + '%'));
@@ -527,6 +542,68 @@ function renderSummary() {
   renderDashboardGroups(DATA.dashboard, container, tree);
 
   panel.appendChild(container);
+}
+
+// Every failed or errored run, each with the line that says why, linking to
+// its run in the Tests tab. Absent when nothing failed.
+const FAILURES_SHOWN = 8;
+function renderFailuresPanel() {
+  const items = [];
+  DATA.tests.forEach(t => t.runs.forEach(r => { if (isBad(r.outcome)) items.push({test:t, run:r}); }));
+  if (items.length === 0) return null;
+
+  const testCount = new Set(items.map(i => i.test)).size;
+  const section = el('section', {className:'failures-panel', 'aria-labelledby':'failures-heading'});
+  const head = el('div', {className:'failures-head'});
+  head.appendChild(el('h2', {id:'failures-heading'}, 'Failures'));
+  const runsWord = items.length === 1 ? 'run' : 'runs';
+  const testsWord = testCount === 1 ? 'test' : 'tests';
+  head.appendChild(el('span', {className:'failures-count'},
+    items.length + ' failed ' + runsWord + ' in ' + testCount + ' ' + testsWord));
+
+  const rerun = 'pytest ' + items.map(i => '"' + i.run.nodeid + '"').join(' ');
+  const copyBtn = el('button', {className:'strip-btn failures-copy', type:'button',
+    title: rerun}, 'Copy rerun command');
+  copyBtn.addEventListener('click', () => {
+    copyToClipboard(rerun);
+    copyBtn.textContent = 'Copied';
+    setTimeout(() => { copyBtn.textContent = 'Copy rerun command'; }, 1400);
+  });
+  head.appendChild(copyBtn);
+  section.appendChild(head);
+
+  const list = el('ul', {className:'failures-list'});
+  items.forEach((item, idx) => {
+    const when = failedPhase(item.run);
+    const reason = failureReason(item.run);
+    const where = item.test.aggregate.file + (when && when !== 'call' ? ' · failed in ' + when : '');
+    const btn = el('button', {className:'failure-row', type:'button'},
+      el('span', {className:'status-dot ' + item.run.outcome, 'aria-hidden':'true'}),
+      el('span', {className:'failure-row-main'},
+        el('span', {className:'failure-row-name'}, runLabel(item.test, item.run)),
+        el('span', {className:'failure-row-file'}, where)
+      ),
+      el('span', {className:'failure-row-reason', title: reason}, reason || 'No failure message')
+    );
+    btn.addEventListener('click', () => openRunInTests(item.test, item.run));
+    const li = el('li', null, btn);
+    if (idx >= FAILURES_SHOWN) li.hidden = true;
+    list.appendChild(li);
+  });
+  section.appendChild(list);
+
+  if (items.length > FAILURES_SHOWN) {
+    const more = el('button', {className:'failures-more', type:'button', 'aria-expanded':'false'},
+      'Show all ' + items.length);
+    more.addEventListener('click', () => {
+      const open = more.getAttribute('aria-expanded') !== 'true';
+      list.querySelectorAll('li').forEach((li, i) => { if (i >= FAILURES_SHOWN) li.hidden = !open; });
+      more.setAttribute('aria-expanded', open ? 'true' : 'false');
+      more.textContent = open ? 'Show fewer' : 'Show all ' + items.length;
+    });
+    section.appendChild(more);
+  }
+  return section;
 }
 
 function navigateToGroup(path) {
@@ -580,10 +657,17 @@ function renderTests() {
   const controlsRow = el('div', {className:'tree-controls-row'});
   const filters = el('div', {className:'filter-toggles'});
   STATUSES.forEach(status => {
-    const btn = el('button', {className:`filter-btn ${status} active`, 'data-status':status}, LABELS[status]);
+    const btn = el('button', {className:`filter-btn ${status} active`, 'data-status':status,
+      'aria-pressed':'true'}, LABELS[status]);
     btn.addEventListener('click', () => toggleFilter(status, btn));
     filters.appendChild(btn);
   });
+  const retriedChip = el('button', {className:'filter-chip', id:'retried-chip', type:'button',
+    title:'Show all tests again', 'aria-label':'Retried tests only. Show all tests again'},
+    'Retried only ×');
+  retriedChip.hidden = true;
+  retriedChip.addEventListener('click', () => { retriedOnly = false; refreshTree(false); });
+  filters.appendChild(retriedChip);
   controlsRow.appendChild(filters);
 
   // Expand all button
@@ -623,6 +707,20 @@ function renderTests() {
   layout.appendChild(treePanel);
   layout.appendChild(detailPanel);
   panel.appendChild(layout);
+
+  // A red run opens the Tests tab on its failures, with the first one shown.
+  const failing = DATA.tests.filter(t => getOverallOutcome(t) === 'failed');
+  if (failing.length > 0) {
+    activeFilters = new Set(['failed', 'error']);
+    refreshTree(true);
+    const firstLeaf = Array.from(treeContent.querySelectorAll('.tree-node'))
+      .find(n => n._test && n.style.display !== 'none');
+    if (firstLeaf) {
+      const row = firstLeaf.querySelector(':scope > .tree-row');
+      if (row) row.classList.add('selected');
+      showTestDetail(firstLeaf._test);
+    }
+  }
 }
 
 function renderTreeNode(name, node, depth) {
@@ -751,7 +849,111 @@ function getOverallOutcome(test) {
   return 'passed';
 }
 
-function showTestDetail(test) {
+// ─── Failure-first helpers ───────────────────────────────────────────
+// A failed report should open on what broke: the failing run, the phase
+// that failed, and the line that says why.
+function isBad(outcome) { return outcome === 'failed' || outcome === 'error'; }
+
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+// The run a test opens on: its first failed/errored run, else its first run.
+function firstFailingRun(test) {
+  return test.runs.find(r => isBad(r.outcome)) || test.runs[0] || null;
+}
+
+// The phase that failed (setup, call or teardown), or null.
+function failedPhase(run) {
+  const phases = run.phases || {};
+  return ['setup','call','teardown'].find(w => phases[w] && isBad(phases[w].outcome)) || null;
+}
+
+// The phase a run's Summary opens on: the failed one, else a skipped one.
+function phaseOfInterest(run) {
+  const phases = run.phases || {};
+  return failedPhase(run)
+    || ['setup','call','teardown'].find(w => phases[w] && phases[w].outcome === 'skipped')
+    || null;
+}
+
+function failedChecks(run) {
+  return (run.check_results || []).filter(c => c.passed === false);
+}
+
+// One line saying why a run failed: the checks summary, the first "E" line
+// of the traceback, the first failed check, else the traceback's last line.
+function failureReason(run) {
+  const when = failedPhase(run);
+  const longrepr = when ? (run.phases[when].longrepr || '') : '';
+  const lines = longrepr.split('\n');
+  const first = (lines.find(l => l.trim()) || '').trim();
+  if (/^\d+ of \d+ checks? failed/.test(first)) return first;
+  const eLine = lines.find(l => /^E\s/.test(l));
+  if (eLine) return eLine.replace(/^E\s+/, '').trim();
+  const check = failedChecks(run)[0];
+  if (check) return (check.name || check.description || 'Check') + (check.detail ? ' — ' + check.detail : '');
+  const rest = lines.map(l => l.trim()).filter(Boolean);
+  return rest.length ? rest[rest.length - 1] : '';
+}
+
+function runLabel(test, run) {
+  const name = testDisplayName(test.aggregate);
+  return run && run.parametrize_id ? name + ' [' + run.parametrize_id + ']' : name;
+}
+
+// Banner at the top of a failed run: where it failed, why, and the way to
+// the traceback and the checks.
+function renderFailureStrip(run, selectSubTab) {
+  const when = failedPhase(run);
+  const checks = failedChecks(run);
+  const strip = el('div', {className:'failure-strip ' + run.outcome, role:'group',
+    'aria-label':'Why this run failed'});
+
+  const label = (run.outcome === 'error' ? 'Error' : 'Failed') + (when ? ' in ' + when : '');
+  strip.appendChild(el('div', {className:'failure-strip-label'}, label));
+
+  if (checks.length > 0) {
+    const total = (run.check_results || []).length;
+    strip.appendChild(el('div', {className:'failure-strip-reason'},
+      checks.length + ' of ' + total + ' check' + (total === 1 ? '' : 's') + ' failed'));
+    const list = el('ul', {className:'failure-strip-checks'});
+    checks.slice(0, 3).forEach(c => {
+      const item = el('li', null,
+        el('span', {className:'failure-strip-check-name'}, c.description || c.name || 'Check'));
+      if (c.detail) item.appendChild(el('span', {className:'failure-strip-check-detail'}, c.detail));
+      if (c.location) item.appendChild(el('span', {className:'failure-strip-check-loc'}, c.location));
+      list.appendChild(item);
+    });
+    if (checks.length > 3) {
+      list.appendChild(el('li', {className:'failure-strip-more'}, '+' + (checks.length - 3) + ' more'));
+    }
+    strip.appendChild(list);
+  } else {
+    const reason = failureReason(run);
+    if (reason) strip.appendChild(el('div', {className:'failure-strip-reason', title:reason}, reason));
+  }
+
+  const actions = el('div', {className:'failure-strip-actions'});
+  if (when) {
+    const tbBtn = el('button', {className:'strip-btn', type:'button'}, 'Show traceback');
+    tbBtn.addEventListener('click', () => {
+      selectSubTab('Summary');
+      const phaseBtn = document.querySelector('#sub-tab-content .phase-tab-btn.active');
+      const panel = document.querySelector('#sub-tab-content .phase-tab-panel.active');
+      if (panel) panel.scrollIntoView({block:'start', behavior:'smooth'});
+      if (phaseBtn) phaseBtn.focus({preventScroll:true});
+    });
+    actions.appendChild(tbBtn);
+  }
+  if (checks.length > 0) {
+    const ckBtn = el('button', {className:'strip-btn', type:'button'}, 'Open checks');
+    ckBtn.addEventListener('click', () => selectSubTab('Checks'));
+    actions.appendChild(ckBtn);
+  }
+  if (actions.children.length) strip.appendChild(actions);
+  return strip;
+}
+
+function showTestDetail(test, initialRun) {
   selectedTest = test;
   const panel = document.querySelector('.detail-panel');
   panel.innerHTML = '';
@@ -773,7 +975,7 @@ function showTestDetail(test) {
   header.appendChild(el('div', {className:'file-path'}, test.aggregate.file));
 
   // Exact "run only this test" command — updates with the selected run's nodeid.
-  const firstRun = test.runs.length > 0 ? test.runs[0] : null;
+  const firstRun = initialRun || firstFailingRun(test);
   const initialCmd = testCommand(firstRun ? firstRun.nodeid : test.base_nodeid);
   const cmdRow = el('div', {
     className:'detail-cmd', id:'detail-cmd', role:'button', tabindex:'0',
@@ -827,7 +1029,7 @@ function showTestDetail(test) {
   panel.appendChild(runDetailContainer);
 
   refreshRunPills(test, panel);
-  if (test.runs.length > 0) showRunDetail(test.runs[0]);
+  if (firstRun) showRunDetail(firstRun);
 }
 
 function refreshRunPills(test, panel) {
@@ -913,15 +1115,18 @@ function showRunDetail(run) {
   if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
     tabNames.push('Retries');
   }
+  const selectSubTab = (name) => {
+    subTabs.querySelectorAll('.sub-tab-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent === name);
+    });
+    showSubTab(name.toLowerCase(), run);
+  };
   tabNames.forEach((name, i) => {
     const btn = el('button', {className:`sub-tab-btn${i===0?' active':''}`}, name);
-    btn.addEventListener('click', () => {
-      subTabs.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      showSubTab(name.toLowerCase(), run);
-    });
+    btn.addEventListener('click', () => selectSubTab(name));
     subTabs.appendChild(btn);
   });
+  if (isBad(run.outcome)) container.appendChild(renderFailureStrip(run, selectSubTab));
   container.appendChild(subTabs);
 
   const content = el('div', {className:'run-detail-content', id:'sub-tab-content'});
@@ -980,16 +1185,18 @@ function showSubTab(tab, run) {
     if (availablePhases.length > 0) {
       const phaseBar = el('div', {className:'phase-tabs-bar'});
       const phasePanels = [];
+      // Open on the phase that failed (or was skipped), not always on Setup.
+      const activeIdx = Math.max(0, availablePhases.indexOf(phaseOfInterest(run)));
 
       availablePhases.forEach((when, idx) => {
         const phase = run.phases[when];
-        const btn = el('button', {className:`phase-tab-btn${idx===0?' active':''}`},
+        const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`},
           el('span', {className:`status-dot ${phase.outcome}`}),
           when.charAt(0).toUpperCase() + when.slice(1),
           el('span', {className:'phase-meta'}, phase.duration.toFixed(4) + 's')
         );
 
-        const panel = el('div', {className:`phase-tab-panel${idx===0?' active':''}`});
+        const panel = el('div', {className:`phase-tab-panel${idx===activeIdx?' active':''}`});
         const hasEntries = phase.entries && phase.entries.length > 0;
         if (hasEntries || phase.longrepr) {
           if (hasEntries) {
@@ -1690,40 +1897,115 @@ function openLightbox(src, alt) {
   document.body.appendChild(overlay);
 }
 
-function filterTree(query) {
-  const q = query.toLowerCase();
-  document.querySelectorAll('.tree-node').forEach(node => {
+// Tree visibility combines the search text, the status filters and the
+// "retried only" view; folders with nothing visible inside are hidden too.
+let searchQuery = '';
+let retriedOnly = false;
+
+function testMatchesQuery(test, q) {
+  return !q || test.aggregate.function_name.toLowerCase().includes(q)
+    || test.aggregate.file.toLowerCase().includes(q)
+    || test.base_nodeid?.toLowerCase().includes(q)
+    || test.aggregate.class_name?.toLowerCase().includes(q);
+}
+
+function testIsRetried(test) {
+  return test.runs.some(r => r.retries && r.retries.attempts > 0);
+}
+
+function expandAncestors(node) {
+  let parent = node.parentElement;
+  while (parent) {
+    if (parent.classList?.contains('tree-node')) parent.classList.add('expanded');
+    parent = parent.parentElement;
+  }
+}
+
+function refreshTree(expandMatches) {
+  const q = searchQuery.toLowerCase();
+  const narrowed = !!q || retriedOnly || activeFilters.size < STATUSES.length;
+  const nodes = Array.from(document.querySelectorAll('.tree-content .tree-node'));
+  nodes.forEach(node => {
     const test = node._test;
-    if (test) {
-      const match = !q || test.aggregate.function_name.toLowerCase().includes(q)
-        || test.aggregate.file.toLowerCase().includes(q)
-        || test.base_nodeid?.toLowerCase().includes(q)
-        || test.aggregate.class_name?.toLowerCase().includes(q);
-      node.style.display = match ? '' : 'none';
-      // Auto-expand parents if match
-      if (match && q) {
-        let parent = node.parentElement;
-        while (parent) {
-          if (parent.classList?.contains('tree-node')) parent.classList.add('expanded');
-          parent = parent.parentElement;
-        }
-      }
-    }
+    if (!test) return;
+    const outcome = getOverallOutcome(test);
+    const show = (activeFilters.size === 0 || activeFilters.has(outcome))
+      && (!retriedOnly || testIsRetried(test))
+      && testMatchesQuery(test, q);
+    node.style.display = show ? '' : 'none';
+    if (show && narrowed && expandMatches) expandAncestors(node);
   });
+  // Folders last to first, so a folder sees its sub-folders' final state.
+  nodes.reverse().forEach(node => {
+    if (node._test) return;
+    const kids = node.querySelectorAll(':scope > .tree-children > .tree-node');
+    const any = Array.from(kids).some(k => k.style.display !== 'none');
+    node.style.display = any ? '' : 'none';
+  });
+  syncFilterButtons();
+}
+
+function syncFilterButtons() {
+  document.querySelectorAll('.tree-controls .filter-btn[data-status]').forEach(btn => {
+    const on = activeFilters.has(btn.dataset.status);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const chip = document.getElementById('retried-chip');
+  if (chip) chip.hidden = !retriedOnly;
+}
+
+function filterTree(query) {
+  searchQuery = query;
+  refreshTree(true);
 }
 
 function toggleFilter(status, btn) {
-  btn.classList.toggle('active');
   if (activeFilters.has(status)) activeFilters.delete(status);
   else activeFilters.add(status);
-  document.querySelectorAll('.tree-node').forEach(node => {
-    const test = node._test;
-    if (test) {
-      const outcome = getOverallOutcome(test);
-      const show = activeFilters.size === 0 || activeFilters.has(outcome);
-      node.style.display = show ? '' : 'none';
-    }
-  });
+  refreshTree(false);
+}
+
+// Show only the given statuses (or retried tests) in the Tests tab.
+function showTreeSubset(statuses, onlyRetried) {
+  activeFilters = new Set(statuses);
+  retriedOnly = !!onlyRetried;
+  switchTab('tests');
+  refreshTree(true);
+}
+
+function selectTreeRow(test) {
+  const node = Array.from(document.querySelectorAll('.tree-content .tree-node'))
+    .find(n => n._test === test);
+  if (!node) return null;
+  if (node.style.display === 'none') {
+    // Make the requested test visible again rather than opening it unseen.
+    activeFilters.add(getOverallOutcome(test));
+    retriedOnly = false;
+    searchQuery = '';
+    const input = document.querySelector('.tree-controls .search-input');
+    if (input) input.value = '';
+    refreshTree(false);
+  }
+  expandAncestors(node);
+  document.querySelectorAll('.tree-row.selected').forEach(r => r.classList.remove('selected'));
+  const row = node.querySelector(':scope > .tree-row');
+  if (row) {
+    row.classList.add('selected');
+    row.scrollIntoView({block:'nearest'});
+  }
+  return node;
+}
+
+// Open one run of a test in the Tests tab (from the Summary failures list).
+function openRunInTests(test, run) {
+  switchTab('tests');
+  selectTreeRow(test);
+  showTestDetail(test, run);
+  const panel = document.querySelector('.detail-panel');
+  if (panel && window.matchMedia('(max-width: 768px)').matches) {
+    panel.scrollIntoView({block:'start'});
+  }
 }
 
 // ─── Session Logs Tab ────────────────────────────────────────────────

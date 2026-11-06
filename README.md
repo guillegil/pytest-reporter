@@ -314,8 +314,8 @@ Behavior:
 
 The `report.html` is a single self-contained file with four tabs:
 
-1. **Summary** — pass-rate hero, ratio bar, status counters with percentages, and configurable donut/bar chart groups.
-2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, and **Checks** (for tests with pytest-verifier checks).
+1. **Summary** — pass-rate hero and ratio bar; when anything failed, a **Failures** list with the reason for each failed run and a **Copy rerun command** button; status counters that open the Tests tab filtered to that status; and configurable donut/bar chart groups.
+2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, and **Checks** (for tests with pytest-verifier checks).
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
 4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 
