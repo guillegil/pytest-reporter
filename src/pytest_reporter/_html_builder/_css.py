@@ -2247,14 +2247,6 @@ main:focus { outline: none; }
    Responsive
    ================================================================ */
 @media (max-width: 768px) {
-  .tests-layout { flex-direction: column; height: auto; }
-  .tree-panel {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--c-border);
-    max-height: 45vh;
-  }
-  .detail-panel { min-height: 50vh; padding: 20px 16px; }
   .counters { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }
   .counter-card { padding: 14px 12px; }
   .charts-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
@@ -2282,6 +2274,81 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .header { gap: 10px; padding: 0 16px; }
   .header h1 { white-space: nowrap; }
   .header .meta > span:not(.meta-badge) { display: none; }
+}
+
+/* ================================================================
+   Phones and touch screens
+   ================================================================ */
+/* WCAG 2.5.8: no control smaller than 24px, whatever the pointer */
+.filter-btn, .filter-chip, .session-log-level-btn { min-height: 24px; }
+.tree-expand-btn { min-width: 24px; min-height: 24px; justify-content: center; }
+
+/* Tab strips scroll sideways instead of wrapping or clipping a tab */
+.tabs, .sub-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.tabs::-webkit-scrollbar, .sub-tabs::-webkit-scrollbar { display: none; }
+.tab-btn, .sub-tab-btn { white-space: nowrap; flex-shrink: 0; }
+/* Phase tabs share the width; in a narrow panel the timing drops below the label */
+.phase-tab-btn { flex-wrap: wrap; min-width: 0; row-gap: 2px; }
+.phase-tab-label { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+@media (max-width: 768px) {
+  .phase-tab-btn { padding-left: 6px; padding-right: 6px; letter-spacing: 0.02em; }
+  .phase-tab-label { gap: 6px; }
+}
+@media (max-width: 360px) {
+  .phase-tab-btn { text-transform: none; letter-spacing: 0; }
+}
+
+/* The test title takes focus when a phone switches to it; no ring there */
+.detail-header h2:focus { outline: none; }
+
+/* The back button only exists on the phone layout */
+.detail-back { display: none; }
+
+/* Phones: the test list and a test's detail take turns on screen. */
+@media (max-width: 768px) {
+  .tests-layout { display: block; height: auto; }
+  .tree-panel { width: 100%; min-width: 0; border-right: none; }
+  .tree-content { overflow: visible; }
+  .detail-panel { display: none; overflow: visible; padding: 12px 16px 32px; }
+  .tests-layout.show-detail .tree-panel { display: none; }
+  .tests-layout.show-detail .detail-panel { display: block; }
+  .detail-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 12px -8px;
+    padding: 8px 10px 8px 6px;
+    font: inherit;
+    font-size: var(--fs-md);
+    font-weight: 600;
+    color: var(--c-accent-ink);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .detail-back:hover { background: var(--c-surface2); }
+}
+@media (max-width: 640px) {
+  .tab-btn { padding-left: 14px; padding-right: 14px; }
+}
+
+/* Touch screens: 44px targets, whatever the width */
+@media (pointer: coarse) {
+  .tab-btn, .sub-tab-btn, .phase-tab-btn, .run-pill, .filter-btn, .filter-chip,
+  .strip-btn, .failures-more, .session-log-level-btn, .session-log-action-btn,
+  .detail-back, .search-input, .session-log-search, .detail-cmd {
+    min-height: 44px;
+  }
+  .filter-btn, .filter-chip, .session-log-level-btn { padding-left: 14px; padding-right: 14px; }
+  .tree-row, .session-log-section-header, .retry-card-header, .pass-rate-bar { min-height: 44px; }
+  .tree-expand-btn, .theme-toggle { min-width: 44px; min-height: 44px; }
+  .filter-toggles, .session-log-level-filters { gap: 8px; }
+  .run-pills { gap: 8px; }
 }
 
 /* ================================================================

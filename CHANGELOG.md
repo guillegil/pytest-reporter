@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only where they would overflow.
 - On phones the report header keeps the title and the result badge on one line; the date
   and duration stay on the Report tab.
+- On phones (up to 768px wide) the Tests tab shows the test list or one test at a time:
+  picking a test opens it, and **All tests** goes back to the list on the same row. The
+  tree used to take the top 45% of the screen above the test.
+- On touch screens every control is at least 44px (tabs, tree rows, filters, run pills,
+  phase tabs, buttons); with a mouse no control is under 24px (WCAG 2.5.8). The top tabs
+  and the run sub-tabs scroll sideways instead of wrapping or clipping a tab, and phase
+  tabs put the timing under the label when they are narrow.
 
 
 ### Fixed
