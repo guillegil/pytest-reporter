@@ -319,6 +319,8 @@ The `report.html` is a single self-contained file with four tabs:
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
 4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 
+The report works from the keyboard and with screen readers: the test tree follows the ARIA tree pattern (arrow keys, Home/End, Enter to open), tab sets switch with the arrow keys, and outcomes are read out as text, not only shown as colour.
+
 Tables logged via `log.table()` appear inline in the chronological log position **and** as full HTML artifacts in the Artifacts tab.
 
 ---
