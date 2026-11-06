@@ -79,6 +79,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML report: the Tests tab no longer scrolls the page past the end of the panels into
   blank space. The test tree's screen-reader labels were positioned against the page,
   not the tree, so a long tree made the page as tall as the tree.
+- HTML report: image artifacts open from the keyboard, and the image viewer is a dialog:
+  focus moves to its close button and stays inside it, and Escape, the button or a click
+  closes it and returns focus to the image.
+- HTML report: a test with more than 20 runs no longer hides the run it opened on behind
+  **Show more**; the button names how many runs and failures it holds ("Show 80 more
+  (6 failed)") instead of "3p/1f/0s/0e", and the extra pills show their parameters like
+  the first 20.
+- HTML report: the search fields show the same 2px focus ring as every other control
+  instead of a faint glow; cut-off test names in the tree show the full name on hover;
+  searching the session logs opens the sections it matched.
+- HTML report: wording and alignment details: "1 run" instead of "1 runs", "1 entry",
+  child logger sections say "N entries" like their parents, the Total card says what it
+  counts (runs) so the counter figures line up, and long values on the Report tab no
+  longer touch their label on phones. On phones the pass rate and total time sit side by
+  side.
 
 ## [0.3.0]
 
