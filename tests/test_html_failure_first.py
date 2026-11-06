@@ -32,7 +32,9 @@ def _js(html: str) -> str:
 
 
 def _data(html: str) -> dict[str, Any]:
-    m = re.search(r"const DATA = (\{.*?\});\n", html, re.DOTALL)
+    m = re.search(
+        r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL
+    )
     assert m
     data: dict[str, Any] = json.loads(m.group(1).replace("<\\/", "</"))
     return data

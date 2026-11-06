@@ -82,7 +82,9 @@ CSS: str = (
   --c-on-accent: #FFFFFF;
 
   --tint: 14%;
-  --c-header-bg: color-mix(in srgb, var(--c-surface) 92%, transparent);
+  /* Solid: a translucent sticky bar needs a backdrop blur, which repaints on
+     every scroll frame. */
+  --c-header-bg: var(--c-surface);
   --c-overlay: rgba(2,6,16,0.86);
   --c-well: rgba(0,0,0,0.22);
   --c-zebra: color-mix(in srgb, var(--c-surface2) 30%, transparent);
@@ -128,6 +130,10 @@ CSS: str = (
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Controls fade only the properties that change; "all" would also animate
+     layout (padding, width) when a class or media query changes it. */
+  --t-control: color 0.15s var(--ease-out), background-color 0.15s var(--ease-out),
+    border-color 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -192,7 +198,6 @@ button { font-family: inherit; }
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: blur(12px);
   background: var(--c-header-bg);
 }
 .header-logo {
@@ -234,14 +239,12 @@ button { font-family: inherit; }
    ================================================================ */
 .tabs {
   display: flex;
-  background: var(--c-surface);
   border-bottom: 1px solid var(--c-border);
   padding: 0 28px;
   gap: 2px;
   position: sticky;
   top: 56px;
   z-index: 99;
-  backdrop-filter: blur(12px);
   background: var(--c-header-bg);
 }
 .tab-btn {
@@ -699,7 +702,7 @@ button { font-family: inherit; }
   font-size: var(--fs-xs);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
   user-select: none;
 }
 .filter-btn:hover { border-color: var(--c-border2); color: var(--c-text2); }
@@ -715,7 +718,7 @@ button { font-family: inherit; }
   background: none;
   color: var(--c-text3);
   cursor: pointer;
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -723,7 +726,10 @@ button { font-family: inherit; }
 .tree-expand-btn:hover { background: var(--c-surface2); color: var(--c-text2); border-color: var(--c-border2); }
 
 /* Tree */
+/* Positioned, so the absolutely placed screen-reader labels in the rows stay
+   inside this scroller instead of stretching the page below the panels. */
 .tree-content {
+  position: relative;
   flex: 1;
   overflow-y: auto;
   padding: 6px 0;
@@ -981,7 +987,7 @@ button { font-family: inherit; }
   font-size: var(--fs-xs);
   cursor: pointer;
   border: 2px solid transparent;
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
   font-weight: 600;
   font-family: var(--font-mono);
   letter-spacing: -0.01em;
@@ -1001,7 +1007,7 @@ button { font-family: inherit; }
   background: none;
   color: var(--c-text3);
   font-weight: 500;
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
 }
 .show-more-btn:hover { border-color: var(--c-text3); color: var(--c-text2); }
 
@@ -1024,7 +1030,7 @@ button { font-family: inherit; }
   font-weight: 600;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
 }
 .sub-tab-btn:hover { color: var(--c-text2); background: var(--c-surface2); }
 .sub-tab-btn.active {
@@ -1770,7 +1776,7 @@ button { font-family: inherit; }
   font-size: var(--fs-xs);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
   user-select: none;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1791,7 +1797,7 @@ button { font-family: inherit; }
   color: var(--c-text2);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: all 0.15s var(--ease-out);
+  transition: var(--t-control);
   white-space: nowrap;
 }
 .session-log-action-btn:hover {
@@ -2380,7 +2386,7 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .skip-link, .tabs, .theme-toggle, .tree-panel,
   .detail-cmd-hint, .artifact-expand, .strip-btn, .session-log-search,
   .session-log-actions { display: none !important; }
-  .header { position: static; backdrop-filter: none; background: none; margin-bottom: 16px; }
+  .header { position: static; background: none; margin-bottom: 16px; }
   .tests-layout { display: block; height: auto; }
   .detail-panel { overflow: visible; padding: 0; }
   pre, .phase-log, [class*="longrepr"] { max-height: none !important; overflow: visible !important; white-space: pre-wrap; }

@@ -38,6 +38,7 @@ _SKELETON = r"""<!DOCTYPE html>
 <div id="tab-session-logs" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-session-logs"></div>
 <div id="tab-report" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-report"></div>
 </main>
+<script type="application/json" id="report-data">/*__REPORT_DATA__*/</script>
 <script>
 /*__JS__*/
 </script>
@@ -51,14 +52,14 @@ def build_skeleton(css: str, js: str) -> str:
 
     The ``/*__CSS__*/`` and ``/*__JS__*/`` markers in ``_SKELETON`` are replaced
     with the provided ``css`` and ``js`` strings respectively.  The two data
-    markers (``/*__REPORT_DATA__*/`` and ``/*__SYSTEM_METADATA_JSON__*/``) are
-    kept intact inside ``js`` for the assembler to substitute at report-build
-    time.
+    markers are kept for the assembler to substitute at report-build time:
+    ``/*__REPORT_DATA__*/`` in the skeleton's JSON data block and
+    ``/*__SYSTEM_METADATA_JSON__*/`` inside ``js``.
 
     Args:
         css: The raw CSS body to embed between ``<style>`` tags.
         js: The raw JavaScript body to embed between ``<script>`` tags.
-            Must contain the two report-data markers.
+            Must contain the ``/*__SYSTEM_METADATA_JSON__*/`` marker.
 
     Returns:
         A complete HTML document string ready for data injection.

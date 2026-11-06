@@ -1,12 +1,15 @@
 """Inline JavaScript for the HTML report template.
 
-The /*__REPORT_DATA__*/ and /*__SYSTEM_METADATA_JSON__*/ markers
-must remain intact — they are substituted at report-build time.
+The /*__SYSTEM_METADATA_JSON__*/ marker must remain intact: it is
+substituted at report-build time. The report data is not in the script: it
+is a JSON block (``<script type="application/json" id="report-data">``)
+that the first line parses.
 """
 
 from __future__ import annotations
 
-JS: str = r"""/*__REPORT_DATA__*/
+JS: str = r"""// JSON.parse reads the data block much faster than a JS object literal.
+const DATA = JSON.parse(document.getElementById('report-data').textContent);
 
 // ─── Utilities ───────────────────────────────────────────────────────
 function el(tag, attrs, ...children) {

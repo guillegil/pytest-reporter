@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import html.parser
 import pathlib
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -486,8 +487,8 @@ def test_m1_marker_in_log_data(pytester: Pytester) -> None:
     corrupting the REPORT_DATA JSON blob (inserts sys_json content mid-string).
     The single-pass re.sub approach avoids this.
 
-    We detect corruption by extracting the first <script> block, finding the
-    const DATA = ... assignment, and verifying it is valid JSON.
+    We detect corruption by extracting the report data block and verifying it
+    is valid JSON.
 
     Warning capture: N/A (correctness test).
     """
@@ -507,59 +508,28 @@ def test_m1_marker_in_log_data(pytester: Pytester) -> None:
     html_content = html_path.read_text(encoding="utf-8")
     _assert_valid_html(html_content)
 
-    # Extract the DATA assignment from the script block and verify it is valid JSON.
-    # With double-substitution (chained str.replace), sys_json gets spliced into
-    # the DATA string, making json.loads fail with "Extra data".
-    #
-    # The DATA assignment is "const DATA = {...};" — we find the JSON object by
-    # scanning for matching braces rather than greedy regex.
+    # Extract the data block and verify it is valid JSON. With double-substitution
+    # (chained str.replace), sys_json gets spliced into the data, making
+    # json.loads fail.
     import json  # noqa: PLC0415
 
-    script_blocks = _get_script_blocks(html_content)
-    data_block = next((b for b in script_blocks if "const DATA" in b), None)
-    assert data_block is not None, "const DATA script block not found"
-
-    # Find the start of the JSON object after "const DATA = "
-    idx = data_block.find("const DATA = ")
-    assert idx >= 0, "Could not find 'const DATA = ' in script block"
-    json_start = data_block.index("{", idx)
-
-    # Walk matching braces to find the end of the JSON object
-    depth = 0
-    in_string = False
-    escape = False
-    json_end = json_start
-    for i, ch in enumerate(data_block[json_start:], json_start):
-        if escape:
-            escape = False
-            continue
-        if ch == "\\" and in_string:
-            escape = True
-            continue
-        if ch == '"' and not escape:
-            in_string = not in_string
-        if not in_string:
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    json_end = i
-                    break
-
-    json_candidate = data_block[json_start : json_end + 1]
+    m = re.search(
+        r'<script type="application/json" id="report-data">(.*?)</script>', html_content, re.DOTALL
+    )
+    assert m is not None, "report data block not found"
+    json_candidate = m.group(1)
 
     try:
         parsed = json.loads(json_candidate)
     except json.JSONDecodeError as exc:
         raise AssertionError(
-            f"const DATA is not valid JSON after marker injection — "
+            f"the report data is not valid JSON after marker injection — "
             f"double-substitution likely corrupted the payload: {exc}\n"
             f"JSON candidate (first 200 chars): {json_candidate[:200]!r}"
         ) from exc
 
-    assert isinstance(parsed, dict), "const DATA must be a JSON object"
-    assert "tests" in parsed, "const DATA must contain 'tests' key"
+    assert isinstance(parsed, dict), "the report data must be a JSON object"
+    assert "tests" in parsed, "the report data must contain 'tests' key"
 
 
 # ---------------------------------------------------------------------------

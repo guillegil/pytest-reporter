@@ -21,13 +21,14 @@ if TYPE_CHECKING:
 def _extract_report_data(html: str) -> dict:  # type: ignore[type-arg]
     """Extract the embedded DATA dict from a report.html.
 
-    The embed uses ``/*__REPORT_DATA__*/`` injection: the placeholder is
-    replaced with ``const DATA = {...};``.  The JSON was produced with
-    ``json.dumps(default=str)`` and has ``</`` escaped as ``<\\/``.
-    Un-escape before parsing.
+    The embed uses ``/*__REPORT_DATA__*/`` injection into the
+    ``report-data`` JSON block; ``<`` is written ``\\u003c``, which
+    ``json.loads`` reads back.
     """
-    match = re.search(r"const DATA = (\{.*?\});\s*\n", html, re.DOTALL)
-    assert match, "Could not find 'const DATA = ...' in report.html"
+    match = re.search(
+        r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL
+    )
+    assert match, "Could not find the report data block in report.html"
     raw = match.group(1).replace("<\\/", "</")
     return json.loads(raw)  # type: ignore[no-any-return]
 

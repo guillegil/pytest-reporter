@@ -46,7 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   phase tabs, buttons); with a mouse no control is under 24px (WCAG 2.5.8). The top tabs
   and the run sub-tabs scroll sideways instead of wrapping or clipping a tab, and phase
   tabs put the timing under the label when they are narrow.
-
+- The HTML report opens faster: its data is a JSON block that the page reads with
+  `JSON.parse` instead of a JavaScript object literal, written without padding spaces.
+  In Chromium the example suite's report is interactive after 0.13s instead of 0.34s, and
+  a 7 MB report (5,280 runs) after 0.9s instead of 1.8s with the CPU slowed 4×, using
+  about half the memory. The data block escapes every `<`, so no logged text can end it.
+- The sticky header and tab bar are solid instead of blurring what scrolls under them,
+  which cost a repaint on every scroll frame, and buttons fade only their colours instead
+  of every property.
 
 ### Fixed
 
@@ -69,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of staying 200px tall, with a "Show all N rows" button past 13 rows and a frame title.
 - HTML report: an empty-result message with "Show all tests" when search and filters
   match nothing; search results and copy confirmations are announced to screen readers.
+- HTML report: the Tests tab no longer scrolls the page past the end of the panels into
+  blank space. The test tree's screen-reader labels were positioned against the page,
+  not the tree, so a long tree made the page as tall as the tree.
 
 ## [0.3.0]
 

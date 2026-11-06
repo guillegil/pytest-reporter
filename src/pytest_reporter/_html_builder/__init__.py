@@ -94,6 +94,23 @@ def _build_system_metadata_html(system_metadata: dict[str, dict[str, str]]) -> s
     )
 
 
+def _data_block_escape(s: str) -> str:
+    """Escape every ``<`` in JSON bound for a ``<script type="application/json">`` block.
+
+    ``<`` only occurs inside JSON strings, where ``\\u003c`` means the same
+    character, so ``JSON.parse`` returns the original text. Without a ``<`` the
+    block cannot be closed early (``</script>``) or switched into the HTML
+    parser's escaped script states (``<!--``).
+
+    Args:
+        s: The JSON text.
+
+    Returns:
+        The JSON text with ``<`` written as ``\\u003c``.
+    """
+    return s.replace("<", "\\u003c")
+
+
 def _esc(text: str) -> str:
     """Escape a string for safe embedding in HTML content."""
     return (
@@ -108,15 +125,23 @@ def build_html_report(data: dict[str, Any]) -> str:
     - H1: ``json.dumps`` uses ``skipkeys=True`` + ``_safe_default`` to handle
       non-serializable keys/values.  An outer ``try/except`` falls back to a
       minimal safe dict if ``dumps`` still fails (e.g. circular reference).
-    - H2: ``_script_escape`` is applied to BOTH ``safe_json`` (REPORT_DATA) AND
-      ``sys_json`` (SYSTEM_METADATA) before template injection.
+    - H2: the report data goes into a ``<script type="application/json">``
+      block with every ``<`` escaped (``_data_block_escape``); ``sys_json``
+      (SYSTEM_METADATA) gets ``_script_escape`` before template injection.
+    - The data block is compact JSON that the page reads with ``JSON.parse``,
+      which browsers parse several times faster than a JS object literal.
     - M1: single-pass ``re.sub`` replaces both markers in one scan so user data
       containing a marker literal is never double-substituted.
     """
     # H1: robust serialisation with skipkeys + fallback default
     try:
         data_json = json.dumps(
-            data, indent=None, ensure_ascii=True, skipkeys=True, default=_safe_default
+            data,
+            indent=None,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            skipkeys=True,
+            default=_safe_default,
         )
     except Exception as exc:  # noqa: BLE001
         warnings.warn(
@@ -125,8 +150,9 @@ def build_html_report(data: dict[str, Any]) -> str:
         )
         data_json = json.dumps({"error": "report data not serializable", "tests": []})
 
-    # H2: escape </  to prevent script-tag breakout in REPORT_DATA
-    safe_json = _script_escape(data_json)
+    # H2: no "<" reaches the data block, so neither "</script" nor "<!--" can
+    # change how the browser reads it.
+    safe_json = _data_block_escape(data_json)
 
     system_metadata: dict[str, dict[str, str]] = data.get("system_metadata", {})
     sys_html = _build_system_metadata_html(system_metadata)
@@ -142,7 +168,7 @@ def build_html_report(data: dict[str, Any]) -> str:
     # a marker literal inside user data to be substituted a second time,
     # corrupting the REPORT_DATA JSON.
     _payloads: dict[str, str] = {
-        "/*__REPORT_DATA__*/": f"const DATA = {safe_json};",
+        "/*__REPORT_DATA__*/": safe_json,
         "/*__SYSTEM_METADATA_JSON__*/": sys_json,
     }
     # Warn if either marker is missing from the template (unexpected template change)

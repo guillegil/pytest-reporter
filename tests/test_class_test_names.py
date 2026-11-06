@@ -40,10 +40,12 @@ def _extract_data(html: str) -> dict:  # type: ignore[type-arg]
     """Extract the embedded DATA JSON from a report.html.
 
     The template marker /*__REPORT_DATA__*/ is replaced at build time with
-    the actual JSON object, so the HTML contains: ``const DATA = {...};``
+    the JSON object, inside ``<script type="application/json" id="report-data">``.
     """
-    m = re.search(r"const DATA\s*=\s*(\{.*?\});\s*\n", html, re.DOTALL)
-    assert m, "Could not find 'const DATA = {...}' in report.html"
+    m = re.search(
+        r'<script type="application/json" id="report-data">(.*?)</script>', html, re.DOTALL
+    )
+    assert m, "Could not find the report data block in report.html"
     return json.loads(m.group(1))
 
 
