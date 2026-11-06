@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import importlib.util
 import json
 import mimetypes
 import platform
@@ -18,6 +17,7 @@ from ._dashboard_config import normalize_dashboard
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from ._collector import DataCollector
     from .reporter import Reporter
 
 
@@ -144,6 +144,28 @@ def collect_artifacts(artifacts_dir: Path) -> list[dict[str, object]]:
     return result
 
 
+def strategies_seed(collector: DataCollector) -> int | str | None:
+    """The seed of the pytest-strategies rows this session ran, if any.
+
+    pytest-strategies (4.x) puts each row's ``VectorInfo`` on its test, with
+    the run's seed; the collector keeps it as ``RunInfo.strategy``. Read from
+    the rows rather than ``RNG.get_seed()``, which a test can change and which
+    is set (to a time-based value) even in a session that draws nothing.
+
+    Args:
+        collector: The session's ``DataCollector``.
+
+    Returns:
+        The seed of the first strategy row, or ``None`` when no row ran.
+    """
+    for nodeid in collector._run_map:
+        strategy = collector.get_run_info(nodeid).strategy
+        if strategy is not None and strategy.get("seed") is not None:
+            seed = strategy["seed"]
+            return seed if isinstance(seed, (int, str)) else str(seed)
+    return None
+
+
 def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dict:  # type: ignore[type-arg]
     """Build the data dict for the HTML report.
 
@@ -184,9 +206,8 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
             )
             artifacts = collect_artifacts(run_dir / "artifacts")
 
-            # Collect procedure
-            tracker = reporter._procedure_trackers.get(nodeid)
-            procedure = tracker.serialize() if tracker else {"steps": []}
+            # Collect procedure (stepdoc steps of the first attempt)
+            procedure = reporter._procedures.get(nodeid, {"steps": []})
 
             # Collect retry data
             retry_data = reporter.collector.get_retry_data(nodeid)
@@ -235,9 +256,22 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                                         f"(unreadable): {proc_file}: {err}",
                                         stacklevel=2,
                                     )
+                            # Read verifier checks — guarded (REQ-2B)
+                            checks_file = attempt_dir / "checks.json"
+                            if checks_file.exists():
+                                try:
+                                    attempt_data["check_results"] = json.loads(
+                                        checks_file.read_text()
+                                    ).get("checks", [])
+                                except (json.JSONDecodeError, OSError, AttributeError) as err:
+                                    warnings.warn(
+                                        f"pytest-reporter: retry checks skipped "
+                                        f"(unreadable): {checks_file}: {err}",
+                                        stacklevel=2,
+                                    )
                             retry_attempts.append(attempt_data)
 
-            # Collect verification check results from pytest-verify
+            # Verification checks from pytest-verifier (first attempt)
             check_results = reporter._check_results.get(nodeid, [])
 
             runs.append(
@@ -245,6 +279,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                     "run_id": run_info.run_id,
                     "nodeid": nodeid,
                     "parametrize_id": run_info.parametrize_id,
+                    "strategy": run_info.strategy,
                     "params": {
                         k: {"type": type(v).__name__, "value": str(v)}
                         for k, v in run_info.params.items()
@@ -361,17 +396,8 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
             )
 
     if seed_raw is None:
-        # 3. Auto-detect from pytest_strategy
-        try:
-            if importlib.util.find_spec("pytest_strategy") is not None:
-                from pytest_strategy.rng import RNG  # type: ignore[import-not-found]
-
-                seed_raw = RNG.get_seed()
-        except Exception as exc:  # noqa: BLE001
-            warnings.warn(
-                f"pytest_strategy seed auto-detection failed and will be ignored: {exc}",
-                stacklevel=2,
-            )
+        # 3. pytest-strategies: the seed its rows were drawn from (VectorInfo)
+        seed_raw = strategies_seed(reporter.collector)
 
     seed: str | None = str(seed_raw) if seed_raw is not None else None
 

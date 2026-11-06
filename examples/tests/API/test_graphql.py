@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -83,20 +83,20 @@ def test_query_all_products(log) -> None:
         gql.debug("First product", data=result["data"]["products"][0])
 
     with step("Validate response structure"):
-        substep("Check no errors")
-        validation.info("Error field", data={"errors": result["errors"]})
-        assert result["errors"] is None
+        with step("Check no errors"):
+            validation.info("Error field", data={"errors": result["errors"]})
+            assert result["errors"] is None
 
-        substep("Check product list")
-        products = result["data"]["products"]
-        validation.info("Product count", data={"count": len(products), "expected_min": 1})
-        assert len(products) >= 1
+        with step("Check product list"):
+            products = result["data"]["products"]
+            validation.info("Product count", data={"count": len(products), "expected_min": 1})
+            assert len(products) >= 1
 
-        substep("Verify product fields")
-        for field in ("id", "name", "price", "stock", "category"):
-            validation.debug(f"Field '{field}' present in first product", data={"value": products[0][field]})
-            assert field in products[0]
-        validation.info("All product fields verified")
+        with step("Verify product fields"):
+            for field in ("id", "name", "price", "stock", "category"):
+                validation.debug(f"Field '{field}' present in first product", data={"value": products[0][field]})
+                assert field in products[0]
+            validation.info("All product fields verified")
 
 
 @pytest.mark.parametrize(
@@ -170,19 +170,19 @@ def test_query_nonexistent_product(log) -> None:
         gql.info("Result received", data={"data": result["data"], "errors": result["errors"]})
 
     with step("Validate error response"):
-        substep("Check errors array present")
-        error_log.info("Errors field", data={"errors": result["errors"]})
-        assert result["errors"] is not None
-        assert len(result["errors"]) > 0
+        with step("Check errors array present"):
+            error_log.info("Errors field", data={"errors": result["errors"]})
+            assert result["errors"] is not None
+            assert len(result["errors"]) > 0
 
-        substep("Check error message")
-        error_log.info("Error message", data={"message": result["errors"][0]["message"]})
-        assert "not found" in result["errors"][0]["message"].lower()
+        with step("Check error message"):
+            error_log.info("Error message", data={"message": result["errors"][0]["message"]})
+            assert "not found" in result["errors"][0]["message"].lower()
 
-        substep("Check data is null")
-        error_log.info("Data field", data={"product": result["data"]["product"]})
-        assert result["data"]["product"] is None
-        error_log.info("Error handling for missing resource verified")
+        with step("Check data is null"):
+            error_log.info("Data field", data={"product": result["data"]["product"]})
+            assert result["data"]["product"] is None
+            error_log.info("Error handling for missing resource verified")
 
 
 def test_query_orders_by_user(log) -> None:
@@ -202,20 +202,20 @@ def test_query_orders_by_user(log) -> None:
             orders_log.debug("Order detail", data=order)
 
     with step("Validate order data"):
-        substep("Check order count")
-        orders_log.info("Expected 2 orders for user 1", data={"actual": len(orders)})
-        assert len(orders) == 2
+        with step("Check order count"):
+            orders_log.info("Expected 2 orders for user 1", data={"actual": len(orders)})
+            assert len(orders) == 2
 
-        substep("Verify all belong to user")
-        for order in orders:
-            assert order["user_id"] == 1
-        orders_log.info("All orders belong to the queried user")
+        with step("Verify all belong to user"):
+            for order in orders:
+                assert order["user_id"] == 1
+            orders_log.info("All orders belong to the queried user")
 
-        substep("Check order totals are positive")
-        for order in orders:
-            orders_log.debug("Order total", data={"id": order["id"], "total": order["total"]})
-            assert order["total"] > 0
-        orders_log.info("Order validation complete")
+        with step("Check order totals are positive"):
+            for order in orders:
+                orders_log.debug("Order total", data={"id": order["id"], "total": order["total"]})
+                assert order["total"] > 0
+            orders_log.info("Order validation complete")
 
 
 def test_mutation_create_product(log) -> None:
@@ -260,9 +260,9 @@ def test_introspection_query(log) -> None:
         types = [t["name"] for t in result["data"]["__schema"]["types"]]
         schema_log.info("Available types", data={"types": types})
         for expected in ("Query", "Mutation", "Product", "Order"):
-            substep(f"Check type: {expected}")
-            schema_log.debug(f"Looking for {expected}", data={"present": expected in types})
-            assert expected in types
+            with step(f"Check type: {expected}"):
+                schema_log.debug(f"Looking for {expected}", data={"present": expected in types})
+                assert expected in types
         schema_log.info("Schema introspection returned all expected types")
 
 
@@ -337,9 +337,9 @@ def test_batch_queries(log) -> None:
 
     with step("Validate batch results"):
         for i, result in enumerate(results):
-            substep(f"Check query {i + 1} result")
-            batch.debug(f"Result {i + 1}", data={"data_keys": list(result["data"].keys()) if result["data"] else []})
-            assert result["data"] is not None
+            with step(f"Check query {i + 1} result"):
+                batch.debug(f"Result {i + 1}", data={"data_keys": list(result["data"].keys()) if result["data"] else []})
+                assert result["data"] is not None
         batch.info("All batch queries returned data")
 
 
@@ -370,9 +370,9 @@ def test_fragment_resolution(log, fragment_name: str, fragment_fields: list) -> 
     with step("Verify fragment fields present"):
         product = result["data"]["products"][0]
         for field in fragment_fields:
-            substep(f"Check field: {field}")
-            fragment.debug(f"Field {field}", data={"present": field in product, "value": product.get(field)})
-            assert field in product
+            with step(f"Check field: {field}"):
+                fragment.debug(f"Field {field}", data={"present": field in product, "value": product.get(field)})
+                assert field in product
         fragment.info(f"Fragment {fragment_name} resolved all fields")
 
 

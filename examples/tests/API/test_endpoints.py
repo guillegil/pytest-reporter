@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -81,8 +81,8 @@ def test_crud_status_codes(log, method: str, path: str, expected_status: int) ->
     with step("Prepare request"):
         http.info("Building request", data={"method": method, "path": path})
         http.debug("Setting default headers", data={"Accept": "application/json", "User-Agent": "test-client/1.0"})
-        substep("Attach auth token")
-        http.info("Bearer token attached", data={"token_prefix": "eyJhbGci..."})
+        with step("Attach auth token"):
+            http.info("Bearer token attached", data={"token_prefix": "eyJhbGci..."})
 
     with step("Send request"):
         time.sleep(0.001)
@@ -146,18 +146,18 @@ def test_rate_limit_headers(log) -> None:
         rate_limit.info("Parsed rate-limit values", data={"limit": limit, "remaining": remaining, "reset": reset_ts})
 
     with step("Validate rate-limit values"):
-        substep("Check limit is positive")
-        rate_limit.info("Limit value", data={"value": limit})
-        assert limit > 0
+        with step("Check limit is positive"):
+            rate_limit.info("Limit value", data={"value": limit})
+            assert limit > 0
 
-        substep("Check remaining is within bounds")
-        rate_limit.info("Remaining value", data={"value": remaining, "max": limit})
-        assert 0 <= remaining <= limit
+        with step("Check remaining is within bounds"):
+            rate_limit.info("Remaining value", data={"value": remaining, "max": limit})
+            assert 0 <= remaining <= limit
 
-        substep("Check reset timestamp is in the future")
-        rate_limit.info("Reset timestamp", data={"value": reset_ts})
-        assert reset_ts > 0
-        rate_limit.info("All rate-limit headers valid")
+        with step("Check reset timestamp is in the future"):
+            rate_limit.info("Reset timestamp", data={"value": reset_ts})
+            assert reset_ts > 0
+            rate_limit.info("All rate-limit headers valid")
 
 
 def test_create_user_with_validation(log) -> None:
@@ -170,9 +170,9 @@ def test_create_user_with_validation(log) -> None:
     with step("Validate request payload"):
         validation.info("Checking required fields", data={"payload": payload})
         for field in ("name", "email", "role"):
-            substep(f"Verify field: {field}")
-            validation.debug(f"Field '{field}' present", data={"value": payload[field]})
-            assert field in payload
+            with step(f"Verify field: {field}"):
+                validation.debug(f"Field '{field}' present", data={"value": payload[field]})
+                assert field in payload
         validation.info("Payload validation passed")
 
     with step("Send POST request"):
@@ -182,14 +182,14 @@ def test_create_user_with_validation(log) -> None:
         http.debug("Response latency", data={"ms": 42})
 
     with step("Verify response"):
-        substep("Check 201 status")
-        validation.info("Status code", data={"expected": 201, "actual": resp["status"]})
-        assert resp["status"] == 201
+        with step("Check 201 status"):
+            validation.info("Status code", data={"expected": 201, "actual": resp["status"]})
+            assert resp["status"] == 201
 
-        substep("Check returned user has an ID")
-        validation.info("New user ID", data={"id": resp["body"]["id"]})
-        assert "id" in resp["body"]
-        validation.info("User creation verified successfully")
+        with step("Check returned user has an ID"):
+            validation.info("New user ID", data={"id": resp["body"]["id"]})
+            assert "id" in resp["body"]
+            validation.info("User creation verified successfully")
 
 
 @pytest.mark.parametrize(
@@ -232,14 +232,14 @@ def test_health_endpoint(log) -> None:
 
     with step("Validate health payload"):
         body = resp["body"]
-        substep("Check status field")
-        health.info("Status value", data={"status": body["status"]})
-        assert body["status"] == "healthy"
+        with step("Check status field"):
+            health.info("Status value", data={"status": body["status"]})
+            assert body["status"] == "healthy"
 
-        substep("Check uptime")
-        health.info("Uptime", data={"seconds": body["uptime_seconds"]})
-        assert body["uptime_seconds"] > 0
-        health.info("Health check passed")
+        with step("Check uptime"):
+            health.info("Uptime", data={"seconds": body["uptime_seconds"]})
+            assert body["uptime_seconds"] > 0
+            health.info("Health check passed")
 
 
 def test_update_user_partial(log) -> None:
@@ -324,18 +324,18 @@ def test_error_response_structure(log) -> None:
         http.info("Error response", data={"status": resp["status"], "body": resp["body"]})
 
     with step("Validate error structure"):
-        substep("Check 404 status")
-        error_log.info("Status code", data={"expected": 404, "actual": resp["status"]})
-        assert resp["status"] == 404
+        with step("Check 404 status"):
+            error_log.info("Status code", data={"expected": 404, "actual": resp["status"]})
+            assert resp["status"] == 404
 
-        substep("Check error field present")
-        error_log.info("Error body", data=resp["body"])
-        assert "error" in resp["body"]
+        with step("Check error field present"):
+            error_log.info("Error body", data=resp["body"])
+            assert "error" in resp["body"]
 
-        substep("Check error message")
-        error_log.info("Error message", data={"message": resp["body"]["error"]})
-        assert resp["body"]["error"] == "Not found"
-        error_log.info("Error response structure is correct")
+        with step("Check error message"):
+            error_log.info("Error message", data={"message": resp["body"]["error"]})
+            assert resp["body"]["error"] == "Not found"
+            error_log.info("Error response structure is correct")
 
 
 def test_method_not_allowed(log) -> None:

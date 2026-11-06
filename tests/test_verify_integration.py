@@ -1,58 +1,65 @@
-"""Integration tests for pytest-reporter's interaction with pytest-verify.
+"""pytest-reporter with pytest-verifier: verification cards from report.verify_checks.
 
-Covers:
-- Scenario 5: clean run when verify absent (get_check_results monkeypatched to None)
-- Scenario 6: verification cards rendered when verify present
-- Scenario 7: private stash import removed (static source check)
+The reporter never imports pytest-verifier. It reads the checks pytest-verifier
+puts on each phase report (``report.verify_checks``), so it works the same
+whether pytest-verifier is installed or not, with retries and under xdist.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
-    from pytest import MonkeyPatch, Pytester
+    from pytest import Pytester
 
 
-def _verify_exposes_get_check_results() -> bool:
-    """True only if the installed pytest-verify exposes the public reader.
-
-    The reporter reads checks via ``pytest_verify.get_check_results``; older /
-    differently-packaged verify builds (e.g. the published git main) do not
-    expose it, so verification cards cannot be captured. Tests that require real
-    card rendering are skipped in that case — the reporter degrades gracefully,
-    which is covered by ``test_reporter_runs_cleanly_when_verify_absent``.
-    """
-    if importlib.util.find_spec("pytest_verify") is None:
-        return False
-    import pytest_verify
-
-    return hasattr(pytest_verify, "get_check_results")
-
-
-requires_get_check_results = pytest.mark.skipif(
-    not _verify_exposes_get_check_results(),
-    reason="installed pytest-verify does not expose get_check_results()",
+requires_verifier = pytest.mark.skipif(
+    importlib.util.find_spec("pytest_verifier") is None,
+    reason="pytest-verifier is not installed",
 )
 
 
-def test_reporter_runs_cleanly_when_verify_absent(
-    pytester: Pytester, monkeypatch: MonkeyPatch
-) -> None:
-    """Scenario 5: reporter produces all outputs even when get_check_results is None.
+def _run_dir(pytester: Pytester) -> Path:
+    runs = sorted((pytester.path / "reports" / "runs").iterdir())
+    assert len(runs) == 1
+    return runs[0]
 
-    Simulates verify being absent by patching get_check_results to None at the
-    module level in reporter.  The run must complete without exception and all
-    expected outputs must be present.
-    """
-    import pytest_reporter.reporter as reporter_mod
 
-    monkeypatch.setattr(reporter_mod, "get_check_results", None)
+def _data(run_dir: Path) -> dict:  # type: ignore[type-arg]
+    html = (run_dir / "report.html").read_text(encoding="utf-8")
+    start = html.index("const DATA = ") + len("const DATA = ")
+    end = html.index(";\n", start)
+    return json.loads(html[start:end])  # type: ignore[no-any-return]
 
+
+def _imported_modules(path: Path) -> set[str]:
+    """Top-level module names a source file imports."""
+    import ast
+
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            names.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+def test_reporter_never_imports_verifier() -> None:
+    """No module of the reporter imports pytest-verifier (or the old pytest_verify)."""
+    src = Path(__file__).parent.parent / "src" / "pytest_reporter"
+    for path in src.rglob("*.py"):
+        imported = _imported_modules(path)
+        assert not imported & {"pytest_verify", "pytest_verifier", "pytest_strategy"}, path.name
+
+
+def test_reporter_runs_cleanly_without_checks(pytester: Pytester) -> None:
+    """Tests without verifier checks produce every output and no checks.json."""
     pytester.makepyfile("""
         def test_simple_pass():
             assert True
@@ -61,69 +68,100 @@ def test_reporter_runs_cleanly_when_verify_absent(
             assert False
     """)
     result = pytester.runpytest("--report-dir=reports")
-    # One pass, one fail — must NOT crash due to missing verify
     result.assert_outcomes(passed=1, failed=1)
 
-    reports_dir = pytester.path / "reports"
-    assert reports_dir.exists(), "reports/ dir must be created"
-
-    runs = list((reports_dir / "runs").iterdir())
-    assert len(runs) == 1
-    run_dir = runs[0]
-
-    assert (run_dir / "report.html").exists(), "report.html must be produced"
-    assert (run_dir / "junit.xml").exists(), "junit.xml must be produced"
-    assert (run_dir / "session.log.json").exists(), "session.log.json must be produced"
-    assert (reports_dir / "01_latest").is_dir(), "01_latest hard copy must exist"
+    run_dir = _run_dir(pytester)
+    assert (run_dir / "report.html").exists()
+    assert (run_dir / "junit.xml").exists()
+    assert not list(run_dir.rglob("checks.json"))
 
 
-@requires_get_check_results
-def test_verification_cards_rendered_when_verify_present(pytester: Pytester) -> None:
-    """Scenario 6: reporter renders verification card data when verify is installed.
+def test_checks_read_from_report_attribute(pytester: Pytester) -> None:
+    """Any plugin that sets report.verify_checks feeds the cards (no import needed)."""
+    pytester.makeconftest("""
+        import pytest
 
-    Uses the real pytest-verify (already installed in the venv) and confirms
-    the check_results field in the HTML data is non-empty.
-    """
+        @pytest.hookimpl(wrapper=True)
+        def pytest_runtest_makereport(item, call):
+            report = yield
+            if report.when == "call":
+                report.verify_checks = [{
+                    "check_type": "equal", "name": "Reply", "description": "Verify 'Reply' == 'OK'",
+                    "actual": "OK", "expected": "OK", "passed": True, "detail": "'OK' == 'OK'",
+                    "phase": "call", "location": "test_x.py:2",
+                }]
+            return report
+    """)
+    pytester.makepyfile(test_x="def test_a():\n    pass\n")
+    result = pytester.runpytest("--report-dir=reports", "-p", "no:pytest_verifier")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    checks = json.loads(next(run_dir.rglob("checks.json")).read_text())["checks"]
+    assert [c["name"] for c in checks] == ["Reply"]
+    run = _data(run_dir)["tests"][0]["runs"][0]
+    assert run["check_results"][0]["detail"] == "'OK' == 'OK'"
+
+
+@requires_verifier
+def test_verification_cards_rendered(pytester: Pytester) -> None:
+    """Checks of the real verify fixture reach checks.json and the HTML data."""
     pytester.makepyfile("""
         def test_with_verify(verify):
-            verify.equal(1, 1, name="Passes")
+            with verify.section("3V3"):
+                verify.approx(3.31, 3.3, abs_tol=0.05, name="Vout", units="V")
             verify.equal(1, 2, name="Fails")
     """)
     result = pytester.runpytest("--report-dir=reports")
-    # test fails because verify has a failing check
     result.assert_outcomes(failed=1)
 
-    runs = list((pytester.path / "reports" / "runs").iterdir())
-    assert runs, "run directory must exist"
-    run_dir = runs[0]
+    run_dir = _run_dir(pytester)
+    checks = json.loads(next(run_dir.rglob("checks.json")).read_text())["checks"]
+    assert [(c["name"], c["passed"]) for c in checks] == [("Vout", True), ("Fails", False)]
+    assert checks[0]["section"] == ["3V3"]
+    assert checks[1]["detail"] == "expected 2, got 1"
 
-    html_path = run_dir / "report.html"
-    assert html_path.exists(), "report.html must exist"
-    html_content = html_path.read_text(encoding="utf-8")
-
-    # The HTML embeds JSON data. Verification checks should appear in check_results.
-    # The key "check_results" must exist with non-empty data for this test.
-    assert '"check_results"' in html_content, "HTML report must contain check_results key"
-    # Ensure check results have at least one entry (not just an empty list "[]")
-    # We look for check-type-specific content
-    assert '"check_type"' in html_content, (
-        "HTML report must contain check_type data from verification checks"
-    )
+    run = _data(run_dir)["tests"][0]["runs"][0]
+    assert [c["name"] for c in run["check_results"]] == ["Vout", "Fails"]
 
 
-def test_private_stash_import_removed() -> None:
-    """Scenario 7: reporter.py must NOT import from pytest_verify._stash.
+@requires_verifier
+def test_composite_children_stay_inside_parent(pytester: Pytester) -> None:
+    """A composite's children are not listed as cards of their own."""
+    pytester.makepyfile("""
+        def test_all(verify):
+            verify.all_satisfy([1, 2], lambda x: verify.greater(x, 0, name="pos"), name="all")
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
 
-    Static source inspection — no test environment needed.
-    """
-    reporter_source = Path(__file__).parent.parent / "src" / "pytest_reporter" / "reporter.py"
-    assert reporter_source.exists(), f"reporter.py not found at {reporter_source}"
+    run = _data(_run_dir(pytester))["tests"][0]["runs"][0]
+    assert [c["check_type"] for c in run["check_results"]] == ["all_satisfy"]
+    assert len(run["check_results"][0]["child_checks"]) == 2
 
-    source_text = reporter_source.read_text(encoding="utf-8")
 
-    assert "pytest_verify._stash" not in source_text, (
-        "reporter.py must NOT import from pytest_verify._stash"
-    )
-    assert "from pytest_verify import get_check_results" in source_text, (
-        "reporter.py must import get_check_results from pytest_verify (inside ImportError guard)"
-    )
+@requires_verifier
+def test_retry_attempts_keep_their_own_checks(pytester: Pytester) -> None:
+    """The first attempt's checks are the run's; each retry has its checks.json."""
+    pytester.makepyfile("""
+        _n = 0
+
+        def test_flaky(verify):
+            global _n
+            _n += 1
+            verify.equal(_n, 2, name=f"attempt {_n}")
+    """)
+    result = pytester.runpytest("--report-dir=reports", "--report-retries=1")
+    result.assert_outcomes(passed=1)
+
+    run_dir = _run_dir(pytester)
+    test_dir = run_dir / "tests" / "test_retry_attempts_keep_their_own_checks.py"
+    test_dir = test_dir / "test_flaky" / "default"
+    first = json.loads((test_dir / "checks.json").read_text())["checks"]
+    retry = json.loads((test_dir / "retries" / "01" / "checks.json").read_text())["checks"]
+    assert [c["name"] for c in first] == ["attempt 1"]
+    assert [c["name"] for c in retry] == ["attempt 2"]
+
+    run = _data(run_dir)["tests"][0]["runs"][0]
+    assert [c["name"] for c in run["check_results"]] == ["attempt 1"]
+    assert run["retry_attempts"][0]["check_results"][0]["name"] == "attempt 2"

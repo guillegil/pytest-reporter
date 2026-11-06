@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -44,22 +44,22 @@ def test_query_simple_execution(log, db_pool, name, sql, expected):
     with step(f"Prepare query: {name}"):
         db.info("Parsing SQL", data={"query": sql})
         db.debug("Query parsed", data={"param_count": sql.count("$")})
-        substep("Generate execution plan")
-        perf.info("EXPLAIN ANALYZE", data={"sql": sql})
-        perf.debug("Plan generated", data={"estimated_cost": expected["cost"], "plan_type": "Index Scan" if expected["cost"] < 1 else "Seq Scan"})
+        with step("Generate execution plan"):
+            perf.info("EXPLAIN ANALYZE", data={"sql": sql})
+            perf.debug("Plan generated", data={"estimated_cost": expected["cost"], "plan_type": "Index Scan" if expected["cost"] < 1 else "Seq Scan"})
 
     with step("Execute query"):
         db.info("Running query", data={"query_name": name})
         latency = expected["cost"] * 0.5
         db.debug("Query executed", data={"latency_ms": round(latency, 2), "rows_returned": expected["rows"]})
-        substep("Fetch results")
-        db.info("Results fetched", data={"row_count": expected["rows"], "transfer_bytes": expected["rows"] * 128})
+        with step("Fetch results"):
+            db.info("Results fetched", data={"row_count": expected["rows"], "transfer_bytes": expected["rows"] * 128})
 
     with step("Validate performance"):
         perf.info("Latency check", data={"actual_ms": round(latency, 2), "threshold_ms": 100})
         perf.debug("Buffer usage", data={"shared_hit": 42, "shared_read": 0, "temp_read": 0})
-        substep("Assert within SLA")
-        perf.info("Query within performance SLA", data={"sla_ms": 100, "actual_ms": round(latency, 2)})
+        with step("Assert within SLA"):
+            perf.info("Query within performance SLA", data={"sla_ms": 100, "actual_ms": round(latency, 2)})
 
     assert latency < 100
 
@@ -78,16 +78,16 @@ def test_query_select_with_pagination(log):
         sql = "SELECT * FROM orders ORDER BY created_at DESC LIMIT 25 OFFSET 25"
         db.info("Executing page 2", data={"sql": sql})
         db.debug("Results", data={"rows": 25, "latency_ms": 4.1})
-        substep("Check for performance degradation on deep pages")
-        paging.info("Offset performance", data={"offset": 25, "latency_ms": 4.1, "degradation_pct": 28})
+        with step("Check for performance degradation on deep pages"):
+            paging.info("Offset performance", data={"offset": 25, "latency_ms": 4.1, "degradation_pct": 28})
 
     with step("Execute deep page"):
         sql = "SELECT * FROM orders ORDER BY created_at DESC LIMIT 25 OFFSET 10000"
         db.info("Executing deep page", data={"sql": sql})
         db.debug("Results", data={"rows": 25, "latency_ms": 48.7})
         paging.warning("Deep offset degrades performance", data={"offset": 10000, "latency_ms": 48.7})
-        substep("Recommend keyset pagination")
-        paging.info("Keyset alternative", data={"sql": "SELECT * FROM orders WHERE created_at < $1 ORDER BY created_at DESC LIMIT 25"})
+        with step("Recommend keyset pagination"):
+            paging.info("Keyset alternative", data={"sql": "SELECT * FROM orders WHERE created_at < $1 ORDER BY created_at DESC LIMIT 25"})
 
     assert True
 
@@ -124,8 +124,8 @@ def test_query_aggregate_functions(log):
             {"Status": "cancelled", "Count": 5000, "Avg Total": 38.90},
         ]
         db.table(group_results, name="order_status_summary")
-        substep("Verify group totals")
-        agg.info("Total across groups", data={"sum_count": 50000})
+        with step("Verify group totals"):
+            agg.info("Total across groups", data={"sum_count": 50000})
 
     assert True
 
@@ -146,8 +146,8 @@ def test_query_subquery_execution(log):
         db.info("Executing", data={"sql": sql})
         planner.warning("Correlated subquery may be slow", data={"estimated_cost": 850.0})
         db.debug("Result", data={"rows": 5000, "latency_ms": 180.3})
-        substep("Suggest rewrite as JOIN")
-        planner.info("Rewrite suggestion", data={"alternative": "SELECT u.*, COUNT(o.id) FROM users u LEFT JOIN orders o ON ... GROUP BY u.id"})
+        with step("Suggest rewrite as JOIN"):
+            planner.info("Rewrite suggestion", data={"alternative": "SELECT u.*, COUNT(o.id) FROM users u LEFT JOIN orders o ON ... GROUP BY u.id"})
 
     with step("EXISTS subquery"):
         sql = "SELECT * FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.status = 'pending')"
@@ -177,8 +177,8 @@ def test_query_join_execution(log, name, sql):
     with step(f"Analyze join query: {name}"):
         planner.info("EXPLAIN (FORMAT JSON)", data={"sql": sql})
         planner.debug("Join strategy", data={"type": "Hash Join", "hash_buckets": 1024})
-        substep("Check index usage")
-        planner.info("Indexes used", data={"indexes": ["users_pkey", "orders_user_id_idx"]})
+        with step("Check index usage"):
+            planner.info("Indexes used", data={"indexes": ["users_pkey", "orders_user_id_idx"]})
 
     with step("Execute query"):
         db.info("Running query", data={"name": name})
@@ -194,9 +194,9 @@ def test_query_join_execution(log, name, sql):
             "plan_rows": rows,
             "plan_width": 256,
         })
-        substep("Compare to sequential scan baseline")
-        seq_cost = latency * 5
-        perf.debug("Seq scan cost", data={"cost": seq_cost, "improvement_factor": round(seq_cost / max(latency, 0.01), 1)})
+        with step("Compare to sequential scan baseline"):
+            seq_cost = latency * 5
+            perf.debug("Seq scan cost", data={"cost": seq_cost, "improvement_factor": round(seq_cost / max(latency, 0.01), 1)})
 
     assert latency < 100
 
@@ -215,12 +215,12 @@ def test_query_self_join(log):
     with step("Execute self-join"):
         db.info("Running query")
         db.debug("Result", data={"pairs_found": 8400, "latency_ms": 320.5})
-        substep("Analyze domain distribution")
-        db.info("Top domains", data={
-            "gmail.com": 2100,
-            "yahoo.com": 980,
-            "company.com": 5320,
-        })
+        with step("Analyze domain distribution"):
+            db.info("Top domains", data={
+                "gmail.com": 2100,
+                "yahoo.com": 980,
+                "company.com": 5320,
+            })
 
     with step("Recommend optimization"):
         planner.info("Suggestion: add generated column for email domain")
@@ -250,8 +250,8 @@ def test_query_lateral_join(log):
         db.info("Running LATERAL join")
         perf.debug("Plan", data={"outer": "Seq Scan on users", "inner": "Index Scan on orders", "strategy": "Nested Loop"})
         db.debug("Results", data={"rows": 14200, "latency_ms": 95.3})
-        substep("Check per-user row count")
-        perf.info("Average orders per user in result", data={"avg": 2.84, "max": 3})
+        with step("Check per-user row count"):
+            perf.info("Average orders per user in result", data={"avg": 2.84, "max": 3})
 
     with step("Compare to window function alternative"):
         perf.info("Window function version", data={
@@ -286,20 +286,20 @@ def test_query_index_scan_vs_seq_scan(log):
     with step("Create index and re-analyze"):
         planner.info("CREATE INDEX idx_orders_total ON orders(total)")
         planner.debug("Index created", data={"size_kb": 1536, "type": "btree"})
-        substep("Re-run EXPLAIN")
-        planner.info("EXPLAIN ANALYZE with index")
-        perf.debug("Index Scan plan", data={
-            "scan_type": "Index Scan",
-            "rows_scanned": 25000,
-            "rows_returned": 25000,
-            "latency_ms": 18.4,
-        })
+        with step("Re-run EXPLAIN"):
+            planner.info("EXPLAIN ANALYZE with index")
+            perf.debug("Index Scan plan", data={
+                "scan_type": "Index Scan",
+                "rows_scanned": 25000,
+                "rows_returned": 25000,
+                "latency_ms": 18.4,
+            })
 
     with step("Performance comparison"):
         improvement = round(85.2 / 18.4, 1)
         perf.info("Index scan speedup", data={"seq_ms": 85.2, "idx_ms": 18.4, "speedup": f"{improvement}x"})
-        substep("Check selectivity")
-        perf.debug("Selectivity", data={"filter_pct": 50, "recommendation": "Index beneficial for selectivity < 15%"})
+        with step("Check selectivity"):
+            perf.debug("Selectivity", data={"filter_pct": 50, "recommendation": "Index beneficial for selectivity < 15%"})
 
     assert improvement > 1
 
@@ -329,8 +329,8 @@ def test_query_explain_analyze_verbose(log):
                 {"type": "Sort", "actual_rows": 10, "time_ms": 0.2},
             ]
         })
-        substep("Check buffer statistics")
-        planner.debug("Buffers", data={"shared_hit": 12450, "shared_read": 230, "temp_read": 0, "temp_written": 0})
+        with step("Check buffer statistics"):
+            planner.debug("Buffers", data={"shared_hit": 12450, "shared_read": 230, "temp_read": 0, "temp_written": 0})
 
     with step("Validate execution time"):
         total_ms = 48.8
@@ -365,20 +365,20 @@ def test_query_connection_pool_health(log):
             "waiting": 0,
             "max_wait_ms": 0,
         })
-        substep("Verify connection health")
-        pool.table(
-            [{"Conn": i + 1, "Status": "alive", "Age (s)": 120 + i * 30,
-              "Queries Served": 45 + i * 10, "Last Active": f"{5 + i * 2}s ago"}
-             for i in range(5)],
-            name="connection_pool_status",
-        )
+        with step("Verify connection health"):
+            pool.table(
+                [{"Conn": i + 1, "Status": "alive", "Age (s)": 120 + i * 30,
+                  "Queries Served": 45 + i * 10, "Last Active": f"{5 + i * 2}s ago"}
+                 for i in range(5)],
+                name="connection_pool_status",
+            )
 
     with step("Simulate connection recycle"):
         pool.info("Recycling connections older than 3600s")
         pool.debug("Connection 3 recycled", data={"age_sec": 3601, "queries_served": 1240})
         pool.info("New connection established to replace recycled")
-        substep("Verify pool size stable")
-        pool.info("Pool size after recycle", data={"total": 15})
+        with step("Verify pool size stable"):
+            pool.info("Pool size after recycle", data={"total": 15})
 
     assert True
 
@@ -396,8 +396,8 @@ def test_query_connection_pool_under_load(log):
     with step("Monitor pool saturation"):
         pool.info("Pool at capacity", data={"active": 20, "max": 20, "waiting": 30})
         pool.warning("Queries waiting for connections", data={"queue_depth": 30, "avg_wait_ms": 45})
-        substep("Check for connection leaks")
-        pool.debug("Leak detection", data={"suspected_leaks": 0, "long_running": 2})
+        with step("Check for connection leaks"):
+            pool.debug("Leak detection", data={"suspected_leaks": 0, "long_running": 2})
 
     with step("Load subsides"):
         pool.info("Queries completing", data={"active": 12, "idle": 8, "waiting": 0})
@@ -423,16 +423,16 @@ def test_query_timeout_retry(log, flaky_service):
             flaky_service("query_timeout")
         except ConnectionError:
             db.error("Query timed out after 5000ms", data={"error": "statement timeout"})
-            substep("Retry with extended timeout")
-            db.info("Retrying with 30s timeout")
-            result = flaky_service("query_timeout")
-            db.info("Query completed on retry", data={"result": result, "latency_ms": 8200})
+            with step("Retry with extended timeout"):
+                db.info("Retrying with 30s timeout")
+                result = flaky_service("query_timeout")
+                db.info("Query completed on retry", data={"result": result, "latency_ms": 8200})
 
     with step("Analyze slow query"):
         perf.info("Query plan analysis", data={"plan": "Nested Loop Join", "estimated_rows": 500000})
         perf.warning("Missing index on order_items.order_id")
-        substep("Suggest optimization")
-        perf.info("Recommendation: CREATE INDEX idx_order_items_order_id ON order_items(order_id)")
+        with step("Suggest optimization"):
+            perf.info("Recommendation: CREATE INDEX idx_order_items_order_id ON order_items(order_id)")
 
     assert True
 
@@ -456,11 +456,11 @@ def test_query_deadlock_retry(log, flaky_service):
                 "detail": "Process 1234 waits for ShareLock on transaction 5678; blocked by process 5679",
             })
             tx.info("ROLLBACK")
-            substep("Retry transaction")
-            tx.info("BEGIN (retry)")
-            result = flaky_service("query_deadlock")
-            db.info("Update succeeded on retry", data={"result": result})
-            tx.info("COMMIT")
+            with step("Retry transaction"):
+                tx.info("BEGIN (retry)")
+                result = flaky_service("query_deadlock")
+                db.info("Update succeeded on retry", data={"result": result})
+                tx.info("COMMIT")
 
     with step("Verify data consistency"):
         db.info("SELECT status FROM orders WHERE id = 1")
@@ -479,16 +479,16 @@ def test_query_replica_failover_retry(log, flaky_service):
             flaky_service("replica_failover")
         except ConnectionError:
             replica.error("Replica-1 unreachable", data={"error": "connection refused"})
-            substep("Failover to replica-2")
-            replica.info("Connecting to replica-2", data={"host": "replica-2.internal", "port": 5432})
-            result = flaky_service("replica_failover")
-            replica.info("Connected to replica-2", data={"result": result})
+            with step("Failover to replica-2"):
+                replica.info("Connecting to replica-2", data={"host": "replica-2.internal", "port": 5432})
+                result = flaky_service("replica_failover")
+                replica.info("Connected to replica-2", data={"result": result})
 
     with step("Execute read query on failover replica"):
         replica.info("SELECT COUNT(*) FROM orders WHERE status = 'completed'")
         replica.debug("Result", data={"count": 35000, "latency_ms": 12.1})
-        substep("Check replication lag")
-        replica.info("Lag check", data={"lag_bytes": 128, "lag_ms": 5})
+        with step("Check replication lag"):
+            replica.info("Lag check", data={"lag_bytes": 128, "lag_ms": 5})
 
     assert True
 
@@ -512,8 +512,8 @@ def test_query_slow_query_sla_breach(log):
         latency_ms = 5200
         perf.error("Query exceeded SLA", data={"latency_ms": latency_ms, "sla_ms": 1000})
         perf.info("Rows scanned", data={"scanned": 2_500_000, "returned": 50000})
-        substep("Check resource usage")
-        perf.debug("Resources", data={"cpu_time_ms": 4800, "temp_disk_mb": 256, "memory_mb": 512})
+        with step("Check resource usage"):
+            perf.debug("Resources", data={"cpu_time_ms": 4800, "temp_disk_mb": 256, "memory_mb": 512})
 
     with step("Assert SLA compliance"):
         sla_ms = 1000
@@ -555,9 +555,9 @@ def test_query_window_functions(log):
         sql = "SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn FROM orders"
         db.info("Executing", data={"sql": sql})
         win.debug("Results", data={"rows": 50000, "latency_ms": 65.3})
-        substep("Filter to latest order per user")
-        db.info("Wrapping in CTE with WHERE rn = 1")
-        win.debug("Filtered", data={"rows": 5000, "latency_ms": 72.1})
+        with step("Filter to latest order per user"):
+            db.info("Wrapping in CTE with WHERE rn = 1")
+            win.debug("Filtered", data={"rows": 5000, "latency_ms": 72.1})
 
     with step("Running total with SUM OVER"):
         sql = "SELECT created_at::date, total, SUM(total) OVER (ORDER BY created_at) as running_total FROM orders WHERE user_id = 1"
@@ -610,8 +610,8 @@ def test_query_cte_recursive(log):
     with step("Validate tree integrity"):
         db.info("Checking for cycles: none found")
         db.debug("Orphan check", data={"orphan_count": 0})
-        substep("Verify all employees reachable from root")
-        db.info("All 181 employees reachable from CEO node")
+        with step("Verify all employees reachable from root"):
+            db.info("All 181 employees reachable from CEO node")
 
     assert True
 
@@ -639,9 +639,9 @@ def test_query_prepared_statements(log):
 
     with step("Check plan cache"):
         stmt.info("Plan cache status", data={"generic_plan": True, "custom_plans": 0, "plan_reuse_count": 3})
-        substep("Deallocate statement")
-        stmt.info("DEALLOCATE order_lookup")
-        stmt.debug("Statement deallocated")
+        with step("Deallocate statement"):
+            stmt.info("DEALLOCATE order_lookup")
+            stmt.debug("Statement deallocated")
 
     assert True
 
@@ -716,9 +716,9 @@ def test_query_json_operations(log):
     with step("JSONB containment query"):
         db.info("SELECT * FROM events WHERE metadata @> '{\"priority\": \"high\"}'")
         json_ops.debug("GIN index used", data={"index": "idx_events_metadata", "rows": 450, "latency_ms": 5.1})
-        substep("Test jsonpath")
-        db.info("SELECT jsonb_path_query(metadata, '$.items[*] ? (@.qty > 10)') FROM events WHERE id = 1")
-        json_ops.debug("Jsonpath result", data={"matches": 3})
+        with step("Test jsonpath"):
+            db.info("SELECT jsonb_path_query(metadata, '$.items[*] ? (@.qty > 10)') FROM events WHERE id = 1")
+            json_ops.debug("Jsonpath result", data={"matches": 3})
 
     with step("JSONB aggregation"):
         db.info("SELECT jsonb_object_agg(key, count) FROM (SELECT metadata->>'source' as key, COUNT(*) FROM events GROUP BY 1) sub")

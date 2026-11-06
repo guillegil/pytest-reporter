@@ -12,7 +12,7 @@ The authoritative spec is at `docs/specs.md`.
 
 ```bash
 source .venv/bin/activate
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,all]"   # [dev] alone runs the suite without the optional integrations
 ```
 
 ## Commands
@@ -55,6 +55,7 @@ mypy --strict src/pytest_reporter/
 - `_junit_writer.py` — standard JUnit XML via `xml.etree.ElementTree`
 - `_html_builder.py` — self-contained HTML with embedded JSON data, rendered by inline JS (SVG donut charts, tree navigation, 3 tabs)
 - `_console_capture.py` — `TeeFile` wraps terminal reporter to capture pytest.log
+- `_stepdoc.py` — optional stepdoc integration: makes stepdoc record (`--stepdoc-record=<run>/stepdoc.json`) and turns its steps into `procedure.json`
 - `_symlinks.py` — refreshes the `01_latest/` hard copy of the most recent run (legacy filename; the module exports `update_latest_copy`)
 
 **Tests use `pytester`** — all plugin behavior is tested via subprocess isolation. The `pytester` fixture is enabled in `tests/conftest.py`.

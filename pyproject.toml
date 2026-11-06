@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytest-reporter"
-version = "0.2.0"
+version = "0.3.0"
 description = "A pytest plugin for generating custom test reports"
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,7 +24,12 @@ classifiers = [
 reporter = "pytest_reporter.plugin"
 
 [project.optional-dependencies]
-verify = ["pytest-verify"]
+# Each integration is optional: the reporter reads what these plugins publish
+# (hooks, marks, report attributes) and never imports them.
+stepdoc = ["stepdoc>=0.2"]
+verifier = ["pytest-verifier>=0.10"]
+strategies = ["pytest-strategies>=4.0"]
+all = ["stepdoc>=0.2", "pytest-verifier>=0.10", "pytest-strategies>=4.0"]
 dev = [
     "pytest>=7.4",
     "mypy>=1.8",
@@ -43,14 +48,6 @@ testpaths = ["tests"]
 strict = true
 packages = ["pytest_reporter"]
 
-[[tool.mypy.overrides]]
-# pytest-verify is an optional integration. Treat it as opaque so the strict
-# build is deterministic whether or not it is installed (and typed) in a given
-# environment — its real types must not leak into this package's checking.
-module = ["pytest_verify", "pytest_verify.*"]
-ignore_missing_imports = true
-follow_imports = "skip"
-
 [tool.ruff]
 target-version = "py311"
 line-length = 100
@@ -63,5 +60,3 @@ select = ["E", "F", "I", "UP", "ANN"]
 "src/pytest_reporter/_html_builder/_js.py" = ["E501"]
 "src/pytest_reporter/_html_builder/_template.py" = ["E501"]
 
-[tool.uv.sources]
-pytest-verify = { git = "https://github.com/guillegil/pytest_verify.git" }

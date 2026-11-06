@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import time
 import warnings
 from datetime import UTC, datetime
@@ -18,47 +17,11 @@ from ._json_writer import write_session_log_json, write_test_log_json
 from ._junit_writer import write_junit_xml
 from ._logger import Logger
 from ._phase_capture import capture_phase_logs, write_run_finish_files
-from ._procedure import ProcedureTracker, _set_tracker
 from ._report_builder import build_html_data
 from ._retry import run_with_retries
 from ._safety import guard, guard_void
+from ._stepdoc import StepCollector
 from ._symlinks import update_latest_copy
-
-try:
-    from pytest_verify import get_check_results
-except ImportError:  # pragma: no cover
-    get_check_results = None
-
-try:
-    _VERIFY_INSTALLED = importlib.util.find_spec("pytest_verify") is not None
-except (ImportError, ValueError):  # pragma: no cover
-    _VERIFY_INSTALLED = False
-
-
-def _verify_outdated_warning(get_check_results_fn: object, *, verify_installed: bool) -> str | None:
-    """Return a diagnostic message if pytest-verify is present but too old.
-
-    Distinguishes the dangerous silent case (pytest-verify installed but lacking
-    the public ``get_check_results`` reader, so verification cards are captured
-    by nobody) from the benign case (pytest-verify simply not installed, where
-    no checks are expected). Only the former warrants a warning.
-
-    Args:
-        get_check_results_fn: The imported ``get_check_results`` callable, or
-            ``None`` if the import failed.
-        verify_installed: Whether ``pytest_verify`` is importable at all.
-
-    Returns:
-        A human-readable warning message, or ``None`` if nothing is wrong.
-    """
-    if get_check_results_fn is None and verify_installed:
-        return (
-            "pytest-verify is installed but does not expose get_check_results(); "
-            "verification cards will not appear in the report. Upgrade pytest-verify "
-            "(>=0.2.0)."
-        )
-    return None
-
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -79,14 +42,19 @@ class Reporter:
         self._start_time: float = 0.0
         self._session_start_iso: str = ""
         self._finished_runs: set[str] = set()
-        # Per-test procedure trackers: nodeid -> ProcedureTracker
-        self._procedure_trackers: dict[str, ProcedureTracker] = {}
+        # stepdoc steps of each test attempt (the Procedure tab)
+        self.steps = StepCollector()
+        # procedure.json of each finished run (first attempt): nodeid -> dict
+        self._procedures: dict[str, dict[str, Any]] = {}
         # Per-test loggers: nodeid -> Logger
         self._test_loggers: dict[str, Logger] = {}
         # Current retry write paths: nodeid -> Path (for retry subfolder)
         self._retry_paths: dict[str, Path] = {}
-        # Verification check results from pytest-verify: nodeid -> list[dict]
+        # pytest-verifier checks of each run (first attempt), from
+        # report.verify_checks: nodeid -> list[dict]
         self._check_results: dict[str, list[dict[str, Any]]] = {}
+        # Checks of the attempt running now: nodeid -> list[dict]
+        self._attempt_checks: dict[str, list[dict[str, Any]]] = {}
         # Item references for stash access: nodeid -> Item
         self._items: dict[str, Item] = {}
         # Mutable metadata dict populated via report_metadata fixture or hook
@@ -149,6 +117,16 @@ class Reporter:
             lambda: self._do_runtest_logfinish(nodeid, location),
         )
 
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_stepdoc_step_started(self, item: Item, step: Any) -> None:  # noqa: ANN401
+        """stepdoc hook: a step started (only called while stepdoc records)."""
+        guard_void("pytest_stepdoc_step_started", lambda: self.steps.started(item, step))
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_stepdoc_step_finished(self, item: Item, step: Any) -> None:  # noqa: ANN401
+        """stepdoc hook: a step ended."""
+        guard_void("pytest_stepdoc_step_finished", lambda: self.steps.finished(item, step))
+
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_protocol(self, item: Item, nextitem: Item | None) -> bool | None:
         """Override test protocol to implement retry logic."""
@@ -186,12 +164,6 @@ class Reporter:
         self.context.ensure_dirs()
         self._tee = install_capture(self.config)
 
-        # Surface the silent-loss case: pytest-verify present but too old to
-        # expose get_check_results, so verification cards would never appear.
-        msg = _verify_outdated_warning(get_check_results, verify_installed=_VERIFY_INSTALLED)
-        if msg is not None:
-            warnings.warn(f"pytest-reporter: {msg}", stacklevel=2)
-
     def _do_collection_modifyitems(
         self,
         session: Session,  # noqa: ARG002
@@ -202,7 +174,7 @@ class Reporter:
         self.collector.register_items(items)
 
     def _do_runtest_setup(self, item: Item) -> None:
-        """Real body of pytest_runtest_setup: create fresh logger and tracker per test."""
+        """Real body of pytest_runtest_setup: fresh logger, steps and checks per attempt."""
         nodeid = item.nodeid
         if nodeid not in self.collector._run_map:
             return
@@ -215,10 +187,9 @@ class Reporter:
         self._test_loggers[nodeid] = logger
         item._reporter_logger = logger  # type: ignore[attr-defined]
 
-        # Create fresh procedure tracker
-        tracker = ProcedureTracker()
-        self._procedure_trackers[nodeid] = tracker
-        _set_tracker(tracker)
+        # Start a new attempt: its own stepdoc steps and verifier checks
+        self.steps.begin(nodeid)
+        self._attempt_checks[nodeid] = []
 
     def _do_runtest_logreport(self, report: TestReport) -> None:
         """Real body of pytest_runtest_logreport."""
@@ -239,7 +210,7 @@ class Reporter:
             return
         if nodeid in self._finished_runs:
             return
-        write_run_finish_files(self, nodeid, location, get_check_results)
+        write_run_finish_files(self, nodeid, location)
 
     def _do_sessionfinish(self, session: Session, exitstatus: int) -> None:  # noqa: ARG002
         """Real body of pytest_sessionfinish.

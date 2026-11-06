@@ -1,7 +1,7 @@
 """Slice C — RNG seed exposed in Run Information via hook + fixture.
 
 Scenarios:
-  2a: no report_seed, no pytest_strategy -> 'Not Provided' in Seed row
+  2a: no report_seed, no strategy rows -> 'Not Provided' in Seed row
   2c/2d: conftest sets report_seed["value"] = 42 -> report shows '42' in mono
   2e: pytest_reporter_seed hook raises -> report generated, shows 'Not Provided'
 
@@ -10,8 +10,12 @@ Note: pytest.warns does NOT cross the pytester subprocess boundary.
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import pathlib
 from typing import TYPE_CHECKING
+
+import pytest
 
 if TYPE_CHECKING:
     from pytest import Pytester
@@ -39,7 +43,7 @@ def _report_html(pytester: Pytester) -> str:
 
 
 def test_seed_not_provided_when_no_source(pytester: Pytester) -> None:
-    """When no report_seed and no pytest_strategy installed, DATA.seed must be null."""
+    """When no report_seed and no strategy row ran, DATA.seed must be null."""
     pytester.makepyfile("""
         def test_simple():
             assert True
@@ -144,3 +148,43 @@ def test_report_seed_fixture_exists() -> None:
     text = src.read_text(encoding="utf-8")
     assert "report_seed" in text, "plugin.py must define the report_seed fixture"
     assert "seed_store" in text, "plugin.py must reference seed_store on the reporter"
+
+
+# ---------------------------------------------------------------------------
+# pytest-strategies: the seed and row of each strategy test
+# ---------------------------------------------------------------------------
+
+_requires_strategies = pytest.mark.skipif(
+    importlib.util.find_spec("pytest_strategy") is None,
+    reason="pytest-strategies is not installed",
+)
+
+
+@_requires_strategies
+def test_seed_and_row_from_strategies(pytester: Pytester) -> None:
+    """The run's seed comes from the strategy rows; parameters.json names each row."""
+    pytester.makepyfile("""
+        from pytest_strategy import Parameter, TestArg, RNGInteger, register, strategy
+
+        @register("levels")
+        def levels():
+            return Parameter(
+                TestArg("level", rng_type=RNGInteger(0, 10)),
+                directed_vectors={"zero": {"level": 0}},
+            )
+
+        @strategy("levels")
+        def test_level(level):
+            assert 0 <= level <= 10
+    """)
+    result = pytester.runpytest("--report-dir=reports", "--rng-seed=1234", "--nsamples=1")
+    result.assert_outcomes(passed=2)
+
+    html = _report_html(pytester)
+    assert '"seed": "1234"' in html
+
+    params = sorted(_run_dir(pytester).rglob("parameters.json"))
+    rows = [json.loads(p.read_text())["strategy"] for p in params]
+    kinds = {(r["strategy"], r["kind"]) for r in rows}
+    assert kinds == {("levels", "directed"), ("levels", "random")}
+    assert all(r["seed"] == 1234 for r in rows)

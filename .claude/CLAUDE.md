@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`pytest-reporter` is a pytest plugin that generates structured, human-readable and machine-readable test reports. Each test run produces a timestamped folder containing per-test logs, artifacts, procedures, and an aggregated self-contained HTML report plus JUnit XML for CI/CD. The plugin includes a built-in retry system and integrates with `pytest-verify` for verification card rendering.
+`pytest-reporter` is a pytest plugin that generates structured, human-readable and machine-readable test reports. Each test run produces a timestamped folder containing per-test logs, artifacts, procedures, and an aggregated self-contained HTML report plus JUnit XML for CI/CD. The plugin includes a built-in retry system. Procedures come from `stepdoc`, verification cards from `pytest-verifier` and strategy rows from `pytest-strategies`: all three are optional and never imported.
 
 **Specification:** The authoritative spec lives in Notion under "Pytest Reporter". Always consult the spec for schema details, edge cases, and design decisions.
 
@@ -18,10 +18,10 @@ pytest-reporter (this plugin)
 │  │ (test)   │  │ (session)    │  │ (test)            │      │
 │  └──────────┘  └──────────────┘  └──────────────────┘      │
 │                                                             │
-│  IMPORTS (explicit):                                        │
-│  ┌────────────────────────────────────────┐                 │
-│  │ from pytest_reporter import step, substep               │
-│  └────────────────────────────────────────┘                 │
+│  OPTIONAL INTEGRATIONS (never imported):                    │
+│  stepdoc          → pytest_stepdoc_step_* hooks → procedures│
+│  pytest-verifier  → report.verify_checks → check cards      │
+│  pytest-strategies→ `strategy` mark (VectorInfo) → row/seed │
 │                                                             │
 │  HOOKS:                                                     │
 │  ┌──────────────────────────────┐                           │
@@ -30,18 +30,18 @@ pytest-reporter (this plugin)
 │  │ pytest_sessionfinish         │ → session log + HTML gen  │
 │  └──────────────────────────────┘                           │
 │                                                             │
-│  READS item.stash for verification cards (from pytest-verify)│
+│  READS report.verify_checks for verification cards          │
 │  NEVER evaluates check descriptors or determines pass/fail  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Core Principles
 
-- **The reporter observes, never judges.** It never raises exceptions to determine test outcomes. It hooks into `pytest_runtest_makereport` to observe what happened and records it. Pass/fail for checks is determined by `pytest-verify`.
-- **Fixtures are the public API.** `log`, `session_log`, `report_artifacts` are pytest fixtures (no import). `step` and `substep` are functions (explicit import from `pytest_reporter`).
+- **The reporter observes, never judges.** It never raises exceptions to determine test outcomes. It hooks into `pytest_runtest_makereport` to observe what happened and records it. Pass/fail for checks is determined by `pytest-verifier`.
+- **Fixtures are the public API.** `log`, `session_log`, `report_artifacts` are pytest fixtures (no import). The package exports only `Logger`/`ReportLogger`. There is no step API: tests use `from stepdoc import step`.
+- **Integrations stay optional.** Never import stepdoc, pytest-verifier or pytest-strategies. Read what they publish: stepdoc's `pytest_stepdoc_step_started/finished` hooks (`optionalhook=True`), `report.verify_checks`, the `strategy` mark's `VectorInfo.to_dict()`. CI runs the suite with and without them.
 - **Single self-contained HTML report.** `report.html` must be one file with inline HTML, CSS, JS. Artifacts are base64-encoded as data URIs. No external CDN dependencies.
 - **Flat serialization with source paths.** The logger uses a tree API in memory but serializes to flat arrays with `source` path arrays. Never nest on disk.
-- **step(check=...) is presentation only.** When receiving a check descriptor, `step()` stores it as inline metadata on the step. The check description is rendered alongside the step text (e.g. `CPU fan above 1500 RPM — CPU fan > 1500 RPM [PASS]`). It does NOT evaluate, does NOT determine pass/fail, does NOT write to stash, does NOT create a substep.
 
 ## CLI Options
 
@@ -54,15 +54,14 @@ pytest tests/ --report-dir=reports --report-retries=3  # Enable retries
 
 ```
 pytest_reporter/
-├── __init__.py              # Exports: fmt, step, substep, Logger, ReportLogger, FormattedText
-├── fmt.py                   # Typed formatting constructors: mono(), text(), Segment, FormattedText
+├── __init__.py              # Exports: Logger, ReportLogger (removed names raise ImportError)
 ├── py.typed                 # PEP 561 marker — REQUIRED
 ├── plugin.py                # Plugin registration (pytest11 entry point)
 ├── reporter.py              # Reporter class — main hook orchestrator
 ├── _collector.py            # DataCollector — item registry, phase tracking, aggregation
 ├── _context.py              # RunContext — timestamped run directory management
 ├── _logger.py               # Logger class (+ ReportLogger alias) — tree-based structured logger
-├── _procedure.py            # step(), substep(), ProcedureTracker, procedure.json writing
+├── _stepdoc.py              # activate() stepdoc recording; StepCollector: steps → procedure.json
 ├── _types.py                # Shared TypedDicts and type aliases
 ├── _json_writer.py          # Phase log, test.log.json, session.log.json writers
 ├── _junit_writer.py         # junit.xml generation
@@ -82,46 +81,17 @@ pytest_reporter/
 | `session_log` | session | `ReportLogger` | Structured logging for session-scoped fixtures |
 | `report_artifacts` | test | `pathlib.Path` | Directory path for saving test artifacts |
 
-### Functions and types (explicit import)
+### Imports
 
 ```python
-from pytest_reporter import fmt, step, substep
-from pytest_reporter import FormattedText    # public type alias for list[Segment]
 from pytest_reporter import ReportLogger     # canonical public name
 from pytest_reporter import Logger           # internal name, kept for compat
-
-# Typed formatting constructors — use instead of backtick strings
-fmt.mono(s: str) -> FormattedText            # monospace segment; empty string → []
-fmt.text(*parts: str | FormattedText) -> FormattedText  # concatenate parts; str → plain seg
-
-# Procedure functions — accept plain str or FormattedText
-step(description: str | FormattedText, *, check: dict | None = None) -> ContextManager
-substep(description: str | FormattedText) -> None
 ```
-
-`FormattedText` is `list[Segment]` where `Segment = {"text": str, "style": str | None}`.
-`"mono"` is the only style value in this version; `None` means plain.
 
 `ReportLogger` is the canonical public name documented for users. `Logger` is the underlying class name in `_logger.py`; both names refer to the same class object (`ReportLogger is Logger`).
 
-#### fmt usage examples
-
-```python
-from pytest_reporter import fmt, step, substep
-
-# Monospace identifier
-step(fmt.mono("Pulse.Enable"))
-
-# Mixed plain + mono
-step(fmt.text("Set ", fmt.mono("Pulse.Enable"), " to 1"))
-
-# Substep with typed formatting
-substep(fmt.mono("0x0F"))
-
-# Context manager
-with step(fmt.text("Configure ", fmt.mono("SPI_CLK"), " frequency")):
-    substep("Write to control register")
-```
+`step`, `substep`, `fmt`, `FormattedText`, `ProcedureError` and `ProcedureNestingError`
+were removed in 0.3.0; `pytest_reporter.__getattr__` raises an `ImportError` naming stepdoc.
 
 ## IDE Autocompletion — CRITICAL REQUIREMENT
 
@@ -273,45 +243,44 @@ Non-parametrized: `parametrize_id: null`, `params: {}`.
 
 ### procedure.json (§6.7)
 
-The schema is **recursive**: every node may contain a `substeps` list of the same shape.
-Leaf nodes omit `substeps` or have an empty list. Old 2-level files (flat leaf substeps)
-remain valid — a 2-level doc is a 3-level doc that never recurses deeper than one level.
+Built from stepdoc's steps by `_stepdoc.StepCollector` (one list of top-level steps per
+attempt, filled by the `pytest_stepdoc_step_started` hook, serialized at the attempt's
+end, after pytest-verifier's checks were placed by stepdoc's adapter). Recursive: every
+node may hold `substeps` of the same shape.
 
 ```json
 {
+  "source": "stepdoc",          // absent when empty: {"steps": []}
   "steps": [
-    { "number": "1", "description": "...", "outcome": "passed",
-      "start_time": "...", "end_time": "...", "duration_seconds": 0.0,
-      "exc": null,
-      "check": { ... },     // Optional — inline check descriptor
-      "description_segments": [   // Optional — absent for plain str descriptions
-        {"text": "Set ", "style": null},
-        {"text": "Pulse.Enable", "style": "mono"},
-        {"text": " to 1", "style": null}
-      ],
-      "substeps": [             // recursive; absent / [] => leaf node
-        { "number": "1.1", "description": "...", "outcome": "passed", ... ,
-          "check": { ... },  // Optional
-          "description_segments": [...],  // Optional
-          "substeps": [     // L3 children
-            { "number": "1.1.1", "description": "...", "outcome": "passed", ... }
-          ]
-        }
-      ]
-    }
+    { "kind": "step", "number": "S1", "section": "setup", "description": "Power on",
+      "outcome": "passed", "start_time": "...", "end_time": "...",
+      "duration_seconds": 0.01, "exc": null },
+    { "kind": "step", "number": "1", "section": "procedure", "description": "Measure",
+      "outcome": "failed", "exc": {"type": "AssertionError", "msg": "...", "tb": ""},
+      "substeps": [
+        { "kind": "action", "number": "1.1", "description": "Measure dmm.voltage",
+          "result": "1.65 V", "outcome": "info", "exc": null },
+        { "kind": "check", "number": "1.2", "description": "Verify 'Vout' == 3.3V ± 0.05V",
+          "result": "got 1.65", "detail": "expected ...", "outcome": "failed", "exc": null }
+      ] }
   ]
 }
 ```
 
-Numbering examples: `1` / `1.1` / `1.1.1` / `1.1.2` / `1.2` / `1.2.1` / `2` / `2.1`
+- Numbers are renumbered per attempt (stepdoc numbers continue across the reporter's
+  retries, which run inside one stepdoc protocol): `S1…` setup, `1…` procedure, `T1…`
+  teardown; entries (steps, actions, checks) share the child numbering, as in stepdoc.
+- Outcomes: stepdoc `passed/failed/error/unknown/not_run` → `passed/failed/error/unknown/skipped`;
+  actions are `info`; unjudged checks `unknown`.
+- 0.2 files (no `kind`, optional `description_segments`, `check`) still render.
+- stepdoc records only with one of its options: `_stepdoc.activate()` (from the
+  `tryfirst` `pytest_configure`) sets `--stepdoc-record=<run>/stepdoc.json` when the user
+  gave none; `report_stepdoc = false` (ini) turns that off.
 
-**`description_segments` rules (typed constructors):**
-- Present only when `fmt.mono()` or `fmt.text(..., fmt.mono(...), ...)` is passed to `step()`/`substep()`.
-- Absent (key omitted, not null) for plain `str` descriptions — byte-identical to pre-change behaviour.
-- Each element: `{"text": str, "style": "mono" | null}`. `"mono"` = monospace run, `null` = plain run.
-- `description` field is always a plain string (joined segment texts) — never `FormattedText`.
-- Forward-compatible: new `style` values may be added in future versions.
-- Populated via `normalize()` in `_procedure.py` — backtick strings now render literally (no parsing).
+### checks.json
+
+`{"checks": [...]}`: the run's (or retry attempt's) pytest-verifier records, from
+`report.verify_checks` of each phase, written only when there are checks.
 
 ## Phase Capture Flow
 
@@ -322,42 +291,14 @@ Numbering examples: `1` / `1.1` / `1.1.1` / `1.1.2` / `1.2` / `1.2.1` / `2` / `2
 5. Write to `{phase}.log.json`.
 6. **Do NOT modify or reorder entries.** Wrap as-is.
 
-## Procedure System
-
-### step() behavior:
-- Plain call: records step, outcome = `passed` (execution reached this line).
-- Context manager: `__enter__` records start, `__exit__` records end + outcome. Exceptions re-raised.
-- With `check=descriptor`: creates auto substep from `descriptor["description"]`. Does NOT evaluate.
-- Counters reset per test via `pytest_runtest_call`.
-
-### Depth limit: exactly 3 levels (N.N.N).
-- `step()` at root → level 1
-- `step()` or `substep()` inside one open CM → level 2
-- `step()` or `substep()` inside two open CMs → level 3
-- Calls that would produce level 4 are **clamped** to level 3 (node attached as a
-  sibling at L3; no exception raised). `ProcedureNestingError` is retained for
-  import back-compat but is **no longer raised** from the depth-overflow path.
-
-### `substep()` before any `step()` → promotes to a top-level step
-
-If `substep()` is called before any step has been recorded at the current context
-level, it is promoted to a step at that level (description preserved, no raise).
-`substep()` attaches to the most-recently-recorded step at the current context level
-("last step wins").
-
 ## Check Integration (§6.10 + §15)
 
-### What step(check=...) does:
-1. Records the step as usual.
-2. Stores the check descriptor directly on the step's `check` field.
-3. Does NOT create a substep. The check is inline metadata on the step.
-4. In the HTML procedure view, rendered as: `description — check_description` (no PASS/FAIL badge).
-5. That's ALL. No evaluation, no stash write, no pass/fail.
-
-### What the reporter reads from item.stash:
-- Stash key: `StashKey[list]()` — shared convention with pytest-verify.
-- If present: renders verification cards in HTML (green pass / red fail cards).
-- If absent: renders standard longrepr tracebacks.
+### What the reporter reads from pytest-verifier:
+- `report.verify_checks` on each phase report (JSON-safe; nested checks inside their
+  parent). Collected per attempt in `Reporter._attempt_checks`, kept for the first
+  attempt in `_check_results`, written to `checks.json` per run and per retry.
+- Never `import pytest_verifier` (and never `pytest_verify`: that import name belongs to
+  another project on PyPI).
 
 ### Verification cards in HTML (§7.5):
 - Appear inline in phase log viewer at chronological position.
@@ -382,7 +323,7 @@ level, it is promoted to a step at that level (description preserved, no raise).
 
 ### Test detail sub-tabs:
 - **Summary:** Duration, outcome, parameters table, phase logs as horizontal tabs (Setup/Call/Teardown).
-- **Procedure:** Numbered outline from `procedure.json`. Check substeps show verification description only (no pass/fail).
+- **Procedure:** Numbered outline from `procedure.json`, grouped into Setup / Procedure / Teardown when fixtures made steps; actions and checks show their result.
 - **Artifacts:** HTML = sandboxed iframes, Images = thumbnail grid + lightbox, Others = file cards.
 - **Retries:** Original failure pinned at top (red), retry cards below (collapsible), final attempt expanded.
 
@@ -470,13 +411,11 @@ else donut grid.
 - Metadata wrapping (outcome, timing, longrepr)
 - Entries not modified or reordered
 
-### Procedure:
-- step/substep numbering: 1, 2, 2.1, 2.2, 3
-- Context manager: timing, outcome tracking, exception re-raise
-- check= parameter: substep created from description, check field in JSON
-- Depth limit: >2 raises ProcedureNestingError
-- substep before step: promotes to a top-level step (no raise); no-active-tracker ProcedureError (from _get_tracker) is unchanged
-- Counter reset per test
+### Procedure (stepdoc, `tests/test_stepdoc_procedure.py`):
+- Nested steps, checks and actions; setup/teardown sections; failed step exc
+- Each retry attempt has its own steps, numbered from 1
+- `stepdoc.json` written; user stepdoc options and `report_stepdoc = false` respected
+- Empty procedure (`{"steps": []}`) without stepdoc
 
 ### Artifacts:
 - Correct path resolution with and without --report-dir
@@ -495,7 +434,7 @@ else donut grid.
 ### HTML report:
 - Self-contained (no external resources)
 - All four tabs render correctly
-- Verification cards render from stash data
+- Verification cards render from `report.verify_checks` data
 - Graphs use correct colors and feature depth
 - Retries tab: original failure pinned, retry cards correct
 
@@ -507,20 +446,16 @@ else donut grid.
 ## Common Pitfalls
 
 - **Don't forget `py.typed`.** Without it, IDE autocompletion won't work.
+- **Never import an integration.** stepdoc, pytest-verifier and pytest-strategies are optional extras (`[stepdoc]`, `[verifier]`, `[strategies]`, `[all]`); `tests/test_stepdoc_procedure.py` and `tests/test_verify_integration.py` check the imports with `ast`. Tests that need one skip without it.
+- **stepdoc's recorder spans all retry attempts.** The reporter's retries run inside stepdoc's `pytest_runtest_protocol` wrapper, so `StepCollector.begin()` (at each attempt's `pytest_runtest_setup`) starts a fresh list and the procedure is renumbered.
 - **Logger seq is global.** Root owns the counter. All children share it. Must be monotonically increasing but does not need to be gap-free.
 - **`01_latest/` copy refreshed at END of run.** Not during. All files must be written first; the previous `01_latest/` is removed before the new copy is created.
 - **Timestamp format uses underscores.** `YYYY_MM_DD_HH_MM_SS`. No colons, no dashes.
-- **step(check=...) does NOT evaluate.** It stores the descriptor as inline metadata on the step. It does NOT create a substep. The reporter NEVER determines pass/fail.
 - **Entries must not be modified.** Phase capture wraps entries as-is from the logger.
 - **Parametrized folder names are sequential numbers.** Not pytest IDs. IDs go in `parameters.json`.
 - **Non-parametrized = `default/` folder.** Not `01/`.
 - **Retry folders omit `parameters.json`.** Parent folder is the single source of truth.
 - **Aggregate counters use final outcome.** Failed-then-retried-passed = counted as passed.
-- **`substep()` before any `step()` promotes, does NOT raise.** Calling `substep()` with no prior step promotes the call to a top-level step (description preserved). The no-active-tracker `ProcedureError` (raised by `_get_tracker` when called outside a test) is unchanged.
-- **`substep()` binds to the last-recorded step (`_steps[-1]`), not the open CM step.** "Last step wins" — if a plain `step()` was called inside a CM body, `substep()` attaches to that inner step.
-- **Backtick strings now render literally.** `step("\`x\`")` produces `description: "\`x\`"` with NO monospace formatting. Use `fmt.mono("x")` instead. The backtick parser (`parse_markup`) is deleted.
-- **`fmt.mono("")` → `[]` (empty list).** An empty string produces no segment (drop, no crash).
-- **`fmt.text(...)` spreads, never nests.** Passing a `FormattedText` as a part spreads its segments flat — no nested lists.
 - **HTML report is ONE file.** Everything inline. Artifacts base64-encoded. No CDN.
 - **Feature depth for graphs is configurable** via `pytest_reporter_dashboard` hook / `report_dashboard`
   fixture (DashboardGroupSpec: `path`, `depth`, `include_self`, `label`, `style`). Default: depth-1

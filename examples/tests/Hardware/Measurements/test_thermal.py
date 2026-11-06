@@ -8,7 +8,7 @@ import random
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -43,11 +43,11 @@ def test_cpu_temperature_idle(log, verify, testbench):
         cpu_temp = _read_temperature("cpu")
         thermal.info("CPU temperature", data={"temp_c": cpu_temp, "state": "idle"})
 
-    step("CPU temp below 70 °C",
-         check=verify.less(cpu_temp, 70.0, name="CPU idle temp", units="°C"))
+    with step("CPU temp below 70 °C"):
+        verify.less(cpu_temp, 70.0, name="CPU idle temp", units="°C")
 
-    step("CPU temp above ambient",
-         check=verify.greater(cpu_temp, ambient, name="CPU > ambient", units="°C"))
+    with step("CPU temp above ambient"):
+        verify.greater(cpu_temp, ambient, name="CPU > ambient", units="°C")
 
 
 def test_gpu_temperature_under_load(log, verify, testbench):
@@ -57,17 +57,17 @@ def test_gpu_temperature_under_load(log, verify, testbench):
     with step("Apply GPU stress test"):
         thermal.info("Starting FurMark 30-second burn")
         for sec in [5, 10, 15, 20, 25, 30]:
-            substep(f"t = {sec}s")
-            temp = _read_temperature("gpu") + sec * 0.3
-            thermal.info("GPU temp", data={"temp_c": round(temp, 1), "elapsed_s": sec})
+            with step(f"t = {sec}s"):
+                temp = _read_temperature("gpu") + sec * 0.3
+                thermal.info("GPU temp", data={"temp_c": round(temp, 1), "elapsed_s": sec})
 
     final_temp = round(_read_temperature("gpu") + 9.0, 1)
 
     with step("Read final temperature"):
         thermal.info("Final GPU temperature", data={"temp_c": final_temp})
 
-    step("GPU below 85 °C after stress",
-         check=verify.less(final_temp, 85.0, name="GPU stress temp", units="°C"))
+    with step("GPU below 85 °C after stress"):
+        verify.less(final_temp, 85.0, name="GPU stress temp", units="°C")
 
 
 # ---------------------------------------------------------------------------
@@ -86,17 +86,17 @@ def test_fan_speeds_and_report(log, verify, report_artifacts):
         for fan in fans:
             rpm = _read_fan_rpm(fan)
             readings[fan] = rpm
-            substep(f"{fan}: {rpm} RPM")
-            cooling.info(f"{fan} speed", data={"rpm": rpm})
+            with step(f"{fan}: {rpm} RPM"):
+                cooling.info(f"{fan} speed", data={"rpm": rpm})
 
-    step("CPU fan above 1500 RPM",
-         check=verify.greater(readings["cpu_fan"], 1500, name="CPU fan speed", units="RPM"))
+    with step("CPU fan above 1500 RPM"):
+        verify.greater(readings["cpu_fan"], 1500, name="CPU fan speed", units="RPM")
 
-    step("Case fan 1 above 1000 RPM",
-         check=verify.greater(readings["case_fan_1"], 1000, name="Case fan 1", units="RPM"))
+    with step("Case fan 1 above 1000 RPM"):
+        verify.greater(readings["case_fan_1"], 1000, name="Case fan 1", units="RPM")
 
-    step("PSU fan above 700 RPM",
-         check=verify.greater(readings["psu_fan"], 700, name="PSU fan speed", units="RPM"))
+    with step("PSU fan above 700 RPM"):
+        verify.greater(readings["psu_fan"], 700, name="PSU fan speed", units="RPM")
 
     # Log fan readings as a table
     cooling.table(
@@ -132,8 +132,8 @@ def test_thermal_profile(log, verify, report_artifacts, testbench):
             gpu = _read_temperature("gpu") + t * 0.20
             profile.append({"time_s": t, "cpu_c": round(cpu, 1), "gpu_c": round(gpu, 1)})
             if t % 15 == 0:
-                substep(f"t={t}s: CPU={cpu:.1f}°C, GPU={gpu:.1f}°C")
-                thermal.info("Sample", data=profile[-1])
+                with step(f"t={t}s: CPU={cpu:.1f}°C, GPU={gpu:.1f}°C"):
+                    thermal.info("Sample", data=profile[-1])
 
     # Log the full profile as a table
     thermal.table(profile, name="thermal_profile")
@@ -141,11 +141,11 @@ def test_thermal_profile(log, verify, report_artifacts, testbench):
     max_cpu = max(p["cpu_c"] for p in profile)
     max_gpu = max(p["gpu_c"] for p in profile)
 
-    step("Peak CPU temp below 80 °C",
-         check=verify.less(max_cpu, 80.0, name="Peak CPU temp", units="°C"))
+    with step("Peak CPU temp below 80 °C"):
+        verify.less(max_cpu, 80.0, name="Peak CPU temp", units="°C")
 
-    step("Peak GPU temp below 90 °C",
-         check=verify.less(max_gpu, 90.0, name="Peak GPU temp", units="°C"))
+    with step("Peak GPU temp below 90 °C"):
+        verify.less(max_gpu, 90.0, name="Peak GPU temp", units="°C")
 
     # Generate HTML artifact with embedded SVG chart
     report_artifacts.mkdir(parents=True, exist_ok=True)
@@ -216,8 +216,8 @@ def test_sensor_limits(log, verify, sensor, max_temp):
     with step(f"Read {sensor} sensor"):
         thermal.info(f"{sensor} temperature", data={"temp_c": temp})
 
-    step(f"{sensor} below {max_temp} °C",
-         check=verify.less(temp, max_temp, name=f"{sensor} temp", units="°C"))
+    with step(f"{sensor} below {max_temp} °C"):
+        verify.less(temp, max_temp, name=f"{sensor} temp", units="°C")
 
 
 # ---------------------------------------------------------------------------
@@ -244,8 +244,8 @@ def test_vrm_thermal_throttling(log, verify, testbench):
     with step("Check VRM temperature"):
         thermal.info("VRM temp", data={"temp_c": vrm_temp})
 
-    step("VRM below 60 °C",
-         check=verify.less(vrm_temp, 60.0, name="VRM under load", units="°C"))
+    with step("VRM below 60 °C"):
+        verify.less(vrm_temp, 60.0, name="VRM under load", units="°C")
 
     assert vrm_temp < 60.0, f"VRM at {vrm_temp}°C exceeds 60°C limit"
 
@@ -264,5 +264,5 @@ def test_ambient_temperature_range(log, verify):
     with step("Read lab ambient"):
         thermal.info("Ambient reading", data={"temp_c": ambient})
 
-    step("Ambient in [20, 25] °C",
-         check=verify.between(ambient, 20.0, 25.0, name="Lab ambient", units="°C"))
+    with step("Ambient in [20, 25] °C"):
+        verify.between(ambient, 20.0, 25.0, name="Lab ambient", units="°C")

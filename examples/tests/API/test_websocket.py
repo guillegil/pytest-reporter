@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -111,18 +111,18 @@ def test_websocket_handshake(log) -> None:
         handshake.debug("Protocol negotiation", data={"requested": ws.protocols, "accepted": resp["sec_websocket_protocol"]})
 
     with step("Validate handshake"):
-        substep("Check 101 Switching Protocols")
-        handshake.info("Status code", data={"expected": 101, "actual": resp["status"]})
-        assert resp["status"] == 101
+        with step("Check 101 Switching Protocols"):
+            handshake.info("Status code", data={"expected": 101, "actual": resp["status"]})
+            assert resp["status"] == 101
 
-        substep("Check Upgrade header")
-        handshake.info("Upgrade header", data={"value": resp["upgrade"]})
-        assert resp["upgrade"] == "websocket"
+        with step("Check Upgrade header"):
+            handshake.info("Upgrade header", data={"value": resp["upgrade"]})
+            assert resp["upgrade"] == "websocket"
 
-        substep("Check connection is open")
-        ws_log.info("Connection state", data={"connected": ws.connected})
-        assert ws.connected is True
-        ws_log.info("Handshake completed successfully")
+        with step("Check connection is open"):
+            ws_log.info("Connection state", data={"connected": ws.connected})
+            assert ws.connected is True
+            ws_log.info("Handshake completed successfully")
 
     ws.close()
 
@@ -231,18 +231,18 @@ def test_graceful_close(log) -> None:
         close_log.debug("Close frame sent", data={"connected_after": ws.connected})
 
     with step("Validate close state"):
-        substep("Check disconnected")
-        close_log.info("Connection state", data={"connected": ws.connected})
-        assert ws.connected is False
+        with step("Check disconnected"):
+            close_log.info("Connection state", data={"connected": ws.connected})
+            assert ws.connected is False
 
-        substep("Check close code")
-        close_log.info("Close code", data={"code": ws.close_code})
-        assert ws.close_code == 1000
+        with step("Check close code"):
+            close_log.info("Close code", data={"code": ws.close_code})
+            assert ws.close_code == 1000
 
-        substep("Check close reason")
-        close_log.info("Close reason", data={"reason": ws.close_reason})
-        assert ws.close_reason == "Client done"
-        close_log.info("Graceful close verified")
+        with step("Check close reason"):
+            close_log.info("Close reason", data={"reason": ws.close_reason})
+            assert ws.close_reason == "Client done"
+            close_log.info("Graceful close verified")
 
 
 @pytest.mark.parametrize(
@@ -302,17 +302,17 @@ def test_stock_ticker_stream(log) -> None:
         ticker.info("Stream processing complete", data={"total_ticks": len(_TICKER_DATA)})
 
     with step("Validate ticker data"):
-        substep("Check all symbols present")
-        symbols = {t["symbol"] for t in _TICKER_DATA}
-        ticker.info("Unique symbols", data={"symbols": sorted(symbols)})
-        assert "AAPL" in symbols
-        assert "GOOGL" in symbols
-        assert "MSFT" in symbols
+        with step("Check all symbols present"):
+            symbols = {t["symbol"] for t in _TICKER_DATA}
+            ticker.info("Unique symbols", data={"symbols": sorted(symbols)})
+            assert "AAPL" in symbols
+            assert "GOOGL" in symbols
+            assert "MSFT" in symbols
 
-        substep("Check prices are positive")
-        for tick in _TICKER_DATA:
-            assert tick["price"] > 0
-        ticker.info("All ticker prices valid")
+        with step("Check prices are positive"):
+            for tick in _TICKER_DATA:
+                assert tick["price"] > 0
+            ticker.info("All ticker prices valid")
 
     ws.close()
 
@@ -363,9 +363,9 @@ def test_message_ordering(log) -> None:
         sent = ws.sent_messages
         ordering.info("Sent message IDs", data={"ids": [m["id"] for m in sent]})
         for i, msg in enumerate(sent):
-            substep(f"Check message {i}")
-            ordering.debug(f"Message {i}", data={"expected_id": i, "actual_id": msg["id"]})
-            assert msg["id"] == i
+            with step(f"Check message {i}"):
+                ordering.debug(f"Message {i}", data={"expected_id": i, "actual_id": msg["id"]})
+                assert msg["id"] == i
         ordering.info("Message ordering preserved")
 
     ws.close()
