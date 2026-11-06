@@ -8,6 +8,7 @@ _SKELETON = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Test Report</title>
+<script id="theme-boot">try{var t=localStorage.getItem('pytest-reporter-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <style>
 /*__CSS__*/
 </style>
@@ -20,6 +21,10 @@ _SKELETON = r"""<!DOCTYPE html>
     <h1>Test Report</h1>
   </div>
   <div class="meta" id="header-meta"></div>
+  <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">
+    <svg class="icon-moon" aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+    <svg class="icon-sun" aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+  </button>
 </header>
 <div class="tabs" role="tablist" aria-label="Report sections">
   <button class="tab-btn active" id="tabbtn-summary" data-tab="summary" role="tab" aria-selected="true" aria-controls="tab-summary">Summary</button>

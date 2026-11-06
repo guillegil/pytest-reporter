@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed checks, and links to the traceback and the Checks tab.
 - The Summary counter cards open the Tests tab filtered to that status (Retried shows
   the retried tests, with a chip to clear it).
+- The HTML report has a light theme. It follows the operating system's setting, and a
+  button in the header switches between light and dark (the choice is remembered in the
+  browser). Printing uses the light colours, hides the navigation and the test tree, and
+  opens up scrolled log and traceback areas.
 
 ### Changed
 
@@ -25,10 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their folders expanded, the first one open.
 - Search and the status filters now apply together, and folders with nothing left to
   show are hidden. The status filter buttons expose `aria-pressed`.
+- HTML report colours are all design tokens: status tints are mixed from the status
+  colours, and the charts, header, overlays and log tables use tokens instead of fixed
+  values. The status (graph) colours themselves are unchanged.
 
 
 ### Fixed
 
+- HTML report: secondary text and coloured status text now reach WCAG AA contrast (4.5:1)
+  on every surface, in both themes. Grey labels, inactive tabs, times and file paths were
+  2.7–3.5:1, and red badges about 4.1:1. Status text now uses a lighter shade of each status
+  colour in the dark theme and a darker one in the light theme. The skip link is readable
+  too (5.2:1).
 - HTML report: the test tree works from the keyboard and with screen readers. Rows are a
   WAI-ARIA tree (`treeitem` with `aria-level`, `aria-expanded`, `aria-selected`), with one
   row in the Tab order; the arrow keys, Home and End move, Left and Right collapse and

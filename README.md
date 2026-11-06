@@ -321,6 +321,8 @@ The `report.html` is a single self-contained file with four tabs:
 
 The report works from the keyboard and with screen readers: the test tree follows the ARIA tree pattern (arrow keys, Home/End, Enter to open), tab sets switch with the arrow keys, and outcomes are read out as text, not only shown as colour.
 
+The report follows your system's light or dark setting; the button at the right of the header switches it. Printing (or saving as PDF) uses the light theme, without the navigation and the test tree.
+
 Tables logged via `log.table()` appear inline in the chronological log position **and** as full HTML artifacts in the Artifacts tab.
 
 ---
