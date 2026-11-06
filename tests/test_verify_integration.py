@@ -32,8 +32,9 @@ def _run_dir(pytester: Pytester) -> Path:
 
 def _data(run_dir: Path) -> dict:  # type: ignore[type-arg]
     html = (run_dir / "report.html").read_text(encoding="utf-8")
-    start = html.index("const DATA = ") + len("const DATA = ")
-    end = html.index(";\n", start)
+    marker = '<script type="application/json" id="report-data">'
+    start = html.index(marker) + len(marker)
+    end = html.index("</script>", start)
     return json.loads(html[start:end])  # type: ignore[no-any-return]
 
 

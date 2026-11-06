@@ -323,6 +323,8 @@ The report works from the keyboard and with screen readers: the test tree follow
 
 It also works on phones and tablets: on a phone the Tests tab shows the test list, then one test with a way back, and controls are sized for touch.
 
+The data sits in the page as one JSON block, so even a report of several megabytes opens in about a second.
+
 The report follows your system's light or dark setting; the button at the right of the header switches it. Printing (or saving as PDF) uses the light theme, without the navigation and the test tree.
 
 Tables logged via `log.table()` appear inline in the chronological log position **and** as full HTML artifacts in the Artifacts tab.

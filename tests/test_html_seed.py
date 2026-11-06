@@ -56,9 +56,7 @@ def test_seed_not_provided_when_no_source(pytester: Pytester) -> None:
     # Seed row must exist (the JS label 'Seed' is always in the JS source)
     assert "Seed" in html, "report.html must contain a 'Seed' row"
     # DATA.seed must be null (not a string) when no seed was provided
-    assert '"seed": null' in html, (
-        "DATA.seed must be null in embedded JSON when no seed is provided"
-    )
+    assert '"seed":null' in html, "DATA.seed must be null in embedded JSON when no seed is provided"
     # 'Not Provided' appears literally in the JS source as the string to render
     assert "Not Provided" in html, (
         "'Not Provided' string literal must be present in JS source for null seed"
@@ -83,7 +81,7 @@ def test_seed_from_fixture(pytester: Pytester) -> None:
 
     assert "Seed" in html, "report.html must contain a 'Seed' row"
     # DATA.seed must be the string "42" (not null) in the embedded JSON
-    assert '"seed": "42"' in html, (
+    assert '"seed":"42"' in html, (
         "DATA.seed must be '42' in embedded JSON when report_seed['value'] = 42"
     )
     # CSS class for monospace rendering must exist in the JS
@@ -117,7 +115,7 @@ def test_seed_hook_raises_no_crash(pytester: Pytester) -> None:
     html = _report_html(pytester)
     assert "Seed" in html, "Seed row must still be present"
     # DATA.seed must be null when the hook raises (no seed resolved)
-    assert '"seed": null' in html, "DATA.seed must be null when pytest_reporter_seed hook raises"
+    assert '"seed":null' in html, "DATA.seed must be null when pytest_reporter_seed hook raises"
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +179,7 @@ def test_seed_and_row_from_strategies(pytester: Pytester) -> None:
     result.assert_outcomes(passed=2)
 
     html = _report_html(pytester)
-    assert '"seed": "1234"' in html
+    assert '"seed":"1234"' in html
 
     params = sorted(_run_dir(pytester).rglob("parameters.json"))
     rows = [json.loads(p.read_text())["strategy"] for p in params]

@@ -38,10 +38,13 @@ def _procedure(pytester: Pytester, module: str, func: str, *rest: str) -> dict[s
     return json.loads((path / "procedure.json").read_text())  # type: ignore[no-any-return]
 
 
+_DATA_BLOCK = '<script type="application/json" id="report-data">'
+
+
 def _data(pytester: Pytester) -> dict[str, Any]:
     html = (_run_dir(pytester) / "report.html").read_text(encoding="utf-8")
-    start = html.index("const DATA = ") + len("const DATA = ")
-    return json.loads(html[start : html.index(";\n", start)])  # type: ignore[no-any-return]
+    start = html.index(_DATA_BLOCK) + len(_DATA_BLOCK)
+    return json.loads(html[start : html.index("</script>", start)])  # type: ignore[no-any-return]
 
 
 def _shape(nodes: list[dict[str, Any]]) -> list[Any]:
@@ -326,6 +329,6 @@ def test_html_renders_xss_safely(pytester: Pytester) -> None:
     )
     pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
     html = (_run_dir(pytester) / "report.html").read_text(encoding="utf-8")
-    data_block = html[html.index("const DATA = ") :]
+    data_block = html[html.index(_DATA_BLOCK) :]
     data_block = data_block[: data_block.index("</script>")]
     assert "alert(1)" in data_block  # the title is in the data, escaped
