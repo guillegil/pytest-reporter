@@ -303,7 +303,7 @@ function donutSVG(counts, size) {
   const totalText = svgEl('text', {
     x: cx, y: cy - 2,
     'text-anchor': 'middle', 'dominant-baseline': 'middle',
-    style: 'fill:var(--c-text)', 'font-size': Math.round(size * 0.17),
+    style: 'fill:var(--c-text);font-size:var(--fs-xl)',
     'font-weight': '700', 'font-family': "var(--font-mono)"
   });
   totalText.textContent = total;
@@ -312,7 +312,7 @@ function donutSVG(counts, size) {
   const label = svgEl('text', {
     x: cx, y: cy + Math.round(size * 0.13),
     'text-anchor': 'middle', 'dominant-baseline': 'middle',
-    style: 'fill:var(--c-text3)', 'font-size': Math.round(size * 0.075),
+    style: 'fill:var(--c-text3);font-size:var(--fs-xs)',
     'font-weight': '500', 'letter-spacing': '0.06em'
   });
   label.textContent = 'TESTS';
@@ -1452,7 +1452,7 @@ function showSubTab(tab, run) {
   } else if (tab === 'checks') {
     const checks = run.check_results || [];
     if (checks.length === 0) {
-      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:13px;padding:8px 0'}, 'No verification checks.'));
+      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'}, 'No verification checks.'));
     } else {
       content.appendChild(renderCheckResults(checks));
     }
@@ -1460,7 +1460,7 @@ function showSubTab(tab, run) {
   } else if (tab === 'artifacts') {
     const artifacts = run.artifacts || [];
     if (artifacts.length === 0) {
-      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:13px;padding:8px 0'},
+      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'},
         'No artifacts collected for this run.'
       ));
     } else {
@@ -1476,7 +1476,7 @@ function showSubTab(tab, run) {
       // HTML artifacts (rendered inline as iframes)
       if (htmlFiles.length > 0) {
         htmlFiles.forEach(a => {
-          const label = el('div', {style:'font-size:12px;font-weight:600;color:var(--c-text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em'}, a.name);
+          const label = el('div', {style:'font-size:var(--fs-sm);font-weight:600;color:var(--c-text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em'}, a.name);
           content.appendChild(label);
           if (a.data_uri) {
             // A data: frame is cross-origin, so its height can't be read
@@ -1542,7 +1542,7 @@ function showSubTab(tab, run) {
     const retries = run.retries || {};
     const attempts = run.retry_attempts || [];
     if (attempts.length === 0) {
-      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:13px;padding:8px 0'}, 'No retries for this run.'));
+      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'}, 'No retries for this run.'));
     } else {
       const section = el('div', {className:'retry-section'});
       // Original failure card
@@ -1558,7 +1558,7 @@ function showSubTab(tab, run) {
         origCard.appendChild(body);
       }
       if (run.phases && run.phases.call) {
-        origCard.appendChild(el('div', {style:'font-size:11px;color:var(--c-text3);margin-top:8px'},
+        origCard.appendChild(el('div', {style:'font-size:var(--fs-xs);color:var(--c-text3);margin-top:8px'},
           'Duration: ' + run.phases.call.duration.toFixed(4) + 's'));
       }
       section.appendChild(origCard);
@@ -1572,7 +1572,7 @@ function showSubTab(tab, run) {
         const header = el('div', {className:'retry-card-header'},
           el('span', {className:`status-dot ${attemptOutcome}`}),
           `Retry ${attempt.attempt}`,
-          el('span', {style:'margin-left:auto;font-size:11px;color:var(--c-text3)'},
+          el('span', {style:'margin-left:auto;font-size:var(--fs-xs);color:var(--c-text3)'},
             attemptOutcome.charAt(0).toUpperCase() + attemptOutcome.slice(1))
         );
         header.addEventListener('click', () => card.classList.toggle('expanded'));
@@ -1610,12 +1610,12 @@ function showSubTab(tab, run) {
         }
         // Procedure
         if (attempt.procedure && attempt.procedure.steps && attempt.procedure.steps.length > 0) {
-          body.appendChild(el('h4', {style:'margin-top:12px;font-size:12px;color:var(--c-text2)'}, 'Procedure'));
+          body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Procedure'));
           body.appendChild(renderProcedure(attempt.procedure));
         }
         // Verification checks of this attempt
         if (attempt.check_results && attempt.check_results.length > 0) {
-          body.appendChild(el('h4', {style:'margin-top:12px;font-size:12px;color:var(--c-text2)'}, 'Checks'));
+          body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Checks'));
           body.appendChild(renderCheckResults(attempt.check_results));
         }
         card.appendChild(body);
@@ -2551,7 +2551,7 @@ function renderReport() {
   logHeader.appendChild(document.createTextNode(' Pytest Log'));
   logSection.appendChild(logHeader);
   const logBody = el('div', {className:'report-section-body'});
-  logBody.appendChild(el('div', {style:'color:var(--c-text3);font-size:13px'},
+  logBody.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md)'},
     'Full log available at pytest.log in the run directory.'
   ));
   logSection.appendChild(logBody);

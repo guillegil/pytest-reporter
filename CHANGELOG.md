@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML report colours are all design tokens: status tints are mixed from the status
   colours, and the charts, header, overlays and log tables use tokens instead of fixed
   values. The status (graph) colours themselves are unchanged.
+- HTML report type follows a seven-step scale (11, 12, 13, 15, 18, 24 and 36px) set as
+  tokens, instead of thirteen sizes from 9 to 48px. Nothing is smaller than 11px: tree
+  badges, counts, filter buttons and uppercase labels were 9–10px. Weights are 400–700,
+  numbers use tabular figures, headings balance their lines, and long test names wrap
+  only where they would overflow.
+- On phones the report header keeps the title and the result badge on one line; the date
+  and duration stay on the Report tab.
 
 
 ### Fixed

@@ -122,3 +122,23 @@ def test_light_theme_follows_os_toggle_and_print(pytester: Pytester) -> None:
     assert 'id="theme-toggle" type="button" aria-label="Switch to light theme"' in html
     assert html.index('<script id="theme-boot">') < html.index("<body>")
     assert "localStorage.setItem('pytest-reporter-theme'" in html
+
+
+def test_type_scale_has_an_11px_floor() -> None:
+    from pytest_reporter._html_builder._js import JS
+
+    scale = dict(re.findall(r"--fs-([\w]+):\s*(\d+)px;", CSS))
+    assert scale == {
+        "xs": "11",
+        "sm": "12",
+        "md": "13",
+        "lg": "15",
+        "xl": "18",
+        "2xl": "24",
+        "3xl": "36",
+    }
+    # Every size in the rules and the inline JS styles comes from the scale.
+    body = CSS[CSS.index("Reset & base") :]
+    assert not re.findall(r"font-size:\s*\d+px", body)
+    assert not re.findall(r"font-size:\s*\d+px|'font-size':", JS)
+    assert not re.search(r"font-weight:\s*[38]00", CSS)
