@@ -25,7 +25,8 @@ function el(tag, attrs, ...children) {
   return e;
 }
 
-const COLORS = {passed:'#22C55E',failed:'#EF4444',skipped:'#F59E0B',error:'#F97316'};
+// Status fills come from the CSS tokens, so charts follow the theme.
+const COLORS = {passed:'var(--c-passed)',failed:'var(--c-failed)',skipped:'var(--c-skipped)',error:'var(--c-error)'};
 const LABELS = {passed:'Passed',failed:'Failed',skipped:'Skipped',error:'Error'};
 const STATUSES = ['passed','failed','skipped','error'];
 
@@ -261,7 +262,7 @@ function donutSVG(counts, size) {
 
   // Background track
   const track = svgEl('circle', {
-    cx, cy, r, fill: 'none', stroke: 'rgba(255,255,255,0.04)', 'stroke-width': strokeW
+    cx, cy, r, fill: 'none', style: 'stroke:var(--c-track)', 'stroke-width': strokeW
   });
   svg.appendChild(track);
 
@@ -271,7 +272,7 @@ function donutSVG(counts, size) {
 
   if (segments.length === 1) {
     const ring = svgEl('circle', {
-      cx, cy, r, fill: 'none', stroke: COLORS[segments[0]],
+      cx, cy, r, fill: 'none', style: 'stroke:' + COLORS[segments[0]],
       'stroke-width': strokeW, 'stroke-linecap': 'round', opacity: '0.9'
     });
     svg.appendChild(ring);
@@ -285,7 +286,7 @@ function donutSVG(counts, size) {
       const frac = counts[k] / total;
       const len = frac * available;
       const arc = svgEl('circle', {
-        cx, cy, r, fill: 'none', stroke: COLORS[k],
+        cx, cy, r, fill: 'none', style: 'stroke:' + COLORS[k],
         'stroke-width': strokeW,
         'stroke-dasharray': `${len} ${circumference - len}`,
         'stroke-dashoffset': `${-offset}`,
@@ -302,7 +303,7 @@ function donutSVG(counts, size) {
   const totalText = svgEl('text', {
     x: cx, y: cy - 2,
     'text-anchor': 'middle', 'dominant-baseline': 'middle',
-    fill: '#E8ECF4', 'font-size': Math.round(size * 0.17),
+    style: 'fill:var(--c-text)', 'font-size': Math.round(size * 0.17),
     'font-weight': '700', 'font-family': "var(--font-mono)"
   });
   totalText.textContent = total;
@@ -311,7 +312,7 @@ function donutSVG(counts, size) {
   const label = svgEl('text', {
     x: cx, y: cy + Math.round(size * 0.13),
     'text-anchor': 'middle', 'dominant-baseline': 'middle',
-    fill: '#5A6B84', 'font-size': Math.round(size * 0.075),
+    style: 'fill:var(--c-text3)', 'font-size': Math.round(size * 0.075),
     'font-weight': '500', 'letter-spacing': '0.06em'
   });
   label.textContent = 'TESTS';
@@ -2589,6 +2590,32 @@ wireTablist(document.querySelector('.tabs'), '.tab-btn', btn => switchTab(btn.da
   metaEl.innerHTML = `<span>${formatted} UTC</span><span>\u00b7</span><span>${formatDuration(DATA.duration)}</span>`;
   const badge = el('span', {className: `meta-badge ${badgeClass}`}, badgeText);
   metaEl.appendChild(badge);
+})();
+
+// ─── Theme toggle ────────────────────────────────────────────────────
+// The page follows the OS setting until the viewer picks a theme; the pick
+// is remembered in localStorage when the browser allows it.
+(function() {
+  const root = document.documentElement;
+  const btn = document.getElementById('theme-toggle');
+  const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  const shown = () => root.getAttribute('data-theme') || (media && media.matches ? 'light' : 'dark');
+  function sync() {
+    const now = shown();
+    root.setAttribute('data-theme-shown', now);
+    const label = now === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
+  btn.addEventListener('click', () => {
+    const next = shown() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('pytest-reporter-theme', next); } catch (e) { /* storage blocked */ }
+    sync();
+    announce(next === 'dark' ? 'Dark theme' : 'Light theme');
+  });
+  if (media && media.addEventListener) media.addEventListener('change', sync);
+  sync();
 })();
 
 // ─── Init ────────────────────────────────────────────────────────────

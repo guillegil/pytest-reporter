@@ -2,41 +2,111 @@
 
 from __future__ import annotations
 
-CSS: str = r"""/* ================================================================
+# Light theme roles: for bright rooms, and for printing. The fills stay the
+# pinned graph colours; ink, surfaces and text move to the light side.
+_LIGHT_TOKENS = """  color-scheme: light;
+
+  --c-bg: #F5F7FA;
+  --c-surface: #FFFFFF;
+  --c-surface2: #EEF2F7;
+  --c-surface3: #E3E9F1;
+  --c-text: #0F172A;
+  --c-text2: #475569;
+  --c-text3: #526174;
+  --c-border: #E2E8F0;
+  --c-border2: #CBD5E1;
+
+  --c-passed-ink: #166534;
+  --c-failed-ink: #B91C1C;
+  --c-skipped-ink: #92400E;
+  --c-error-ink: #9A3412;
+  --c-accent-ink: #1D4ED8;
+  --c-accent-strong: #1D4ED8;
+
+  --tint: 12%;
+  --c-overlay: rgba(15,23,42,0.82);
+  --c-well: rgba(15,23,42,0.05);
+  --c-zebra: color-mix(in srgb, var(--c-surface2) 60%, transparent);
+  --c-track: color-mix(in srgb, var(--c-text) 8%, transparent);
+  --c-selection: color-mix(in srgb, var(--c-accent) 22%, transparent);
+  --shadow-color: 15,23,42;
+  --shadow-alpha: 0.35;
+"""
+
+
+def _themes() -> str:
+    """Light theme: from the OS setting unless the viewer picked one, and for print."""
+    return (
+        "@media (prefers-color-scheme: light) {\n"
+        '  :root:not([data-theme="dark"]) {\n' + _LIGHT_TOKENS + "  }\n}\n"
+        ':root[data-theme="light"] {\n' + _LIGHT_TOKENS + "}\n"
+        "@media print {\n  :root, :root[data-theme] {\n" + _LIGHT_TOKENS + "  }\n}\n"
+    )
+
+
+CSS: str = (
+    r"""/* ================================================================
    Design tokens
+
+   Colour roles. Status *fills* (--c-passed ...) are the pinned graph
+   colours and stay the same in every theme; status *ink* (--c-*-ink) is
+   the text version of each, tuned per theme for >= 4.5:1 on its own
+   tint and on every surface. Tints are mixed from the fills, so a theme
+   only remaps the roles below.
    ================================================================ */
 :root {
+  color-scheme: dark;
+
   --c-passed: #22C55E;
   --c-failed: #EF4444;
   --c-skipped: #F59E0B;
   --c-error: #F97316;
-
-  --c-passed-dim: rgba(34,197,94,0.12);
-  --c-failed-dim: rgba(239,68,68,0.12);
-  --c-skipped-dim: rgba(245,158,11,0.12);
-  --c-error-dim: rgba(249,115,22,0.12);
+  --c-accent: #3B82F6;
 
   --c-bg: #0B1120;
   --c-surface: #131C2E;
   --c-surface2: #1B2740;
   --c-surface3: #243352;
   --c-text: #E8ECF4;
-  --c-text2: #8292AA;
-  --c-text3: #5A6B84;
+  --c-text2: #AAB6C8;
+  --c-text3: #94A1B6;
   --c-border: #1E2D45;
   --c-border2: #2A3D5A;
-  --c-accent: #3B82F6;
-  --c-accent-dim: rgba(59,130,246,0.12);
+
+  --c-passed-ink: #4ADE80;
+  --c-failed-ink: #FCA5A5;
+  --c-skipped-ink: #FBBF24;
+  --c-error-ink: #FDBA74;
+  --c-accent-ink: #93C5FD;
+  --c-accent-strong: #2563EB;
+  --c-on-accent: #FFFFFF;
+
+  --tint: 14%;
+  --c-header-bg: color-mix(in srgb, var(--c-surface) 92%, transparent);
+  --c-overlay: rgba(2,6,16,0.86);
+  --c-well: rgba(0,0,0,0.22);
+  --c-zebra: color-mix(in srgb, var(--c-surface2) 30%, transparent);
+  --c-track: color-mix(in srgb, var(--c-text) 6%, transparent);
+  --c-selection: color-mix(in srgb, var(--c-accent) 38%, transparent);
+  --shadow-color: 0,0,0;
+  --shadow-alpha: 1;
+
+  --c-passed-dim: color-mix(in srgb, var(--c-passed) var(--tint), transparent);
+  --c-failed-dim: color-mix(in srgb, var(--c-failed) var(--tint), transparent);
+  --c-skipped-dim: color-mix(in srgb, var(--c-skipped) var(--tint), transparent);
+  --c-error-dim: color-mix(in srgb, var(--c-error) var(--tint), transparent);
+  --c-accent-dim: color-mix(in srgb, var(--c-accent) var(--tint), transparent);
+  --c-failed-strong-dim: color-mix(in srgb, var(--c-failed) 26%, transparent);
+  --c-failed-line: color-mix(in srgb, var(--c-failed) 32%, transparent);
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.25);
-  --shadow-lg: 0 8px 30px rgba(0,0,0,0.35);
-  --shadow-glow: 0 0 20px rgba(59,130,246,0.08);
+  --shadow-sm: 0 1px 2px rgba(var(--shadow-color),calc(0.3 * var(--shadow-alpha)));
+  --shadow-md: 0 4px 12px rgba(var(--shadow-color),calc(0.25 * var(--shadow-alpha)));
+  --shadow-lg: 0 8px 30px rgba(var(--shadow-color),calc(0.35 * var(--shadow-alpha)));
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
@@ -44,6 +114,15 @@ CSS: str = r"""/* ==============================================================
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+
+"""
+    + _themes()
+    + r"""
+/* Browser surfaces take the palette too */
+::selection { background: var(--c-selection); color: var(--c-text); }
+html { scrollbar-color: var(--c-border2) transparent; }
+input, textarea { caret-color: var(--c-accent); accent-color: var(--c-accent); }
 
 /* ================================================================
    Reset & base
@@ -59,7 +138,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-a { color: var(--c-accent); text-decoration: none; }
+a { color: var(--c-accent-ink); text-decoration: none; }
 button { font-family: inherit; }
 :focus-visible {
   outline: 2px solid var(--c-accent);
@@ -98,7 +177,7 @@ button { font-family: inherit; }
   top: 0;
   z-index: 100;
   backdrop-filter: blur(12px);
-  background: rgba(19,28,46,0.92);
+  background: var(--c-header-bg);
 }
 .header-logo {
   display: flex;
@@ -130,9 +209,9 @@ button { font-family: inherit; }
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.meta-badge.pass { background: var(--c-passed-dim); color: var(--c-passed); }
-.meta-badge.fail { background: var(--c-failed-dim); color: var(--c-failed); }
-.meta-badge.mix { background: var(--c-accent-dim); color: var(--c-accent); }
+.meta-badge.pass { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.meta-badge.fail { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.meta-badge.mix { background: var(--c-accent-dim); color: var(--c-accent-ink); }
 
 /* ================================================================
    Tabs
@@ -147,7 +226,7 @@ button { font-family: inherit; }
   top: 56px;
   z-index: 99;
   backdrop-filter: blur(12px);
-  background: rgba(19,28,46,0.92);
+  background: var(--c-header-bg);
 }
 .tab-btn {
   padding: 12px 20px;
@@ -198,9 +277,9 @@ button { font-family: inherit; }
   letter-spacing: -0.04em;
   line-height: 1;
 }
-.summary-hero-pct.good { color: var(--c-passed); }
-.summary-hero-pct.warn { color: var(--c-skipped); }
-.summary-hero-pct.bad { color: var(--c-failed); }
+.summary-hero-pct.good { color: var(--c-passed-ink); }
+.summary-hero-pct.warn { color: var(--c-skipped-ink); }
+.summary-hero-pct.bad { color: var(--c-failed-ink); }
 .summary-hero-pct-label {
   font-size: 10px;
   color: var(--c-text3);
@@ -336,35 +415,35 @@ button { font-family: inherit; }
   margin-top: 2px;
 }
 
-.counter-card.passed { border-color: rgba(34,197,94,0.2); }
+.counter-card.passed { border-color: color-mix(in srgb, var(--c-passed) 20%, transparent); }
 .counter-card.passed::before { background: var(--c-passed); }
-.counter-card.passed .value { color: var(--c-passed); }
-.counter-card.passed:hover { border-color: rgba(34,197,94,0.35); box-shadow: 0 4px 20px rgba(34,197,94,0.1); }
+.counter-card.passed .value { color: var(--c-passed-ink); }
+.counter-card.passed:hover { border-color: color-mix(in srgb, var(--c-passed) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-passed) 10%, transparent); }
 
-.counter-card.failed { border-color: rgba(239,68,68,0.2); }
+.counter-card.failed { border-color: color-mix(in srgb, var(--c-failed) 20%, transparent); }
 .counter-card.failed::before { background: var(--c-failed); }
-.counter-card.failed .value { color: var(--c-failed); }
-.counter-card.failed:hover { border-color: rgba(239,68,68,0.35); box-shadow: 0 4px 20px rgba(239,68,68,0.1); }
+.counter-card.failed .value { color: var(--c-failed-ink); }
+.counter-card.failed:hover { border-color: color-mix(in srgb, var(--c-failed) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-failed) 10%, transparent); }
 
-.counter-card.skipped { border-color: rgba(245,158,11,0.2); }
+.counter-card.skipped { border-color: color-mix(in srgb, var(--c-skipped) 20%, transparent); }
 .counter-card.skipped::before { background: var(--c-skipped); }
-.counter-card.skipped .value { color: var(--c-skipped); }
-.counter-card.skipped:hover { border-color: rgba(245,158,11,0.35); box-shadow: 0 4px 20px rgba(245,158,11,0.1); }
+.counter-card.skipped .value { color: var(--c-skipped-ink); }
+.counter-card.skipped:hover { border-color: color-mix(in srgb, var(--c-skipped) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-skipped) 10%, transparent); }
 
-.counter-card.error { border-color: rgba(249,115,22,0.2); }
+.counter-card.error { border-color: color-mix(in srgb, var(--c-error) 20%, transparent); }
 .counter-card.error::before { background: var(--c-error); }
-.counter-card.error .value { color: var(--c-error); }
-.counter-card.error:hover { border-color: rgba(249,115,22,0.35); box-shadow: 0 4px 20px rgba(249,115,22,0.1); }
+.counter-card.error .value { color: var(--c-error-ink); }
+.counter-card.error:hover { border-color: color-mix(in srgb, var(--c-error) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-error) 10%, transparent); }
 
-.counter-card.retried { border-color: rgba(59,130,246,0.2); }
+.counter-card.retried { border-color: color-mix(in srgb, var(--c-accent) 20%, transparent); }
 .counter-card.retried::before { background: var(--c-accent); }
-.counter-card.retried .value { color: var(--c-accent); }
-.counter-card.retried:hover { border-color: rgba(59,130,246,0.35); box-shadow: 0 4px 20px rgba(59,130,246,0.1); }
+.counter-card.retried .value { color: var(--c-accent-ink); }
+.counter-card.retried:hover { border-color: color-mix(in srgb, var(--c-accent) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-accent) 10%, transparent); }
 
-.counter-card.total { border-color: rgba(59,130,246,0.2); }
+.counter-card.total { border-color: color-mix(in srgb, var(--c-accent) 20%, transparent); }
 .counter-card.total::before { background: var(--c-accent); }
-.counter-card.total .value { color: var(--c-accent); }
-.counter-card.total:hover { border-color: rgba(59,130,246,0.35); box-shadow: 0 4px 20px rgba(59,130,246,0.1); }
+.counter-card.total .value { color: var(--c-accent-ink); }
+.counter-card.total:hover { border-color: color-mix(in srgb, var(--c-accent) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-accent) 10%, transparent); }
 
 /* Charts */
 .charts-section { margin-bottom: 28px; }
@@ -443,10 +522,10 @@ button { font-family: inherit; }
   justify-content: center;
   flex-wrap: wrap;
 }
-.donut-counts .dc-passed { color: var(--c-passed); }
-.donut-counts .dc-failed { color: var(--c-failed); }
-.donut-counts .dc-skipped { color: var(--c-skipped); }
-.donut-counts .dc-error { color: var(--c-error); }
+.donut-counts .dc-passed { color: var(--c-passed-ink); }
+.donut-counts .dc-failed { color: var(--c-failed-ink); }
+.donut-counts .dc-skipped { color: var(--c-skipped-ink); }
+.donut-counts .dc-error { color: var(--c-error-ink); }
 .donut-counts .dc-rate { color: var(--c-text2); font-weight: 600; }
 .chart-legend {
   display: flex;
@@ -519,10 +598,10 @@ button { font-family: inherit; }
   min-width: 120px;
 }
 .pass-rate-bar-stats .prs-rate { font-weight: 700; font-size: 11px; color: var(--c-text); }
-.pass-rate-bar-stats .prs-passed { color: var(--c-passed); }
-.pass-rate-bar-stats .prs-failed { color: var(--c-failed); }
-.pass-rate-bar-stats .prs-skipped { color: var(--c-skipped); }
-.pass-rate-bar-stats .prs-error { color: var(--c-error); }
+.pass-rate-bar-stats .prs-passed { color: var(--c-passed-ink); }
+.pass-rate-bar-stats .prs-failed { color: var(--c-failed-ink); }
+.pass-rate-bar-stats .prs-skipped { color: var(--c-skipped-ink); }
+.pass-rate-bar-stats .prs-error { color: var(--c-error-ink); }
 .pass-rate-bar-stats .prs-dur { font-family: var(--font-mono); color: var(--c-text2); font-size: 10px; }
 
 @media (max-width: 640px) {
@@ -610,10 +689,10 @@ button { font-family: inherit; }
 }
 .filter-btn:hover { border-color: var(--c-border2); color: var(--c-text2); }
 .filter-btn.active { border-color: currentColor; }
-.filter-btn.passed.active { color: var(--c-passed); background: var(--c-passed-dim); }
-.filter-btn.failed.active { color: var(--c-failed); background: var(--c-failed-dim); }
-.filter-btn.skipped.active { color: var(--c-skipped); background: var(--c-skipped-dim); }
-.filter-btn.error.active { color: var(--c-error); background: var(--c-error-dim); }
+.filter-btn.passed.active { color: var(--c-passed-ink); background: var(--c-passed-dim); }
+.filter-btn.failed.active { color: var(--c-failed-ink); background: var(--c-failed-dim); }
+.filter-btn.skipped.active { color: var(--c-skipped-ink); background: var(--c-skipped-dim); }
+.filter-btn.error.active { color: var(--c-error-ink); background: var(--c-error-dim); }
 .tree-expand-btn {
   padding: 3px 6px;
   border-radius: var(--radius-sm);
@@ -682,10 +761,10 @@ button { font-family: inherit; }
   font-family: var(--font-mono);
   line-height: 16px;
 }
-.tree-badge.passed { background: var(--c-passed-dim); color: var(--c-passed); }
-.tree-badge.failed { background: var(--c-failed-dim); color: var(--c-failed); }
-.tree-badge.skipped { background: var(--c-skipped-dim); color: var(--c-skipped); }
-.tree-badge.error { background: var(--c-error-dim); color: var(--c-error); }
+.tree-badge.passed { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.tree-badge.failed { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.tree-badge.skipped { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
+.tree-badge.error { background: var(--c-error-dim); color: var(--c-error-ink); }
 .tree-badge.count {
   background: var(--c-surface3);
   color: var(--c-text3);
@@ -693,7 +772,7 @@ button { font-family: inherit; }
 /* Flaky marker: a test/group that needed retries (final outcome may be pass) */
 .tree-badge.retried {
   background: var(--c-skipped-dim);
-  color: var(--c-skipped);
+  color: var(--c-skipped-ink);
 }
 .tree-children { display: none; }
 .tree-node.expanded > .tree-children { display: block; }
@@ -784,10 +863,10 @@ button { font-family: inherit; }
   flex-shrink: 0;
   margin-top: 2px;
 }
-.detail-header-outcome.passed { background: var(--c-passed-dim); color: var(--c-passed); }
-.detail-header-outcome.failed { background: var(--c-failed-dim); color: var(--c-failed); }
-.detail-header-outcome.skipped { background: var(--c-skipped-dim); color: var(--c-skipped); }
-.detail-header-outcome.error { background: var(--c-error-dim); color: var(--c-error); }
+.detail-header-outcome.passed { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.detail-header-outcome.failed { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.detail-header-outcome.skipped { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
+.detail-header-outcome.error { background: var(--c-error-dim); color: var(--c-error-ink); }
 .detail-header h2 {
   font-size: 17px;
   font-weight: 700;
@@ -841,7 +920,7 @@ button { font-family: inherit; }
   color: var(--c-text3);
 }
 .detail-cmd.copied .detail-cmd-hint {
-  color: var(--c-passed);
+  color: var(--c-passed-ink);
 }
 @media (prefers-reduced-motion: reduce) {
   .detail-cmd { transition: none; }
@@ -892,10 +971,10 @@ button { font-family: inherit; }
   font-family: var(--font-mono);
   letter-spacing: -0.01em;
 }
-.run-pill.passed { background: var(--c-passed-dim); color: var(--c-passed); }
-.run-pill.failed { background: var(--c-failed-dim); color: var(--c-failed); }
-.run-pill.skipped { background: var(--c-skipped-dim); color: var(--c-skipped); }
-.run-pill.error { background: var(--c-error-dim); color: var(--c-error); }
+.run-pill.passed { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.run-pill.failed { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.run-pill.skipped { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
+.run-pill.error { background: var(--c-error-dim); color: var(--c-error-ink); }
 .run-pill:hover { filter: brightness(1.2); }
 .run-pill.selected { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
 .show-more-btn {
@@ -1116,7 +1195,7 @@ button { font-family: inherit; }
 .lightbox-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: var(--c-overlay);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -1157,11 +1236,11 @@ button { font-family: inherit; }
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
-.log-entry-level.DEBUG { background: var(--c-accent-dim); color: var(--c-accent); }
-.log-entry-level.INFO { background: var(--c-passed-dim); color: var(--c-passed); }
-.log-entry-level.WARNING { background: var(--c-skipped-dim); color: var(--c-skipped); }
-.log-entry-level.ERROR { background: var(--c-failed-dim); color: var(--c-failed); }
-.log-entry-level.CRITICAL { background: rgba(239,68,68,0.25); color: #FF6B6B; }
+.log-entry-level.DEBUG { background: var(--c-accent-dim); color: var(--c-accent-ink); }
+.log-entry-level.INFO { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.log-entry-level.WARNING { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
+.log-entry-level.ERROR { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.log-entry-level.CRITICAL { background: var(--c-failed-strong-dim); color: var(--c-failed-ink); }
 .log-entry-source { color: var(--c-text2); font-size: 11px; }
 .log-entry-msg { color: var(--c-text); word-break: break-word; }
 .log-entry-data {
@@ -1183,7 +1262,7 @@ button { font-family: inherit; }
   background: var(--c-failed-dim);
   border-radius: 4px;
   font-size: 11px;
-  color: var(--c-failed);
+  color: var(--c-failed-ink);
   white-space: pre-wrap;
   max-height: 300px;
   overflow: auto;
@@ -1214,7 +1293,7 @@ button { font-family: inherit; }
   padding: 1px 6px;
   border-radius: 3px;
   background: var(--c-accent-dim);
-  color: var(--c-accent);
+  color: var(--c-accent-ink);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -1254,7 +1333,7 @@ button { font-family: inherit; }
   text-overflow: ellipsis;
 }
 .log-entry-table tr:hover td { background: var(--c-surface3); }
-.log-entry-table tr:nth-child(even) td { background: rgba(27,39,64,0.3); }
+.log-entry-table tr:nth-child(even) td { background: var(--c-zebra); }
 .log-entry-table tr:nth-child(even):hover td { background: var(--c-surface3); }
 .log-entry-table-footer {
   padding: 6px 12px;
@@ -1270,7 +1349,7 @@ button { font-family: inherit; }
 .log-entry-table-toggle {
   background: none;
   border: none;
-  color: var(--c-accent);
+  color: var(--c-accent-ink);
   cursor: pointer;
   font-size: 11px;
   font-family: var(--font-mono);
@@ -1331,7 +1410,7 @@ button { font-family: inherit; }
   border-radius: 4px;
   font-size: 11px;
   font-family: var(--font-mono);
-  color: var(--c-failed);
+  color: var(--c-failed-ink);
   white-space: pre-wrap;
   max-height: 200px;
   overflow: auto;
@@ -1376,8 +1455,8 @@ button { font-family: inherit; }
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
-.check-badge.pass { background: var(--c-passed-dim); color: var(--c-passed); }
-.check-badge.fail { background: var(--c-failed-dim); color: var(--c-failed); }
+.check-badge.pass { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.check-badge.fail { background: var(--c-failed-dim); color: var(--c-failed-ink); }
 .procedure-check-desc {
   color: var(--c-text3);
   font-size: 12px;
@@ -1400,12 +1479,12 @@ button { font-family: inherit; }
 }
 .check-card.passed {
   background: var(--c-passed-dim);
-  border-color: rgba(34,197,94,0.25);
+  border-color: color-mix(in srgb, var(--c-passed) 25%, transparent);
   border-left: 3px solid var(--c-passed);
 }
 .check-card.failed {
   background: var(--c-failed-dim);
-  border-color: rgba(239,68,68,0.25);
+  border-color: color-mix(in srgb, var(--c-failed) 25%, transparent);
   border-left: 3px solid var(--c-failed);
 }
 .check-card-header {
@@ -1509,7 +1588,7 @@ button { font-family: inherit; }
   border-radius: 8px;
   line-height: 16px;
 }
-.guard-cond.true { background: var(--c-passed-dim); color: var(--c-passed); }
+.guard-cond.true { background: var(--c-passed-dim); color: var(--c-passed-ink); }
 .guard-cond.false { background: var(--c-surface); color: var(--c-text2); }
 .guard-chosen-tag {
   margin-left: auto;
@@ -1548,12 +1627,12 @@ button { font-family: inherit; }
 .guard-nomatch {
   font-size: 12px;
   font-style: italic;
-  color: var(--c-failed);
+  color: var(--c-failed-ink);
 }
 .check-card-longrepr {
   margin-top: 8px;
   padding: 8px 10px;
-  background: rgba(0,0,0,0.2);
+  background: var(--c-well);
   border-radius: 4px;
   font-size: 11px;
   font-family: var(--font-mono);
@@ -1583,7 +1662,7 @@ button { font-family: inherit; }
 .retry-section { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
 .retry-original {
   background: var(--c-failed-dim);
-  border: 1px solid rgba(239,68,68,0.3);
+  border: 1px solid color-mix(in srgb, var(--c-failed) 30%, transparent);
   border-left: 3px solid var(--c-failed);
   border-radius: var(--radius-md);
   padding: 16px;
@@ -1595,7 +1674,7 @@ button { font-family: inherit; }
   margin-bottom: 10px;
   font-weight: 600;
   font-size: 13px;
-  color: var(--c-failed);
+  color: var(--c-failed-ink);
 }
 .retry-card {
   background: var(--c-surface2);
@@ -1683,11 +1762,11 @@ button { font-family: inherit; }
 }
 .session-log-level-btn:hover { border-color: var(--c-border2); color: var(--c-text2); }
 .session-log-level-btn.active { border-color: currentColor; }
-.session-log-level-btn.DEBUG.active { color: var(--c-accent); background: var(--c-accent-dim); }
-.session-log-level-btn.INFO.active { color: var(--c-passed); background: var(--c-passed-dim); }
-.session-log-level-btn.WARNING.active { color: var(--c-skipped); background: var(--c-skipped-dim); }
-.session-log-level-btn.ERROR.active { color: var(--c-failed); background: var(--c-failed-dim); }
-.session-log-level-btn.CRITICAL.active { color: #FF6B6B; background: rgba(239,68,68,0.25); }
+.session-log-level-btn.DEBUG.active { color: var(--c-accent-ink); background: var(--c-accent-dim); }
+.session-log-level-btn.INFO.active { color: var(--c-passed-ink); background: var(--c-passed-dim); }
+.session-log-level-btn.WARNING.active { color: var(--c-skipped-ink); background: var(--c-skipped-dim); }
+.session-log-level-btn.ERROR.active { color: var(--c-failed-ink); background: var(--c-failed-dim); }
+.session-log-level-btn.CRITICAL.active { color: var(--c-failed-ink); background: var(--c-failed-strong-dim); }
 .session-log-actions { display: flex; gap: 4px; margin-left: auto; }
 .session-log-action-btn {
   padding: 5px 10px;
@@ -1751,11 +1830,11 @@ button { font-family: inherit; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.session-log-level-pill.DEBUG { background: var(--c-accent-dim); color: var(--c-accent); }
-.session-log-level-pill.INFO { background: var(--c-passed-dim); color: var(--c-passed); }
-.session-log-level-pill.WARNING { background: var(--c-skipped-dim); color: var(--c-skipped); }
-.session-log-level-pill.ERROR { background: var(--c-failed-dim); color: var(--c-failed); }
-.session-log-level-pill.CRITICAL { background: rgba(239,68,68,0.25); color: #FF6B6B; }
+.session-log-level-pill.DEBUG { background: var(--c-accent-dim); color: var(--c-accent-ink); }
+.session-log-level-pill.INFO { background: var(--c-passed-dim); color: var(--c-passed-ink); }
+.session-log-level-pill.WARNING { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
+.session-log-level-pill.ERROR { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.session-log-level-pill.CRITICAL { background: var(--c-failed-strong-dim); color: var(--c-failed-ink); }
 .session-log-section-body {
   display: none;
   padding: 0 14px 12px;
@@ -1903,11 +1982,6 @@ button { font-family: inherit; }
 /* ================================================================
    Failure-first triage: Summary failures list, run failure strip
    ================================================================ */
-:root {
-  --c-failed-text: #FCA5A5;   /* red text on red-tinted surfaces (>= 4.5:1) */
-  --c-failed-line: rgba(239,68,68,0.32);
-}
-
 /* Counter cards that filter the Tests tab */
 button.counter-card {
   font: inherit;
@@ -2005,7 +2079,7 @@ button.counter-card:focus-visible {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
-  color: var(--c-failed-text);
+  color: var(--c-failed-ink);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2033,7 +2107,7 @@ button.counter-card:focus-visible {
   border-radius: 20px;
   border: 1px solid var(--c-accent);
   background: var(--c-accent-dim);
-  color: #BFDBFE;
+  color: var(--c-accent-ink);
   cursor: pointer;
 }
 .filter-chip[hidden] { display: none; }
@@ -2049,15 +2123,15 @@ button.counter-card:focus-visible {
 }
 .failure-strip.error {
   background: var(--c-error-dim);
-  border-color: rgba(249,115,22,0.32);
+  border-color: color-mix(in srgb, var(--c-error) 32%, transparent);
 }
 .failure-strip-label {
   font-size: 12px;
   font-weight: 700;
-  color: var(--c-failed-text);
+  color: var(--c-failed-ink);
   margin-bottom: 4px;
 }
-.failure-strip.error .failure-strip-label { color: #FDBA74; }
+.failure-strip.error .failure-strip-label { color: var(--c-error-ink); }
 .failure-strip-reason {
   font-family: var(--font-mono);
   font-size: 13px;
@@ -2078,7 +2152,7 @@ button.counter-card:focus-visible {
 }
 .failure-strip-checks li { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
 .failure-strip-check-name { color: var(--c-text); font-weight: 600; }
-.failure-strip-check-detail { font-family: var(--font-mono); font-size: 12px; color: var(--c-failed-text); }
+.failure-strip-check-detail { font-family: var(--font-mono); font-size: 12px; color: var(--c-failed-ink); }
 .failure-strip-check-loc { font-family: var(--font-mono); font-size: 12px; color: var(--c-text2); overflow-wrap: anywhere; }
 .failure-strip-more { color: var(--c-text2); font-size: 12px; }
 .failure-strip-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -2109,8 +2183,8 @@ button.counter-card:focus-visible {
   z-index: 200;
   padding: 8px 14px;
   border-radius: var(--radius-sm);
-  background: var(--c-accent);
-  color: #fff;
+  background: var(--c-accent-strong);
+  color: var(--c-on-accent);
   font-weight: 600;
   text-decoration: none;
 }
@@ -2175,4 +2249,49 @@ main:focus { outline: none; }
   .summary-container, .report-container { padding: 16px; }
   .info-grid { grid-template-columns: 1fr; gap: 4px 0; }
   .info-label { margin-top: 8px; }
-}"""
+}
+
+/* ================================================================
+   Theme toggle
+   ================================================================ */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border2);
+  background: transparent;
+  color: var(--c-text2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { color: var(--c-text); background: var(--c-surface2); }
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme-shown="dark"] .theme-toggle .icon-sun { display: block; }
+:root[data-theme-shown="dark"] .theme-toggle .icon-moon { display: none; }
+
+/* ================================================================
+   Print: light, without navigation, scroll areas opened up
+   ================================================================ */
+@media print {
+  body { background: #fff; min-height: 0; }
+  .skip-link, .tabs, .theme-toggle, .tree-panel,
+  .detail-cmd-hint, .artifact-expand, .strip-btn, .session-log-search,
+  .session-log-actions { display: none !important; }
+  .header { position: static; backdrop-filter: none; background: none; margin-bottom: 16px; }
+  .tests-layout { display: block; height: auto; }
+  .detail-panel { overflow: visible; padding: 0; }
+  pre, .phase-log, [class*="longrepr"] { max-height: none !important; overflow: visible !important; white-space: pre-wrap; }
+  .counter-card, .chart-card, .check-card, .failure-strip, .failures-panel, .procedure-step,
+  .retry-card, .log-entry { break-inside: avoid; }
+  * { box-shadow: none !important; }
+  .meta-badge, .tree-badge, .run-pill, .detail-header-outcome, .check-card,
+  .failure-strip, .counter-card, .log-entry-level, .pass-rate-bar-fill, .legend-dot, .status-dot {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+"""
+)
