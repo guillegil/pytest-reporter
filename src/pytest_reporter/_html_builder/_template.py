@@ -13,23 +13,26 @@ _SKELETON = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="header">
+<a class="skip-link" href="#main">Skip to report</a>
+<header class="header">
   <div class="header-logo">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+    <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
     <h1>Test Report</h1>
   </div>
   <div class="meta" id="header-meta"></div>
+</header>
+<div class="tabs" role="tablist" aria-label="Report sections">
+  <button class="tab-btn active" id="tabbtn-summary" data-tab="summary" role="tab" aria-selected="true" aria-controls="tab-summary">Summary</button>
+  <button class="tab-btn" id="tabbtn-tests" data-tab="tests" role="tab" aria-selected="false" aria-controls="tab-tests" tabindex="-1">Tests</button>
+  <button class="tab-btn" id="tabbtn-session-logs" data-tab="session-logs" role="tab" aria-selected="false" aria-controls="tab-session-logs" tabindex="-1">Session Logs</button>
+  <button class="tab-btn" id="tabbtn-report" data-tab="report" role="tab" aria-selected="false" aria-controls="tab-report" tabindex="-1">Report</button>
 </div>
-<div class="tabs" role="tablist">
-  <button class="tab-btn active" data-tab="summary" role="tab" aria-selected="true">Summary</button>
-  <button class="tab-btn" data-tab="tests" role="tab" aria-selected="false">Tests</button>
-  <button class="tab-btn" data-tab="session-logs" role="tab" aria-selected="false">Session Logs</button>
-  <button class="tab-btn" data-tab="report" role="tab" aria-selected="false">Report</button>
-</div>
-<div id="tab-summary" class="tab-panel active" role="tabpanel"></div>
-<div id="tab-tests" class="tab-panel" role="tabpanel"></div>
-<div id="tab-session-logs" class="tab-panel" role="tabpanel"></div>
-<div id="tab-report" class="tab-panel" role="tabpanel"></div>
+<main id="main" tabindex="-1">
+<div id="tab-summary" class="tab-panel active" role="tabpanel" aria-labelledby="tabbtn-summary"></div>
+<div id="tab-tests" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-tests"></div>
+<div id="tab-session-logs" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-session-logs"></div>
+<div id="tab-report" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-report"></div>
+</main>
 <script>
 /*__JS__*/
 </script>

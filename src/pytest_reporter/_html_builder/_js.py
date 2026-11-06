@@ -41,6 +41,8 @@ function svgEl(tag, attrs) {
 function chevronSvg(cls) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.setAttribute('class', cls || 'chevron');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
   svg.setAttribute('width','16'); svg.setAttribute('height','16');
   svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('fill','none');
   svg.setAttribute('stroke','currentColor'); svg.setAttribute('stroke-width','2');
@@ -48,6 +50,54 @@ function chevronSvg(cls) {
   svg.innerHTML = '<polyline points="9 18 15 12 9 6"/>';
   return svg;
 }
+
+// Polite live region: tells screen readers about results they can't see
+// change (copied, number of tests shown).
+function announce(msg) {
+  let live = document.getElementById('sr-live');
+  if (!live) {
+    live = el('div', {id:'sr-live', className:'sr-only', 'aria-live':'polite', role:'status'});
+    document.body.appendChild(live);
+  }
+  live.textContent = '';
+  setTimeout(() => { live.textContent = msg; }, 30);
+}
+
+// Visually hidden text for screen readers (e.g. the outcome a dot shows).
+function srText(text) { return el('span', {className:'sr-only'}, text); }
+
+// Roving-tabindex tablist: Left/Right (and Up/Down), Home and End move
+// between the tabs matched by `selector` and activate them through `select`.
+function wireTablist(list, selector, select) {
+  if (!list) return;
+  list.addEventListener('keydown', (e) => {
+    const tabs = Array.from(list.querySelectorAll(selector)).filter(t => t.offsetParent !== null);
+    const idx = tabs.indexOf(document.activeElement);
+    if (idx === -1) return;
+    let next = -1;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (idx - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    if (next === -1) return;
+    e.preventDefault();
+    tabs[next].focus();
+    select(tabs[next]);
+  });
+}
+
+// Mark one button of a tab set as selected (class, aria-selected, tabindex).
+function setSelectedTab(tabs, selected) {
+  tabs.forEach(t => {
+    const on = t === selected;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', on ? 'true' : 'false');
+    t.tabIndex = on ? 0 : -1;
+  });
+}
+
+let _uid = 0;
+function uid(prefix) { _uid += 1; return prefix + '-' + _uid; }
 
 // Copy-to-clipboard helper for the "run this test" command box.
 // navigator.clipboard needs a secure context (file:// qualifies) + a user
@@ -83,6 +133,7 @@ function copyCommandRow(rowEl) {
   const hint = rowEl.querySelector('.detail-cmd-hint');
   rowEl.classList.add('copied');
   if (hint) hint.textContent = 'Copied!';
+  announce('Command copied');
   setTimeout(function() {
     rowEl.classList.remove('copied');
     if (hint) hint.textContent = 'Copy';
@@ -317,19 +368,37 @@ function collectAtDepth(node, depth, pathSoFar) {
 }
 
 // Render a donut grid section for an array of {node, path, label} entries.
+// Spoken name of a dashboard group control: counts in words, not glyphs.
+function groupSummary(label, a) {
+  const total = a.total || 1;
+  const parts = [Math.round((a.passed / total) * 100) + '% passed'];
+  STATUSES.forEach(st => { if (a[st]) parts.push(a[st] + ' ' + LABELS[st].toLowerCase()); });
+  return label + ': ' + parts.join(', ') + '. Show in Tests';
+}
+
+// Enter and Space activate a role=button element, as they do a <button>.
+function activateOnKey(node) {
+  node.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); node.click(); }
+  });
+}
+
 function renderDonutGroup(entries, sectionLabel) {
   if (entries.length === 0) return null;
   const cards = entries.map(({node, path, label}) => {
     const a = nodeAgg(node);
-    return el('div', {className:'chart-card', onClick:()=>navigateToGroup(path)},
+    const card = el('div', {className:'chart-card', onClick:()=>navigateToGroup(path), role:'button',
+      tabindex:'0', 'aria-label': groupSummary(label, a)},
       el('h3', null, label),
       donutSVG(a, 110),
       donutCountsEl(a),
       legendEl(a),
       el('div', {className:'chart-card-dur'}, formatDuration(a.duration))
     );
+    activateOnKey(card);
+    return card;
   });
-  const title = el('div', {className:'charts-section-title'},
+  const title = el('h2', {className:'charts-section-title'},
     sectionLabel,
     el('span', {className:'charts-section-count'}, String(entries.length))
   );
@@ -345,7 +414,8 @@ function renderBarsGroup(entries, sectionLabel) {
     const total = a.total || 1;
     const rate = Math.round((a.passed / total) * 100);
     const fillPct = rate.toFixed(1) + '%';
-    return el('div', {className:'pass-rate-bar', onClick:()=>navigateToGroup(path), role:'button', tabindex:'0'},
+    const bar = el('div', {className:'pass-rate-bar', onClick:()=>navigateToGroup(path), role:'button', tabindex:'0',
+      'aria-label': groupSummary(label, a)},
       el('span', {className:'pass-rate-bar-name', title:label}, label),
       el('div', {className:'pass-rate-bar-track'},
         el('div', {className:'pass-rate-bar-fill', style:'width:' + fillPct})
@@ -362,8 +432,10 @@ function renderBarsGroup(entries, sectionLabel) {
         el('span', {className:'prs-dur'}, formatDuration(a.duration))
       )
     );
+    activateOnKey(bar);
+    return bar;
   });
-  const title = el('div', {className:'charts-section-title'},
+  const title = el('h2', {className:'charts-section-title'},
     sectionLabel,
     el('span', {className:'charts-section-count'}, String(entries.length))
   );
@@ -472,7 +544,7 @@ function renderSummary() {
   hero.appendChild(durSection);
 
   const heroBody = el('div', {className:'summary-hero-body'});
-  heroBody.appendChild(el('h3', null, 'Test Results Distribution'));
+  heroBody.appendChild(el('h2', null, 'Test Results Distribution'));
   const barWrap = el('div', {className:'ratio-bar-wrap'});
   const bar = el('div', {className:'ratio-bar'});
   STATUSES.forEach(s => {
@@ -567,6 +639,7 @@ function renderFailuresPanel() {
   copyBtn.addEventListener('click', () => {
     copyToClipboard(rerun);
     copyBtn.textContent = 'Copied';
+    announce('Rerun command copied');
     setTimeout(() => { copyBtn.textContent = 'Copy rerun command'; }, 1400);
   });
   head.appendChild(copyBtn);
@@ -620,7 +693,7 @@ function navigateToGroup(path) {
       const matched = Array.from(segs).some(s => s.getAttribute('data-seg') === part);
       if (matched) {
         const parent = row.parentElement;
-        if (parent) parent.classList.add('expanded');
+        if (parent) setTreeExpanded(parent, true);
         node = parent?.querySelector('.tree-children');
       }
     });
@@ -642,8 +715,9 @@ function renderTests() {
 
   const searchBox = el('div', {className:'search-box'});
   const searchIconSvg = el('span', {className:'search-icon'});
-  searchIconSvg.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-  const searchInput = el('input', {className:'search-input', placeholder:'Search tests...', type:'text'});
+  searchIconSvg.innerHTML = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+  const searchInput = el('input', {className:'search-input', placeholder:'Search tests...', type:'search',
+    'aria-label':'Search tests'});
   let searchTimer;
   searchInput.addEventListener('input', () => {
     clearTimeout(searchTimer);
@@ -671,36 +745,52 @@ function renderTests() {
   controlsRow.appendChild(filters);
 
   // Expand all button
-  const expandBtn = el('button', {className:'tree-expand-btn', title:'Expand all'});
-  expandBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>';
+  const expandBtn = el('button', {className:'tree-expand-btn', title:'Expand all', 'aria-label':'Expand all folders', type:'button'});
+  expandBtn.innerHTML = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>';
   expandBtn.addEventListener('click', () => {
-    treeContent.querySelectorAll('.tree-node').forEach(n => n.classList.add('expanded'));
+    treeContent.querySelectorAll('.tree-node').forEach(n => setTreeExpanded(n, true));
   });
   controlsRow.appendChild(expandBtn);
 
   // Collapse all button
-  const collapseBtn = el('button', {className:'tree-expand-btn', title:'Collapse all'});
-  collapseBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>';
+  const collapseBtn = el('button', {className:'tree-expand-btn', title:'Collapse all', 'aria-label':'Collapse all folders', type:'button'});
+  collapseBtn.innerHTML = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>';
   collapseBtn.addEventListener('click', () => {
-    treeContent.querySelectorAll('.tree-node').forEach(n => n.classList.remove('expanded'));
+    treeContent.querySelectorAll('.tree-node').forEach(n => setTreeExpanded(n, false));
+    ensureTreeTabStop();
   });
   controlsRow.appendChild(collapseBtn);
 
   controls.appendChild(controlsRow);
   treePanel.appendChild(controls);
 
-  const treeContent = el('div', {className:'tree-content'});
+  const treeContent = el('div', {className:'tree-content', role:'tree', 'aria-label':'Tests'});
+  treeContent.addEventListener('keydown', onTreeKeydown);
   const rawTree = buildTree(DATA.tests);
   const compacted = compactTree(rawTree);
   Object.entries(compacted.children).forEach(([name, node]) => {
     treeContent.appendChild(renderTreeNode(name, node, 0));
   });
   treePanel.appendChild(treeContent);
+  const treeEmpty = el('div', {className:'tree-empty', id:'tree-empty'},
+    el('p', null, 'No tests match the search and filters.'));
+  const resetBtn = el('button', {className:'strip-btn', type:'button'}, 'Show all tests');
+  resetBtn.addEventListener('click', () => {
+    searchQuery = '';
+    searchInput.value = '';
+    retriedOnly = false;
+    activeFilters = new Set(STATUSES);
+    refreshTree(false);
+    searchInput.focus();
+  });
+  treeEmpty.appendChild(resetBtn);
+  treeEmpty.hidden = true;
+  treePanel.appendChild(treeEmpty);
 
   // Right panel
   const detailPanel = el('div', {className:'detail-panel'});
   detailPanel.innerHTML = `<div class="detail-empty">
-    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+    <svg aria-hidden="true" focusable="false" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
     <span>Select a test to view details</span>
   </div>`;
 
@@ -717,9 +807,99 @@ function renderTests() {
       .find(n => n._test && n.style.display !== 'none');
     if (firstLeaf) {
       const row = firstLeaf.querySelector(':scope > .tree-row');
-      if (row) row.classList.add('selected');
+      if (row) markTreeSelected(row);
       showTestDetail(firstLeaf._test);
     }
+  }
+  ensureTreeTabStop();
+}
+
+// ─── Tree keyboard support (WAI-ARIA tree pattern) ──────────────────
+// Rows are role=treeitem with aria-level; the wrapping divs are role=none.
+// One row at a time has tabindex=0 (roving tab stop).
+function treeRowOf(node) { return node ? node.querySelector(':scope > .tree-row') : null; }
+
+function setTreeExpanded(node, open) {
+  const row = treeRowOf(node);
+  if (!row || !row.hasAttribute('aria-expanded')) return;
+  node.classList.toggle('expanded', open);
+  row.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+// Shown in the tree (not filtered out, not inside a collapsed folder). Works
+// while the Tests tab itself is hidden, unlike offsetParent.
+function isTreeRowShown(row) {
+  let e = row.parentElement;
+  while (e && !e.classList.contains('tree-content')) {
+    if (e.style.display === 'none') return false;
+    if (e.classList.contains('tree-children') && !e.parentElement.classList.contains('expanded')) return false;
+    e = e.parentElement;
+  }
+  return true;
+}
+
+function visibleTreeRows() {
+  return Array.from(document.querySelectorAll('.tree-content .tree-row')).filter(isTreeRowShown);
+}
+
+function setTreeTabStop(row) {
+  document.querySelectorAll('.tree-content .tree-row[tabindex="0"]').forEach(r => { r.tabIndex = -1; });
+  if (row) row.tabIndex = 0;
+}
+
+// Keep exactly one reachable row: the current stop if visible, else the
+// selected test, else the first visible row.
+function ensureTreeTabStop() {
+  const rows = visibleTreeRows();
+  const current = rows.find(r => r.tabIndex === 0);
+  if (current) return;
+  setTreeTabStop(rows.find(r => r.classList.contains('selected')) || rows[0] || null);
+}
+
+function markTreeSelected(row) {
+  document.querySelectorAll('.tree-content .tree-row.selected').forEach(r => {
+    r.classList.remove('selected');
+    if (r.hasAttribute('aria-selected')) r.setAttribute('aria-selected', 'false');
+  });
+  row.classList.add('selected');
+  row.setAttribute('aria-selected', 'true');
+  setTreeTabStop(row);
+}
+
+function onTreeKeydown(e) {
+  const row = e.target.closest && e.target.closest('.tree-row');
+  if (!row) return;
+  const rows = visibleTreeRows();
+  const idx = rows.indexOf(row);
+  const node = row.parentElement;
+  const isFolder = row.hasAttribute('aria-expanded');
+  const open = isFolder && node.classList.contains('expanded');
+  let target = null;
+  switch (e.key) {
+    case 'ArrowDown': target = rows[idx + 1]; break;
+    case 'ArrowUp': target = rows[idx - 1]; break;
+    case 'Home': target = rows[0]; break;
+    case 'End': target = rows[rows.length - 1]; break;
+    case 'ArrowRight':
+      if (isFolder && !open) { setTreeExpanded(node, true); e.preventDefault(); return; }
+      if (open) target = visibleTreeRows()[idx + 1];
+      break;
+    case 'ArrowLeft':
+      if (open) { setTreeExpanded(node, false); e.preventDefault(); return; }
+      target = treeRowOf(node.parentElement && node.parentElement.closest('.tree-node'));
+      break;
+    case 'Enter':
+    case ' ':
+      e.preventDefault();
+      row.click();
+      return;
+    default:
+      return;
+  }
+  e.preventDefault();
+  if (target) {
+    setTreeTabStop(target);
+    target.focus();
   }
 }
 
@@ -732,19 +912,21 @@ function renderTreeNode(name, node, depth) {
   const hasChildren = Object.keys(node.children).length > 0 || node.tests.length > 0;
   const agg = nodeAgg(node);
   const isClass = !!node._isClass;
-  const container = el('div', {className:'tree-node'});
+  const container = el('div', {className:'tree-node', role:'none'});
 
   const row = el('div', {
     className: 'tree-row' + (isClass ? ' tree-class-row' : ''),
     style: `padding-left:${16 + depth * 16}px`,
+    role: 'treeitem', 'aria-level': String(depth + 1), tabindex: '-1',
   });
+  if (hasChildren) row.setAttribute('aria-expanded', 'false');
 
   // Chevron icon for expandable nodes
   const icon = el('span', {className:'tree-icon'});
   if (hasChildren) {
-    icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>';
+    icon.innerHTML = '<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>';
   } else {
-    icon.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>';
+    icon.innerHTML = '<svg aria-hidden="true" focusable="false" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>';
   }
 
   // Build label: breadcrumb for collapsed chains (_segments), plain name otherwise.
@@ -758,8 +940,8 @@ function renderTreeNode(name, node, depth) {
     }
   });
 
-  // Colored count badges
-  const badges = el('span', {className:'tree-badges'});
+  // Colored count badges (read out once, as text, by srText below)
+  const badges = el('span', {className:'tree-badges', 'aria-hidden':'true'});
   if (agg.retried) {
     badges.appendChild(el('span', {
       className: 'tree-badge retried',
@@ -776,15 +958,20 @@ function renderTreeNode(name, node, depth) {
 
   row.appendChild(icon);
   row.appendChild(nameEl);
+  const counts = STATUSES.filter(st => agg[st]).map(st => agg[st] + ' ' + LABELS[st].toLowerCase());
+  if (agg.retried) counts.push(agg.retried + ' retried');
+  if (counts.length) row.appendChild(srText(', ' + counts.join(', ')));
   row.appendChild(badges);
+  row.title = segs.join(' / ');
   row.addEventListener('click', (e) => {
     e.stopPropagation();
-    container.classList.toggle('expanded');
+    setTreeExpanded(container, !container.classList.contains('expanded'));
+    setTreeTabStop(row);
   });
   container.appendChild(row);
 
   if (hasChildren) {
-    const children = el('div', {className:'tree-children'});
+    const children = el('div', {className:'tree-children', role:'none'});
     Object.entries(node.children).forEach(([cname, cnode]) => {
       children.appendChild(renderTreeNode(cname, cnode, depth + 1));
     });
@@ -803,19 +990,21 @@ function testDisplayName(agg) {
 }
 
 function renderTestLeaf(test, depth) {
-  const container = el('div', {className:'tree-node'});
+  const container = el('div', {className:'tree-node', role:'none'});
   const agg = test.aggregate;
   const outcome = getOverallOutcome(test);
   const displayName = testDisplayName(agg);
 
-  const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`});
-  const dot = el('span', {className:`status-dot ${outcome}`});
+  const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`,
+    role:'treeitem', 'aria-level': String(depth + 1), 'aria-selected':'false', tabindex:'-1',
+    title: displayName});
+  const dot = el('span', {className:`status-dot ${outcome}`, 'aria-hidden':'true'});
 
   // Class context comes from the parent class node (file -> class -> method),
   // so the leaf shows just the bare method/function name — aligned with peers.
   const nameEl = el('span', {className:'tree-name'}, displayName);
 
-  const badges = el('span', {className:'tree-badges'});
+  const badges = el('span', {className:'tree-badges', 'aria-hidden':'true'});
   // Flaky marker: any run that needed retries gets a ↻ pill so passed-on-retry
   // tests are visible at a glance in the tree (final outcome alone hides them).
   const anyRetried = test.runs.some(r => r.retries && r.retries.attempts > 0);
@@ -831,11 +1020,14 @@ function renderTestLeaf(test, depth) {
   }
   row.appendChild(dot);
   row.appendChild(nameEl);
+  let leafInfo = ', ' + LABELS[outcome];
+  if (anyRetried) leafInfo += ', retried';
+  if (agg.total_runs > 1) leafInfo += ', ' + agg.total_runs + ' runs';
+  row.appendChild(srText(leafInfo));
   row.appendChild(badges);
   row.addEventListener('click', (e) => {
     e.stopPropagation();
-    document.querySelectorAll('.tree-row.selected').forEach(r => r.classList.remove('selected'));
-    row.classList.add('selected');
+    markTreeSelected(row);
     showTestDetail(test);
   });
   container.appendChild(row);
@@ -1006,13 +1198,16 @@ function showTestDetail(test, initialRun) {
 
   // Run filter toggles
   const runFilters = el('div', {className:'run-filters'});
-  const filterRow = el('div', {className:'filter-toggles'});
+  const filterRow = el('div', {className:'filter-toggles', role:'group', 'aria-label':'Show runs by outcome'});
   STATUSES.forEach(s => {
     const count = test.runs.filter(r => r.outcome === s).length;
     if (count === 0) return;
-    const btn = el('button', {className:`filter-btn ${s} active`}, `${LABELS[s]} (${count})`);
+    const btn = el('button', {className:`filter-btn ${s} active`, type:'button', 'aria-pressed':'true'},
+      `${LABELS[s]} (${count})`);
     btn.addEventListener('click', () => {
-      btn.classList.toggle('active');
+      const on = !btn.classList.contains('active');
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
       refreshRunPills(test, panel);
     });
     filterRow.appendChild(btn);
@@ -1021,7 +1216,7 @@ function showTestDetail(test, initialRun) {
   panel.appendChild(runFilters);
 
   // Run pills
-  const pillsContainer = el('div', {className:'run-pills', id:'run-pills'});
+  const pillsContainer = el('div', {className:'run-pills', id:'run-pills', role:'group', 'aria-label':'Runs'});
   panel.appendChild(pillsContainer);
 
   // Run detail
@@ -1030,6 +1225,22 @@ function showTestDetail(test, initialRun) {
 
   refreshRunPills(test, panel);
   if (firstRun) showRunDetail(firstRun);
+}
+
+// A run pill: its outcome is spoken (not only coloured), its selection is
+// aria-pressed, and the run it stands for is kept for showRunDetail.
+function makeRunPill(run, text) {
+  const on = selectedRun === run;
+  const pill = el('button', {className:`run-pill ${run.outcome}${on ? ' selected' : ''}`, type:'button',
+    'aria-pressed': on ? 'true' : 'false'}, text);
+  pill._run = run;
+  pill.appendChild(srText(', ' + (LABELS[run.outcome] || run.outcome)));
+  if (run.retries && run.retries.attempts > 0) {
+    const n = run.retries.attempts;
+    pill.appendChild(el('span', {className:'retry-badge', 'aria-hidden':'true'}, '\u21bb' + n));
+    pill.appendChild(srText(', retried ' + n + (n === 1 ? ' time' : ' times')));
+  }
+  return pill;
 }
 
 function refreshRunPills(test, panel) {
@@ -1051,18 +1262,8 @@ function refreshRunPills(test, panel) {
 
   shown.forEach(run => {
     const pillText = run.run_id + (run.parametrize_id ? ` [${run.parametrize_id}]` : '');
-    const pill = el('button', {
-      className: `run-pill ${run.outcome}${selectedRun === run ? ' selected' : ''}`
-    }, pillText);
-    if (run.retries && run.retries.attempts > 0) {
-      const badge = el('span', {className:'retry-badge'}, '\u21bb' + run.retries.attempts);
-      pill.appendChild(badge);
-    }
-    pill.addEventListener('click', () => {
-      container.querySelectorAll('.run-pill').forEach(p => p.classList.remove('selected'));
-      pill.classList.add('selected');
-      showRunDetail(run);
-    });
+    const pill = makeRunPill(run, pillText);
+    pill.addEventListener('click', () => showRunDetail(run));
     container.appendChild(pill);
   });
 
@@ -1075,7 +1276,7 @@ function refreshRunPills(test, panel) {
     btn.addEventListener('click', () => {
       if (!expanded) {
         rest.forEach(run => {
-          const pill = el('button', {className:`run-pill ${run.outcome}`}, run.run_id);
+          const pill = makeRunPill(run, run.run_id);
           pill.addEventListener('click', () => showRunDetail(run));
           container.insertBefore(pill, btn);
         });
@@ -1100,14 +1301,17 @@ function showRunDetail(run) {
   if (cmdCode) cmdCode.textContent = testCommand(run.nodeid);
   // Update pill selection
   document.querySelectorAll('#run-pills .run-pill').forEach(p => {
-    p.classList.toggle('selected', p.textContent.startsWith(run.run_id));
+    const on = p._run === run;
+    p.classList.toggle('selected', on);
+    p.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
 
   const container = document.getElementById('run-detail');
   if (!container) return;
   container.innerHTML = '';
 
-  const subTabs = el('div', {className:'sub-tabs'});
+  const subTabs = el('div', {className:'sub-tabs', role:'tablist', 'aria-label':'Run details'});
+  const subPanelId = 'sub-tab-content';
   const tabNames = ['Summary','Procedure','Artifacts'];
   if (run.check_results && run.check_results.length > 0) {
     tabNames.splice(2, 0, 'Checks');
@@ -1116,20 +1320,26 @@ function showRunDetail(run) {
     tabNames.push('Retries');
   }
   const selectSubTab = (name) => {
-    subTabs.querySelectorAll('.sub-tab-btn').forEach(b => {
-      b.classList.toggle('active', b.textContent === name);
-    });
+    const tabs = Array.from(subTabs.querySelectorAll('.sub-tab-btn'));
+    const tab = tabs.find(b => b.textContent === name) || tabs[0];
+    setSelectedTab(tabs, tab);
+    const content = document.getElementById('sub-tab-content');
+    if (content) content.setAttribute('aria-labelledby', tab.id);
     showSubTab(name.toLowerCase(), run);
   };
   tabNames.forEach((name, i) => {
-    const btn = el('button', {className:`sub-tab-btn${i===0?' active':''}`}, name);
+    const btn = el('button', {className:`sub-tab-btn${i===0?' active':''}`, type:'button', role:'tab',
+      id: uid('subtab'), 'aria-selected': i === 0 ? 'true' : 'false', 'aria-controls': subPanelId,
+      tabindex: i === 0 ? '0' : '-1'}, name);
     btn.addEventListener('click', () => selectSubTab(name));
     subTabs.appendChild(btn);
   });
+  wireTablist(subTabs, '.sub-tab-btn', btn => selectSubTab(btn.textContent));
   if (isBad(run.outcome)) container.appendChild(renderFailureStrip(run, selectSubTab));
   container.appendChild(subTabs);
 
-  const content = el('div', {className:'run-detail-content', id:'sub-tab-content'});
+  const content = el('div', {className:'run-detail-content', id:'sub-tab-content', role:'tabpanel',
+    'aria-labelledby': subTabs.querySelector('.sub-tab-btn').id});
   container.appendChild(content);
   showSubTab('summary', run);
 }
@@ -1183,20 +1393,25 @@ function showSubTab(tab, run) {
     const phases = ['setup','call','teardown'];
     const availablePhases = phases.filter(w => run.phases[w]);
     if (availablePhases.length > 0) {
-      const phaseBar = el('div', {className:'phase-tabs-bar'});
+      const phaseBar = el('div', {className:'phase-tabs-bar', role:'tablist', 'aria-label':'Phase logs'});
       const phasePanels = [];
       // Open on the phase that failed (or was skipped), not always on Setup.
       const activeIdx = Math.max(0, availablePhases.indexOf(phaseOfInterest(run)));
 
       availablePhases.forEach((when, idx) => {
         const phase = run.phases[when];
-        const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`},
-          el('span', {className:`status-dot ${phase.outcome}`}),
+        const tabId = uid('phasetab'), panelId = uid('phasepanel');
+        const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`, type:'button',
+          role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': idx===activeIdx ? 'true' : 'false',
+          tabindex: idx===activeIdx ? '0' : '-1'},
+          el('span', {className:`status-dot ${phase.outcome}`, 'aria-hidden':'true'}),
           when.charAt(0).toUpperCase() + when.slice(1),
+          srText(', ' + (LABELS[phase.outcome] || phase.outcome)),
           el('span', {className:'phase-meta'}, phase.duration.toFixed(4) + 's')
         );
 
-        const panel = el('div', {className:`phase-tab-panel${idx===activeIdx?' active':''}`});
+        const panel = el('div', {className:`phase-tab-panel${idx===activeIdx?' active':''}`, role:'tabpanel',
+          id:panelId, 'aria-labelledby':tabId, tabindex:'0'});
         const hasEntries = phase.entries && phase.entries.length > 0;
         if (hasEntries || phase.longrepr) {
           if (hasEntries) {
@@ -1212,16 +1427,15 @@ function showSubTab(tab, run) {
         }
 
         btn.addEventListener('click', () => {
-          phaseBar.querySelectorAll('.phase-tab-btn').forEach(b => b.classList.remove('active'));
-          phasePanels.forEach(p => p.classList.remove('active'));
-          btn.classList.add('active');
-          panel.classList.add('active');
+          setSelectedTab(Array.from(phaseBar.querySelectorAll('.phase-tab-btn')), btn);
+          phasePanels.forEach(p => p.classList.toggle('active', p === panel));
         });
 
         phaseBar.appendChild(btn);
         phasePanels.push(panel);
       });
 
+      wireTablist(phaseBar, '.phase-tab-btn', b => b.click());
       content.appendChild(phaseBar);
       phasePanels.forEach(p => content.appendChild(p));
     }
@@ -1264,15 +1478,25 @@ function showSubTab(tab, run) {
           const label = el('div', {style:'font-size:12px;font-weight:600;color:var(--c-text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em'}, a.name);
           content.appendChild(label);
           if (a.data_uri) {
-            const iframe = el('iframe', {className:'artifact-html-frame', src:a.data_uri, sandbox:'allow-same-origin', style:'pointer-events:auto'});
-            // Auto-resize iframe to content
-            iframe.addEventListener('load', () => {
-              try {
-                const h = iframe.contentDocument.documentElement.scrollHeight;
-                iframe.style.height = Math.min(h + 20, 600) + 'px';
-              } catch(e) {}
-            });
+            // A data: frame is cross-origin, so its height can't be read
+            // after load: size it from the table rows in the HTML instead.
+            const rows = artifactRowCount(a.data_uri);
+            const fullHeight = rows === null ? 480 : ARTIFACT_CHROME_PX + rows * ARTIFACT_ROW_PX;
+            const capped = Math.min(fullHeight, ARTIFACT_MAX_PX);
+            const iframe = el('iframe', {className:'artifact-html-frame', src:a.data_uri, sandbox:'allow-same-origin',
+              title:a.name, style:'pointer-events:auto;height:' + capped + 'px'});
             content.appendChild(iframe);
+            if (fullHeight > capped) {
+              const more = el('button', {className:'strip-btn artifact-expand', type:'button',
+                'aria-expanded':'false'}, rows === null ? 'Show taller' : 'Show all ' + rows + ' rows');
+              more.addEventListener('click', () => {
+                const open = more.getAttribute('aria-expanded') !== 'true';
+                iframe.style.height = (open ? fullHeight : capped) + 'px';
+                more.setAttribute('aria-expanded', open ? 'true' : 'false');
+                more.textContent = open ? 'Show fewer rows' : (rows === null ? 'Show taller' : 'Show all ' + rows + ' rows');
+              });
+              content.appendChild(more);
+            }
           }
         });
       }
@@ -1302,7 +1526,7 @@ function showSubTab(tab, run) {
         others.forEach(a => {
           const card = el('div', {className:'artifact-file-card'});
           const icon = el('span', {className:'artifact-file-icon'});
-          icon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+          icon.innerHTML = '<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
           card.appendChild(icon);
           card.appendChild(el('div', null,
             el('div', {className:'artifact-name'}, a.name),
@@ -1843,6 +2067,26 @@ function renderSamplingBody(check) {
   return wrap;
 }
 
+// HTML artifact frames: page chrome (title, meta, header row, padding) plus
+// one row height per <tr> in the body, from the table artifact's own CSS.
+const ARTIFACT_CHROME_PX = 180;
+const ARTIFACT_ROW_PX = 29;
+const ARTIFACT_MAX_PX = 560;
+
+// Number of body rows in a base64 HTML artifact, or null when it isn't a
+// table (or can't be decoded).
+function artifactRowCount(dataUri) {
+  try {
+    const comma = dataUri.indexOf(',');
+    if (comma < 0 || dataUri.slice(0, comma).indexOf('base64') < 0) return null;
+    const html = atob(dataUri.slice(comma + 1));
+    const trs = (html.match(/<tr[\s>]/gi) || []).length;
+    return trs > 0 ? Math.max(0, trs - 1) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function formatSize(bytes) {
   if (bytes == null) return '';
   if (bytes < 1024) return bytes + ' B';
@@ -1916,7 +2160,7 @@ function testIsRetried(test) {
 function expandAncestors(node) {
   let parent = node.parentElement;
   while (parent) {
-    if (parent.classList?.contains('tree-node')) parent.classList.add('expanded');
+    if (parent.classList?.contains('tree-node')) setTreeExpanded(parent, true);
     parent = parent.parentElement;
   }
 }
@@ -1943,6 +2187,9 @@ function refreshTree(expandMatches) {
     node.style.display = any ? '' : 'none';
   });
   syncFilterButtons();
+  ensureTreeTabStop();
+  const empty = document.getElementById('tree-empty');
+  if (empty) empty.hidden = nodes.some(n => n._test && n.style.display !== 'none');
 }
 
 function syncFilterButtons() {
@@ -1958,6 +2205,9 @@ function syncFilterButtons() {
 function filterTree(query) {
   searchQuery = query;
   refreshTree(true);
+  const n = Array.from(document.querySelectorAll('.tree-content .tree-node'))
+    .filter(x => x._test && x.style.display !== 'none').length;
+  announce(n === 0 ? 'No tests match' : n + (n === 1 ? ' test' : ' tests') + ' shown');
 }
 
 function toggleFilter(status, btn) {
@@ -1988,10 +2238,9 @@ function selectTreeRow(test) {
     refreshTree(false);
   }
   expandAncestors(node);
-  document.querySelectorAll('.tree-row.selected').forEach(r => r.classList.remove('selected'));
   const row = node.querySelector(':scope > .tree-row');
   if (row) {
-    row.classList.add('selected');
+    markTreeSelected(row);
     row.scrollIntoView({block:'nearest'});
   }
   return node;
@@ -2009,6 +2258,28 @@ function openRunInTests(test, run) {
 }
 
 // ─── Session Logs Tab ────────────────────────────────────────────────
+// A section header that opens and closes its section: a button for the
+// keyboard and screen readers, with its state in aria-expanded.
+function setDisclosure(section, open) {
+  section.classList.toggle('expanded', open);
+  const header = section.querySelector(':scope > .session-log-section-header');
+  if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function wireDisclosure(header, section) {
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', section.classList.contains('expanded') ? 'true' : 'false');
+  const toggle = (ev) => {
+    ev.stopPropagation();
+    setDisclosure(section, !section.classList.contains('expanded'));
+  };
+  header.addEventListener('click', toggle);
+  header.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev); }
+  });
+}
+
 function renderSessionLogs() {
   const panel = document.getElementById('tab-session-logs');
   const container = el('div', {className:'session-log-container'});
@@ -2047,9 +2318,10 @@ function renderSessionLogs() {
   searchSvg.setAttribute('width','14'); searchSvg.setAttribute('height','14');
   searchSvg.setAttribute('viewBox','0 0 24 24'); searchSvg.setAttribute('fill','none');
   searchSvg.setAttribute('stroke','currentColor'); searchSvg.setAttribute('stroke-width','2');
-  searchSvg.setAttribute('stroke-linecap','round');
+  searchSvg.setAttribute('stroke-linecap','round'); searchSvg.setAttribute('aria-hidden','true');
   searchSvg.innerHTML = '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>';
-  const search = el('input', {className:'session-log-search', type:'text', placeholder:'Search session logs...'});
+  const search = el('input', {className:'session-log-search', type:'search', placeholder:'Search session logs...',
+    'aria-label':'Search session logs'});
   searchWrap.appendChild(searchSvg);
   searchWrap.appendChild(search);
   toolbar.appendChild(searchWrap);
@@ -2061,9 +2333,11 @@ function renderSessionLogs() {
   LEVELS.forEach(lvl => {
     const count = entries.filter(e => e.level === lvl).length;
     if (count === 0) return;
-    const btn = el('button', {className:'session-log-level-btn ' + lvl + ' active'}, lvl + ' (' + count + ')');
+    const btn = el('button', {className:'session-log-level-btn ' + lvl + ' active', type:'button',
+      'aria-pressed':'true'}, lvl + ' (' + count + ')');
     btn.addEventListener('click', () => {
       btn.classList.toggle('active');
+      btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
       if (btn.classList.contains('active')) activeLevels.add(lvl);
       else activeLevels.delete(lvl);
       applyFilters();
@@ -2077,10 +2351,10 @@ function renderSessionLogs() {
   const expandAllBtn = el('button', {className:'session-log-action-btn'}, 'Expand all');
   const collapseAllBtn = el('button', {className:'session-log-action-btn'}, 'Collapse all');
   expandAllBtn.addEventListener('click', () => {
-    treeEl.querySelectorAll('.session-log-section').forEach(s => s.classList.add('expanded'));
+    treeEl.querySelectorAll('.session-log-section').forEach(s => setDisclosure(s, true));
   });
   collapseAllBtn.addEventListener('click', () => {
-    treeEl.querySelectorAll('.session-log-section').forEach(s => s.classList.remove('expanded'));
+    treeEl.querySelectorAll('.session-log-section').forEach(s => setDisclosure(s, false));
   });
   actions.appendChild(expandAllBtn);
   actions.appendChild(collapseAllBtn);
@@ -2122,7 +2396,7 @@ function renderSessionLogs() {
     header.appendChild(el('span', {className:'session-log-section-name'}, name));
     header.appendChild(el('span', {className:'session-log-section-count'}, allEntries.length + ' entries'));
     header.appendChild(levelPills(counts));
-    header.addEventListener('click', () => section.classList.toggle('expanded'));
+    wireDisclosure(header, section);
     section.appendChild(header);
 
     const body = el('div', {className:'session-log-section-body'});
@@ -2136,10 +2410,7 @@ function renderSessionLogs() {
       childHeader.appendChild(el('span', {className:'session-log-section-name'}, childName));
       childHeader.appendChild(el('span', {className:'session-log-section-count'}, String(childEntries.length)));
       childHeader.appendChild(levelPills(childCounts));
-      childHeader.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        childSection.classList.toggle('expanded');
-      });
+      wireDisclosure(childHeader, childSection);
       childSection.appendChild(childHeader);
       const childBody = el('div', {className:'session-log-section-body'});
       childBody.appendChild(renderLogEntries(childEntries));
@@ -2187,7 +2458,7 @@ function renderReport() {
   // Run info
   const metaSection = el('div', {className:'report-section'});
   const metaHeader = el('div', {className:'report-section-header'});
-  metaHeader.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+  metaHeader.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
   metaHeader.appendChild(document.createTextNode(' Run Information'));
   metaSection.appendChild(metaHeader);
   const metaBody = el('div', {className:'report-section-body'});
@@ -2219,7 +2490,7 @@ function renderReport() {
   if (DATA.cmdline && DATA.cmdline.length > 0) {
     const cmdSection = el('div', {className:'report-section'});
     const cmdHeader = el('div', {className:'report-section-header'});
-    cmdHeader.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+    cmdHeader.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
     cmdHeader.appendChild(document.createTextNode(' Command Line'));
     cmdSection.appendChild(cmdHeader);
     const cmdBody = el('div', {className:'report-section-body'});
@@ -2237,7 +2508,7 @@ function renderReport() {
     });
     plugHeader.setAttribute('aria-expanded', 'false');
     const plugIcon = el('span');
-    plugIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
+    plugIcon.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>';
     plugHeader.appendChild(plugIcon);
     plugHeader.appendChild(document.createTextNode(' Active Plugins'));
     plugHeader.appendChild(chevronSvg('plugins-chevron'));
@@ -2275,7 +2546,7 @@ function renderReport() {
   // Log
   const logSection = el('div', {className:'report-section'});
   const logHeader = el('div', {className:'report-section-header'});
-  logHeader.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+  logHeader.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
   logHeader.appendChild(document.createTextNode(' Pytest Log'));
   logSection.appendChild(logHeader);
   const logBody = el('div', {className:'report-section-body'});
@@ -2293,22 +2564,16 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => {
     const isActive = b.dataset.tab === name;
     b.classList.toggle('active', isActive);
-    b.setAttribute('aria-selected', isActive);
+    b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    b.tabIndex = isActive ? 0 : -1;
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
 }
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
-
-// Keyboard navigation for tabs
-document.querySelector('.tabs').addEventListener('keydown', (e) => {
-  const tabs = Array.from(document.querySelectorAll('.tab-btn'));
-  const idx = tabs.indexOf(document.activeElement);
-  if (idx === -1) return;
-  if (e.key === 'ArrowRight') { tabs[(idx + 1) % tabs.length].focus(); e.preventDefault(); }
-  if (e.key === 'ArrowLeft') { tabs[(idx - 1 + tabs.length) % tabs.length].focus(); e.preventDefault(); }
-});
+// Arrow keys, Home and End move between the top tabs and select them.
+wireTablist(document.querySelector('.tabs'), '.tab-btn', btn => switchTab(btn.dataset.tab));
 
 // ─── Header ──────────────────────────────────────────────────────────
 (function() {

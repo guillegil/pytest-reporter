@@ -26,6 +26,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search and the status filters now apply together, and folders with nothing left to
   show are hidden. The status filter buttons expose `aria-pressed`.
 
+
+### Fixed
+
+- HTML report: the test tree works from the keyboard and with screen readers. Rows are a
+  WAI-ARIA tree (`treeitem` with `aria-level`, `aria-expanded`, `aria-selected`), with one
+  row in the Tab order; the arrow keys, Home and End move, Left and Right collapse and
+  expand, Enter opens a test.
+- HTML report: session-log sections, dashboard group bars and cards open with Enter or Space.
+- HTML report: run sub-tabs and phase tabs are tablists with arrow-key navigation; run pills,
+  status filters and log-level filters expose `aria-pressed`; run and test outcomes are read
+  out as text, not only shown as colour; icon SVGs are hidden from screen readers.
+- HTML report: the page has a skip link, `<header>` and `<main>` landmarks, tabs linked to
+  their panels, and headings in order (no H1 → H3 jump).
+- HTML report: HTML artifacts (`log.table()` tables) are sized from their row count instead
+  of staying 200px tall, with a "Show all N rows" button past 13 rows and a frame title.
+- HTML report: an empty-result message with "Show all tests" when search and filters
+  match nothing; search results and copy confirmations are announced to screen readers.
+
 ## [0.3.0]
 
 pytest-reporter no longer has a step API of its own: procedures come from

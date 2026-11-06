@@ -217,7 +217,7 @@ button { font-family: inherit; }
   margin: 4px 0;
 }
 .summary-hero-body { flex: 1; min-width: 0; }
-.summary-hero-body h3 {
+.summary-hero-body h2 {
   font-size: 14px;
   font-weight: 600;
   color: var(--c-text);
@@ -820,6 +820,7 @@ button { font-family: inherit; }
   background: var(--c-surface3);
   outline: none;
 }
+.detail-cmd:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 .detail-cmd.copied {
   border-color: var(--c-passed);
 }
@@ -1105,9 +1106,11 @@ button { font-family: inherit; }
   border: 1px solid var(--c-border);
   border-radius: var(--radius-md);
   background: #fff;
-  min-height: 200px;
-  margin-bottom: 12px;
+  min-height: 120px;
+  margin-bottom: 8px;
+  display: block;
 }
+.artifact-expand { margin-bottom: 16px; }
 
 /* Lightbox */
 .lightbox-overlay {
@@ -1661,7 +1664,7 @@ button { font-family: inherit; }
   font-size: 12px;
   transition: border-color 0.15s var(--ease-out);
 }
-.session-log-search:focus { outline: none; border-color: var(--c-accent); }
+.session-log-search:focus { outline: none; border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-dim); }
 .session-log-search::placeholder { color: var(--c-text3); }
 .session-log-level-filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .session-log-level-btn {
@@ -2086,6 +2089,69 @@ button.counter-card:focus-visible {
   .failure-row { grid-template-columns: 10px minmax(0, 1fr); }
   .failure-row-reason { grid-column: 2; }
   .detail-panel { scroll-margin-top: 8px; }
+}
+
+/* ================================================================
+   Accessibility helpers: screen-reader text, skip link, focus rings
+   ================================================================ */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: absolute;
+  left: 16px; top: -48px;
+  z-index: 200;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--c-accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus { top: 8px; }
+main:focus { outline: none; }
+
+.tree-row:focus-visible,
+.session-log-section-header:focus-visible,
+.chart-card:focus-visible,
+.pass-rate-bar:focus-visible,
+.phase-tab-panel:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: -2px;
+}
+.run-pill:focus-visible,
+.sub-tab-btn:focus-visible,
+.phase-tab-btn:focus-visible,
+.filter-btn:focus-visible,
+.session-log-level-btn:focus-visible,
+.tree-expand-btn:focus-visible,
+.show-more-btn:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+.charts-section-title { font-family: inherit; }
+
+.tree-empty {
+  padding: 24px 20px;
+  color: var(--c-text2);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.tree-empty[hidden] { display: none; }
+
+@media (forced-colors: active) {
+  .status-dot { forced-color-adjust: none; }
+  .tree-row.selected, .run-pill.selected, .sub-tab-btn.active, .phase-tab-btn.active,
+  .filter-btn.active, .tab-btn.active { outline: 2px solid Highlight; }
 }
 
 /* ================================================================
