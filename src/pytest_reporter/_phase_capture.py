@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from ._context import sanitize_path_component
@@ -18,59 +17,32 @@ if TYPE_CHECKING:
     from .reporter import Reporter
 
 
-def _composite_child_descriptors(descriptor: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the child check descriptors a composite check consumes.
+def verify_checks(report: object) -> list[dict[str, Any]]:
+    """The pytest-verifier checks a phase report carries (``report.verify_checks``).
 
-    Mirrors pytest-verify's own ``_child_descriptors``: a ``guard``/``conditional``
-    appends its ``default``; ``all_satisfy`` exposes only ``child_checks``.
+    pytest-verifier puts the checks it judged at the end of a phase on that
+    phase's report. They are JSON-safe, so they survive pytest-xdist, and checks
+    nested in a composite are inside their parent. Reading the attribute needs
+    no import: without pytest-verifier it is simply absent.
 
     Args:
-        descriptor: A single check descriptor dict.
+        report: A ``TestReport``.
 
     Returns:
-        The nested child descriptor dicts (empty for non-composite checks).
+        The phase's check dicts (empty when there are none).
     """
-    check_type = descriptor.get("check_type")
-    if check_type == "guard":
-        children = [b.get("check") for b in descriptor.get("branches", []) if isinstance(b, dict)]
-    elif check_type == "conditional":
-        children = list(descriptor.get("cases", {}).values())
-    elif check_type == "all_satisfy":
-        return [c for c in descriptor.get("child_checks", []) if isinstance(c, dict)]
-    else:
+    checks = getattr(report, "verify_checks", None)
+    if not isinstance(checks, (list, tuple)):
         return []
-    default = descriptor.get("default")
-    if default is not None:
-        children.append(default)
-    return [c for c in children if isinstance(c, dict)]
+    return [dict(c) for c in checks if isinstance(c, dict)]
 
 
-def _strip_nested_check_children(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop top-level descriptors that are nested children of a composite check.
-
-    Some pytest-verify versions auto-record the child checks of a
-    ``guard``/``conditional``/``all_satisfy`` as independent stash entries. Those
-    children are already rendered inside their parent, so surfacing them as
-    standalone cards is misleading (and an unmatched branch would read as an
-    independent failure). They are filtered by object identity — reliable here
-    because capture happens in-memory before JSON serialization, where the leaked
-    entry and the nested reference are the same object.
-
-    Args:
-        checks: The check descriptors captured from the verify stash.
-
-    Returns:
-        The list with nested children removed, order preserved. Independent
-        checks (and the composites themselves) are kept.
-    """
-    child_ids: set[int] = set()
-    worklist = [c for c in checks if isinstance(c, dict)]
-    while worklist:
-        desc = worklist.pop()
-        for child in _composite_child_descriptors(desc):
-            child_ids.add(id(child))
-            worklist.append(child)
-    return [c for c in checks if id(c) not in child_ids]
+def note_verify_checks(reporter: Reporter, report: object) -> None:
+    """Add a phase report's verifier checks to the attempt running now."""
+    nodeid = str(getattr(report, "nodeid", ""))
+    checks = verify_checks(report)
+    if checks:
+        reporter._attempt_checks.setdefault(nodeid, []).extend(checks)
 
 
 def flush_table_artifacts(logger: Logger, run_dir: Path) -> None:
@@ -122,6 +94,7 @@ def capture_phase_logs(reporter: Reporter, report: pytest.TestReport) -> None:
 
     # Record phase data with entries
     reporter.collector.record_phase(report, entries=entries)
+    note_verify_checks(reporter, report)
 
     run_dir = reporter._get_run_dir(nodeid)
 
@@ -150,49 +123,39 @@ def capture_phase_logs(reporter: Reporter, report: pytest.TestReport) -> None:
 def write_run_finish_files(
     reporter: Reporter,
     nodeid: str,
-    location: tuple[str, int | None, str],
-    get_check_results: Callable[..., list[dict[str, Any]]] | None = None,
+    location: tuple[str, int | None, str],  # noqa: ARG001
 ) -> None:
-    """Write per-run finish files (procedure.json, parameters.json) and clean up.
+    """Write per-run finish files (procedure.json, parameters.json, checks.json).
 
-    Gated on ``nodeid not in reporter._finished_runs``.  Also captures
-    verification check results from pytest-verify and resets the active tracker.
+    Gated on ``nodeid not in reporter._finished_runs``. Keeps the run's
+    procedure (from stepdoc's steps) and its pytest-verifier checks for the
+    HTML report.
 
     Args:
         reporter: The active ``Reporter`` instance.
         nodeid: The test node ID.
         location: The pytest location tuple ``(file, lineno, testname)``.
-        get_check_results: The ``get_check_results`` callable from
-            ``pytest_verify``, or ``None`` when the plugin is absent.  The
-            caller (``reporter.py``) holds the module-level reference so that
-            monkeypatching via ``monkeypatch.setattr(reporter_mod,
-            "get_check_results", ...)`` continues to work as expected.
     """
-    from ._json_writer import write_parameters_json
-    from ._procedure import _set_tracker
+    from ._json_writer import write_checks_json, write_parameters_json
 
     run_info = reporter.collector.get_run_info(nodeid)
     run_dir = reporter._get_run_dir(nodeid)
 
     # Write procedure.json
-    tracker = reporter._procedure_trackers.get(nodeid)
-    procedure_data = tracker.serialize() if tracker else {"steps": []}
+    procedure_data = reporter.steps.procedure(nodeid)
+    reporter._procedures[nodeid] = procedure_data
     write_procedure_json(run_dir / "procedure.json", procedure_data)
 
     # Write parameters.json (only in main run dir, not retries)
     if nodeid not in reporter._retry_paths:
         write_parameters_json(run_dir / "parameters.json", run_info)
 
-    # Capture verification check results from pytest-verify public API
-    if get_check_results is not None:
-        item = reporter._items.get(nodeid)
-        if item is not None:
-            checks = get_check_results(item)
-            if checks:
-                reporter._check_results[nodeid] = _strip_nested_check_children(checks)
+    # Verification checks from pytest-verifier (report.verify_checks)
+    checks = reporter._attempt_checks.pop(nodeid, [])
+    if checks:
+        reporter._check_results[nodeid] = checks
+        write_checks_json(run_dir / "checks.json", checks)
+    reporter.steps.discard(nodeid)
 
     # Create artifacts directory
     (run_dir / "artifacts").mkdir(parents=True, exist_ok=True)
-
-    # Clean up the active tracker
-    _set_tracker(None)

@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -108,26 +108,26 @@ def test_page_screenshot_baseline(log, browser, baseline_store, page_id, path, t
         ss.info("Waiting for network idle")
         ss.debug("XHR requests completed: 3")
         ss.info("Page loaded", data={"title": title, "render_ms": _sim_render()})
-        substep("Wait for animations to settle")
-        ss.info("No pending CSS transitions or animations")
-        ss.debug("requestAnimationFrame callback count: 0")
+        with step("Wait for animations to settle"):
+            ss.info("No pending CSS transitions or animations")
+            ss.debug("requestAnimationFrame callback count: 0")
 
     with step("Capture full-page screenshot"):
         w, h = browser["viewport"]
         ss.info("Viewport dimensions", data={"width": w, "height": h, "dpr": browser["dpr"]})
-        substep("Scroll to capture full page")
-        ss.info("Page scroll height: 2400px")
-        ss.info("Stitching 3 viewport-sized captures")
-        pixel_hash = _pixel_hash(w, 2400, page_id)
-        ss.info("Screenshot captured", data={"hash": pixel_hash, "size_bytes": w * 2400 * 3})
+        with step("Scroll to capture full page"):
+            ss.info("Page scroll height: 2400px")
+            ss.info("Stitching 3 viewport-sized captures")
+            pixel_hash = _pixel_hash(w, 2400, page_id)
+            ss.info("Screenshot captured", data={"hash": pixel_hash, "size_bytes": w * 2400 * 3})
 
     with step("Compare with baseline"):
         baseline_hash = _pixel_hash(w, 2400, page_id)  # Same seed = match
         ss.info("Baseline hash", data={"hash": baseline_hash})
         ss.info("Current hash", data={"hash": pixel_hash})
-        substep("Pixel-level diff")
-        ss.info("Diff result", data={"changed_pixels": 0, "threshold": 50, "match": True})
-        ss.info("Visual regression check: PASS")
+        with step("Pixel-level diff"):
+            ss.info("Diff result", data={"changed_pixels": 0, "threshold": 50, "match": True})
+            ss.info("Visual regression check: PASS")
 
     assert pixel_hash == baseline_hash
 
@@ -151,31 +151,31 @@ def test_responsive_layout(log, browser, vp_name, width, height):
         resp.info("Page rendered", data={"render_ms": _sim_render()})
 
     with step("Verify layout elements"):
-        substep("Check navigation")
-        if width < 768:
-            resp.info("Hamburger menu visible")
-            resp.debug("Nav drawer: closed by default")
-        else:
-            resp.info("Full navigation bar visible")
-            resp.debug("Nav items: 6 links rendered horizontally")
+        with step("Check navigation"):
+            if width < 768:
+                resp.info("Hamburger menu visible")
+                resp.debug("Nav drawer: closed by default")
+            else:
+                resp.info("Full navigation bar visible")
+                resp.debug("Nav items: 6 links rendered horizontally")
 
-        substep("Check sidebar")
-        if width < 1024:
-            resp.info("Sidebar: collapsed / hidden")
-        else:
-            resp.info("Sidebar: visible", data={"width": 260})
+        with step("Check sidebar"):
+            if width < 1024:
+                resp.info("Sidebar: collapsed / hidden")
+            else:
+                resp.info("Sidebar: visible", data={"width": 260})
 
-        substep("Check content grid")
-        if width < 768:
-            resp.info("Grid: single column", data={"columns": 1})
-        elif width < 1366:
-            resp.info("Grid: 2 columns", data={"columns": 2})
-        else:
-            resp.info("Grid: 3 columns", data={"columns": 3})
-        resp.info("Card components fill available width")
+        with step("Check content grid"):
+            if width < 768:
+                resp.info("Grid: single column", data={"columns": 1})
+            elif width < 1366:
+                resp.info("Grid: 2 columns", data={"columns": 2})
+            else:
+                resp.info("Grid: 3 columns", data={"columns": 3})
+            resp.info("Card components fill available width")
 
-        substep("Check footer")
-        resp.info("Footer visible", data={"stacked": width < 768})
+        with step("Check footer"):
+            resp.info("Footer visible", data={"stacked": width < 768})
 
     with step("Capture responsive screenshot"):
         pixel_hash = _pixel_hash(width, height, f"dashboard-{vp_name}")
@@ -195,24 +195,24 @@ def test_theme_screenshot(log, browser, theme_name, colors):
 
     with step(f"Apply theme: {theme_name}"):
         theme.info("Setting theme", data={"theme": theme_name, "colors": colors})
-        substep("Update CSS custom properties")
-        for prop, value in colors.items():
-            theme.debug(f"--color-{prop}: {value}")
-        theme.info("Theme applied, triggering repaint")
-        theme.debug("Repaint completed in 8ms")
+        with step("Update CSS custom properties"):
+            for prop, value in colors.items():
+                theme.debug(f"--color-{prop}: {value}")
+            theme.info("Theme applied, triggering repaint")
+            theme.debug("Repaint completed in 8ms")
 
     with step("Navigate to settings page"):
         theme.info("Loading /settings/general")
         theme.info("Page rendered", data={"render_ms": _sim_render()})
 
     with step("Verify theme colors"):
-        substep("Check background color")
-        theme.info("body background", data={"expected": colors["bg"], "actual": colors["bg"], "match": True})
-        substep("Check text color")
-        theme.info("body text", data={"expected": colors["text"], "actual": colors["text"], "match": True})
-        substep("Check primary accent")
-        theme.info("Primary button", data={"expected": colors["primary"], "actual": colors["primary"], "match": True})
-        theme.info("All theme colors verified")
+        with step("Check background color"):
+            theme.info("body background", data={"expected": colors["bg"], "actual": colors["bg"], "match": True})
+        with step("Check text color"):
+            theme.info("body text", data={"expected": colors["text"], "actual": colors["text"], "match": True})
+        with step("Check primary accent"):
+            theme.info("Primary button", data={"expected": colors["primary"], "actual": colors["primary"], "match": True})
+            theme.info("All theme colors verified")
 
     with step("Capture themed screenshot"):
         pixel_hash = _pixel_hash(1920, 1080, f"settings-{theme_name}")
@@ -241,9 +241,9 @@ def test_loading_skeleton_states(log, browser):
             ("table-rows", "rect", 400),
         ]
         for name, shape, width in placeholders:
-            substep(f"Check skeleton: {name}")
-            skel.info(f"Skeleton '{name}'", data={"shape": shape, "width": width, "animated": True})
-            skel.debug(f"CSS animation: shimmer 1.5s infinite")
+            with step(f"Check skeleton: {name}"):
+                skel.info(f"Skeleton '{name}'", data={"shape": shape, "width": width, "animated": True})
+                skel.debug(f"CSS animation: shimmer 1.5s infinite")
         skel.info("All skeletons visible", data={"count": len(placeholders)})
 
     with step("Wait for data to load"):
@@ -267,14 +267,14 @@ def test_error_page_404(log, browser):
         err.info("Server returned 404", data={"status": 404})
 
     with step("Verify error page content"):
-        substep("Check illustration")
-        err.info("404 illustration SVG rendered", data={"width": 400, "height": 300})
-        substep("Check heading")
-        err.info("Heading: 'Page Not Found'", data={"tag": "h1", "font_size": "2rem"})
-        substep("Check message")
-        err.info("Message: 'The page you are looking for might have been removed...'")
-        substep("Check back button")
-        err.info("'Go to Dashboard' button rendered", data={"href": "/dashboard", "variant": "primary"})
+        with step("Check illustration"):
+            err.info("404 illustration SVG rendered", data={"width": 400, "height": 300})
+        with step("Check heading"):
+            err.info("Heading: 'Page Not Found'", data={"tag": "h1", "font_size": "2rem"})
+        with step("Check message"):
+            err.info("Message: 'The page you are looking for might have been removed...'")
+        with step("Check back button"):
+            err.info("'Go to Dashboard' button rendered", data={"href": "/dashboard", "variant": "primary"})
 
     with step("Capture error page screenshot"):
         pixel_hash = _pixel_hash(1920, 1080, "error-404")
@@ -296,12 +296,12 @@ def test_infinite_scroll_capture(log, browser):
         with step(f"Scroll to trigger batch {batch}"):
             scroll.info(f"Scrolling to bottom of current content")
             scroll.debug(f"IntersectionObserver triggered for sentinel element")
-            substep("Load next batch")
-            scroll.info(f"Fetching items {batch * 20 + 1} to {(batch + 1) * 20}")
-            scroll.info(f"Batch {batch} loaded", data={"new_items": 20, "total_rendered": (batch + 1) * 20})
-            substep("Capture scroll position screenshot")
-            pixel_hash = _pixel_hash(1920, 1080, f"feed-batch-{batch}")
-            scroll.info(f"Screenshot at batch {batch}", data={"hash": pixel_hash})
+            with step("Load next batch"):
+                scroll.info(f"Fetching items {batch * 20 + 1} to {(batch + 1) * 20}")
+                scroll.info(f"Batch {batch} loaded", data={"new_items": 20, "total_rendered": (batch + 1) * 20})
+            with step("Capture scroll position screenshot"):
+                pixel_hash = _pixel_hash(1920, 1080, f"feed-batch-{batch}")
+                scroll.info(f"Screenshot at batch {batch}", data={"hash": pixel_hash})
 
     with step("Verify lazy-loaded images"):
         scroll.info("Checking image loading states")
@@ -322,18 +322,18 @@ def test_print_stylesheet(log, browser):
         pr.info("Print stylesheet activated")
 
     with step("Verify print-specific styles"):
-        substep("Check navigation hidden")
-        pr.info("Navigation bar: display: none")
-        substep("Check sidebar hidden")
-        pr.info("Sidebar: display: none")
-        substep("Check background colors removed")
-        pr.info("Body background: white")
-        pr.info("Card backgrounds: transparent")
-        substep("Check font colors")
-        pr.info("Text color: black")
-        pr.debug("Link colors preserved with underline")
-        substep("Check page margins")
-        pr.info("@page margins", data={"top": "1cm", "right": "1.5cm", "bottom": "1cm", "left": "1.5cm"})
+        with step("Check navigation hidden"):
+            pr.info("Navigation bar: display: none")
+        with step("Check sidebar hidden"):
+            pr.info("Sidebar: display: none")
+        with step("Check background colors removed"):
+            pr.info("Body background: white")
+            pr.info("Card backgrounds: transparent")
+        with step("Check font colors"):
+            pr.info("Text color: black")
+            pr.debug("Link colors preserved with underline")
+        with step("Check page margins"):
+            pr.info("@page margins", data={"top": "1cm", "right": "1.5cm", "bottom": "1cm", "left": "1.5cm"})
 
     with step("Capture print preview"):
         pixel_hash = _pixel_hash(794, 1123, "print-preview")  # A4 at 96dpi
@@ -354,16 +354,16 @@ def test_animation_frame_capture(log, browser):
     keyframes = [0, 25, 50, 75, 100]
     with step("Capture keyframes"):
         for pct in keyframes:
-            substep(f"Frame at {pct}%")
-            opacity = round(pct / 100, 2)
-            translate_y = round(20 * (1 - pct / 100), 1)
-            anim.info(f"Keyframe {pct}%", data={
-                "opacity": opacity,
-                "translateY": f"{translate_y}px",
-                "timestamp_ms": pct * 6,
-            })
-            pixel_hash = _pixel_hash(1920, 200, f"hero-frame-{pct}")
-            anim.debug(f"Frame hash: {pixel_hash}")
+            with step(f"Frame at {pct}%"):
+                opacity = round(pct / 100, 2)
+                translate_y = round(20 * (1 - pct / 100), 1)
+                anim.info(f"Keyframe {pct}%", data={
+                    "opacity": opacity,
+                    "translateY": f"{translate_y}px",
+                    "timestamp_ms": pct * 6,
+                })
+                pixel_hash = _pixel_hash(1920, 200, f"hero-frame-{pct}")
+                anim.debug(f"Frame hash: {pixel_hash}")
 
     with step("Verify animation smoothness"):
         anim.info("Frame count at 60fps: 36 frames over 600ms")
@@ -388,12 +388,12 @@ def test_retina_display_rendering(log, browser):
         retina.info("Page rendered", data={"render_ms": _sim_render()})
 
     with step("Verify image sharpness"):
-        substep("Check logo")
-        retina.info("Logo: loaded 2x variant", data={"natural_size": "200x50", "display_size": "100x25", "ratio": 2})
-        substep("Check icons")
-        retina.info("SVG icons: resolution-independent (sharp at any DPR)")
-        substep("Check avatar images")
-        retina.info("Avatar: loaded 2x variant", data={"natural_size": "160x160", "display_size": "80x80"})
+        with step("Check logo"):
+            retina.info("Logo: loaded 2x variant", data={"natural_size": "200x50", "display_size": "100x25", "ratio": 2})
+        with step("Check icons"):
+            retina.info("SVG icons: resolution-independent (sharp at any DPR)")
+        with step("Check avatar images"):
+            retina.info("Avatar: loaded 2x variant", data={"natural_size": "160x160", "display_size": "80x80"})
 
     with step("Capture retina screenshot"):
         pixel_hash = _pixel_hash(2880, 1800, "dashboard-retina-2x")
@@ -421,27 +421,27 @@ def test_toast_notification_lifecycle(log, browser):
 
     with step("Trigger success toast"):
         toast.info("Dispatching toast event", data={"type": "success", "message": "Settings saved!"})
-        substep("Render toast")
-        toast.info("Toast element created", data={
-            "position": "top-right", "z_index": 9999, "bg": "#22C55E",
-        })
-        toast.debug("Entrance animation: slideIn from right, 200ms")
-        substep("Capture visible state")
-        pixel_hash = _pixel_hash(400, 80, "toast-success")
-        toast.info("Toast screenshot", data={"hash": pixel_hash})
+        with step("Render toast"):
+            toast.info("Toast element created", data={
+                "position": "top-right", "z_index": 9999, "bg": "#22C55E",
+            })
+            toast.debug("Entrance animation: slideIn from right, 200ms")
+        with step("Capture visible state"):
+            pixel_hash = _pixel_hash(400, 80, "toast-success")
+            toast.info("Toast screenshot", data={"hash": pixel_hash})
 
     with step("Wait for auto-dismiss"):
         toast.info("Auto-dismiss timer: 5000ms")
         toast.debug("Progress bar animating: width 100% -> 0% over 5s")
-        substep("Dismiss animation")
-        toast.info("Exit animation: fadeSlideOut 300ms")
-        toast.info("Toast removed from DOM")
+        with step("Dismiss animation"):
+            toast.info("Exit animation: fadeSlideOut 300ms")
+            toast.info("Toast removed from DOM")
 
     with step("Verify toast stack behavior"):
         toast.info("Triggering 3 toasts in quick succession")
         for i in range(3):
-            substep(f"Toast {i + 1} rendered")
-            toast.info(f"Toast {i + 1}", data={"offset_top": i * 88, "stacked": True})
+            with step(f"Toast {i + 1} rendered"):
+                toast.info(f"Toast {i + 1}", data={"offset_top": i * 88, "stacked": True})
         toast.info("Stack spacing verified", data={"gap": 8, "total_height": 3 * 80 + 2 * 8})
 
     assert True
@@ -454,16 +454,16 @@ def test_modal_screenshot_overlay(log, browser):
     with step("Open confirmation modal"):
         modal.info("Triggering modal via button click")
         modal.info("Backdrop rendered", data={"opacity": 0.5, "bg": "rgba(0,0,0,0.5)"})
-        substep("Animate modal entrance")
-        modal.info("Modal scale: 0.95 -> 1.0 over 200ms")
+        with step("Animate modal entrance"):
+            modal.info("Modal scale: 0.95 -> 1.0 over 200ms")
 
     with step("Capture modal screenshot"):
-        substep("Capture with backdrop")
-        pixel_hash = _pixel_hash(1920, 1080, "modal-with-backdrop")
-        modal.info("Full page with modal", data={"hash": pixel_hash})
-        substep("Capture modal element only")
-        modal_hash = _pixel_hash(480, 320, "modal-content-only")
-        modal.info("Modal content", data={"hash": modal_hash, "width": 480, "height": 320})
+        with step("Capture with backdrop"):
+            pixel_hash = _pixel_hash(1920, 1080, "modal-with-backdrop")
+            modal.info("Full page with modal", data={"hash": pixel_hash})
+        with step("Capture modal element only"):
+            modal_hash = _pixel_hash(480, 320, "modal-content-only")
+            modal.info("Modal content", data={"hash": modal_hash, "width": 480, "height": 320})
 
     with step("Verify focus trap"):
         modal.info("Tab key pressed 5 times")
@@ -527,9 +527,9 @@ def test_cdn_asset_loading_flaky(log, browser, flaky_service):
     with step("Verify page rendered with assets"):
         cdn.info("CSS applied: layout matches expected")
         cdn.info("JS initialized: interactive elements responding")
-        substep("Capture screenshot with full assets")
-        pixel_hash = _pixel_hash(1920, 1080, "dashboard-with-cdn-assets")
-        cdn.info("Screenshot captured", data={"hash": pixel_hash})
+        with step("Capture screenshot with full assets"):
+            pixel_hash = _pixel_hash(1920, 1080, "dashboard-with-cdn-assets")
+            cdn.info("Screenshot captured", data={"hash": pixel_hash})
 
     assert result.startswith("ok:")
 

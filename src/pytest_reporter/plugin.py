@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from . import _hookspecs
+from . import _hookspecs, _stepdoc
 from ._context import RunContext
 from ._logger import Logger
 from .reporter import Reporter
@@ -36,15 +36,27 @@ def pytest_addoption(parser: Parser) -> None:
         default=0,
         help="Maximum retry attempts per failed test (default: 0, disabled)",
     )
+    parser.addini(
+        "report_stepdoc",
+        type="bool",
+        default=True,
+        help="With --report-dir and stepdoc installed, make stepdoc record the test "
+        "procedures (and save its run record as stepdoc.json in the run folder) "
+        "when no stepdoc option is given (default: true)",
+    )
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: Config) -> None:
+    # tryfirst: runs before stepdoc's pytest_configure, which reads the
+    # stepdoc options that _stepdoc.activate() may set.
     report_dir: str | None = config.getoption("--report-dir", default=None)
     if report_dir:
         # Only register on the controller, not xdist workers
         if not hasattr(config, "workerinput"):
             max_retries: int = config.getoption("--report-retries", default=0)
             context = RunContext(Path(report_dir))
+            _stepdoc.activate(config, context.run_dir)
             config.pluginmanager.register(
                 Reporter(config, context, max_retries=max_retries),
                 "pytest_reporter",
@@ -166,8 +178,8 @@ def report_seed(request: pytest.FixtureRequest) -> dict[str, object]:
     """Provide a mutable seed holder for the HTML Report tab's Seed row.
 
     Set ``report_seed["value"]`` to an ``int`` or ``str`` to override the
-    auto-detected RNG seed (from ``pytest_reporter_seed`` hook or
-    ``pytest_strategy``).  Manual fixture value takes highest precedence.
+    auto-detected RNG seed (from ``pytest_reporter_seed`` hook or the
+    pytest-strategies rows).  Manual fixture value takes highest precedence.
 
     When ``--report-dir`` is not active (reporter inactive), returns a
     throwaway dict so callers never crash.

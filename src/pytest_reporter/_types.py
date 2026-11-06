@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
-
-if TYPE_CHECKING:
-    from pytest_reporter.fmt import Segment
+from typing import Any, Literal, TypedDict
 
 # --- Metadata panel type alias (report-metadata-panel) ---
 
@@ -133,32 +130,39 @@ class ParamEntry(TypedDict):
     value: str
 
 
-class ParametersJson(TypedDict):
+class ParametersJson(TypedDict, total=False):
     parametrize_id: str | None
     params: dict[str, ParamEntry]
+    strategy: dict[str, Any]  # pytest-strategies row, only for strategy tests
 
 
 # --- procedure.json schema (§6.7) ---
 
 
 class ProcedureNodeJson(TypedDict, total=False):
-    """A single node in a recursive procedure tree (step, substep, or sub-substep).
+    """A node of a recursive procedure tree, built from stepdoc's steps.
 
-    All fields are optional (total=False) to support both intermediate nodes
-    (which always have substeps) and leaf nodes (which omit or have empty substeps).
-    The ``number`` field is absent before ``serialize()`` and assigned at serialize time.
-    ``substeps`` is absent or empty for leaf nodes; present and non-empty for parents.
+    ``kind`` says what the node is: a ``step`` (``with step(...)``), an
+    ``action`` on the system under test (a line of stepdoc's executed report),
+    or a ``check`` (a ``Verify ...`` line: an assert, a pytest-verifier check,
+    ``step(..., check=...)``). Steps carry timing, ``section`` (``setup``,
+    ``procedure`` or ``teardown``) and ``exc``; actions and checks may carry a
+    ``result`` (``got 1024``), and checks a ``detail``. ``substeps`` is absent
+    for leaves. Files written by pytest-reporter 0.2 (no ``kind``) are steps.
     """
 
+    kind: str
     number: str
     description: str
-    description_segments: list[Segment]
     outcome: str
     start_time: str
     end_time: str
     duration_seconds: float
     exc: dict[str, str] | None
     check: dict[str, Any] | None
+    section: str
+    result: str
+    detail: str
     substeps: list[ProcedureNodeJson]  # recursive; absent / [] => leaf node
 
 
@@ -167,8 +171,9 @@ StepJson = ProcedureNodeJson
 SubstepJson = ProcedureNodeJson
 
 
-class ProcedureJson(TypedDict):
+class ProcedureJson(TypedDict, total=False):
     steps: list[ProcedureNodeJson]
+    source: str  # "stepdoc" when the steps came from stepdoc
 
 
 # --- Dashboard grouping schema (configurable-dashboard) ---
@@ -224,6 +229,8 @@ class RunInfo:
     # Presentation-only: populated by register_items; never affects folder paths.
     class_name: str | None = None  # class containing the test method, or None
     display_name: str = ""  # bare method name; equals function_name for plain functions
+    # pytest-strategies row (VectorInfo.to_dict()), or None for other tests
+    strategy: dict[str, Any] | None = None
 
 
 @dataclass

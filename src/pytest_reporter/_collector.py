@@ -11,6 +11,33 @@ if TYPE_CHECKING:
     import pytest
 
 
+def strategy_row(item: pytest.Item) -> dict[str, Any] | None:
+    """The pytest-strategies row a test runs, as ``VectorInfo.to_dict()``.
+
+    pytest-strategies (4.x) marks each generated test with a ``strategy`` mark
+    holding the row's ``VectorInfo``: strategy name, kind (``directed``,
+    ``random``, ...), row name, values and the run's seed. Read through the
+    mark, so pytest-strategies is never imported.
+
+    Args:
+        item: A collected test item.
+
+    Returns:
+        The row's JSON-ready dict, or ``None`` when the test runs no strategy row.
+    """
+    try:
+        for mark in item.iter_markers("strategy"):
+            info = mark.args[0] if mark.args else None
+            to_dict = getattr(info, "to_dict", None)
+            if callable(to_dict):
+                row = to_dict()
+                if isinstance(row, dict):
+                    return row
+    except Exception:  # noqa: BLE001 - a foreign mark must never break collection
+        return None
+    return None
+
+
 class DataCollector:
     """Collects and indexes test data during the pytest run."""
 
@@ -61,7 +88,9 @@ class DataCollector:
                 class_name_val, display_name_val = None, func_name
 
             # Extract markers
-            markers = [m.name for m in item.iter_markers() if m.name not in ("parametrize",)]
+            markers = [
+                m.name for m in item.iter_markers() if m.name not in ("parametrize", "strategy")
+            ]
 
             # Extract docstring
             docstring: str | None = None
@@ -80,6 +109,7 @@ class DataCollector:
                 markers=markers,
                 class_name=class_name_val,
                 display_name=display_name_val,
+                strategy=strategy_row(item),
             )
             self._run_map[item.nodeid] = run_info
 

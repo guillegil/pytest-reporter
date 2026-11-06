@@ -6,10 +6,14 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from ._context import sanitize_path_component
-from ._json_writer import write_failure_log, write_phase_log, write_procedure_json
+from ._json_writer import (
+    write_checks_json,
+    write_failure_log,
+    write_phase_log,
+    write_procedure_json,
+)
 from ._logger import Logger
-from ._phase_capture import flush_table_artifacts
-from ._procedure import ProcedureTracker, _set_tracker
+from ._phase_capture import flush_table_artifacts, note_verify_checks
 from ._types import PhaseData, RetryData
 
 if TYPE_CHECKING:
@@ -76,6 +80,7 @@ def run_with_retries(
     for report in reports:
         entries = all_entries if report.when == "call" else []
         reporter.collector.record_phase(report, entries=entries)
+        note_verify_checks(reporter, report)
         phase = reporter.collector.get_phase(nodeid, report.when)
         if phase is not None:
             run_dir = reporter._get_run_dir(nodeid)
@@ -140,14 +145,11 @@ def run_with_retries(
         # Set retry path so writes go to retry subfolder
         reporter._retry_paths[nodeid] = retry_dir
 
-        # Create fresh logger and procedure tracker for retry
+        # Create fresh logger for retry (steps and checks restart at the
+        # attempt's runtest_setup)
         logger = Logger()
         reporter._test_loggers[nodeid] = logger
         item._reporter_logger = logger  # type: ignore[attr-defined]
-
-        tracker = ProcedureTracker()
-        reporter._procedure_trackers[nodeid] = tracker
-        _set_tracker(tracker)
 
         # Re-execute the test. Use the REAL nextitem (not None): this tears down
         # only function-scoped fixtures (so setup re-runs fresh next attempt and
@@ -180,13 +182,14 @@ def run_with_retries(
                 entries=retry_entries,
             )
             write_phase_log(retry_dir / f"{report.when}.log.json", retry_phase)
+            note_verify_checks(reporter, report)
 
-        # Write procedure.json for retry
-        procedure_data = tracker.serialize() if tracker else {"steps": []}
-        write_procedure_json(retry_dir / "procedure.json", procedure_data)
+        # Write procedure.json (stepdoc steps) and checks.json for retry
+        write_procedure_json(retry_dir / "procedure.json", reporter.steps.procedure(nodeid))
+        retry_checks = reporter._attempt_checks.pop(nodeid, [])
+        if retry_checks:
+            write_checks_json(retry_dir / "checks.json", retry_checks)
         (retry_dir / "artifacts").mkdir(parents=True, exist_ok=True)
-
-        _set_tracker(None)
 
         # Check retry outcome
         retry_call = None
@@ -203,8 +206,9 @@ def run_with_retries(
             final_reports = retry_reports
             break  # Success!
 
-    # Clean up retry path
+    # Clean up retry path and the last attempt's steps
     reporter._retry_paths.pop(nodeid, None)
+    reporter.steps.discard(nodeid)
 
     # Note: each attempt ran runtestprotocol(nextitem=nextitem), so the last
     # attempt already transitioned fixture teardown to the real nextitem (only

@@ -50,12 +50,19 @@ def write_parameters_json(path: Path, run_info: RunInfo) -> None:
         parametrize_id=run_info.parametrize_id,
         params=params,
     )
+    if run_info.strategy is not None:
+        data["strategy"] = run_info.strategy
     _write_json(path, data)
 
 
 def write_procedure_json(path: Path, procedure_data: dict[str, Any]) -> None:
     """Write procedure.json for a test run."""
     _write_json(path, procedure_data)
+
+
+def write_checks_json(path: Path, checks: list[dict[str, Any]]) -> None:
+    """Write checks.json: the run's pytest-verifier checks, in the order made."""
+    _write_json(path, {"checks": checks})
 
 
 def write_test_log_json(path: Path, aggregate: TestLogJson) -> None:

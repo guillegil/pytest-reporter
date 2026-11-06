@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -46,28 +46,28 @@ def test_login_valid_admin(log):
     auth = log.child("auth")
 
     with step("Prepare credentials"):
-        substep("Load admin user record")
-        auth.info("Loaded user from directory", data={"username": "admin", "source": "ldap"})
-        substep("Hash incoming password")
-        pwd_hash = hashlib.sha256(b"Adm!n2026").hexdigest()
-        auth.debug("Password hashed", data={"algo": "sha256", "length": len(pwd_hash)})
+        with step("Load admin user record"):
+            auth.info("Loaded user from directory", data={"username": "admin", "source": "ldap"})
+        with step("Hash incoming password"):
+            pwd_hash = hashlib.sha256(b"Adm!n2026").hexdigest()
+            auth.debug("Password hashed", data={"algo": "sha256", "length": len(pwd_hash)})
 
     with step("Authenticate against user store"):
-        substep("Compare hashes")
-        result = _simulate_login("admin", "Adm!n2026")
-        auth.info("Credential check passed", data={"match": True, "role": result["role"]})
-        substep("Verify account not locked")
-        auth.info("Account lock check", data={"locked": False, "failed_attempts": 0})
-        substep("Verify account is active")
-        auth.info("Account status", data={"active": True, "last_login": "2026-03-30T10:15:00Z"})
+        with step("Compare hashes"):
+            result = _simulate_login("admin", "Adm!n2026")
+            auth.info("Credential check passed", data={"match": True, "role": result["role"]})
+        with step("Verify account not locked"):
+            auth.info("Account lock check", data={"locked": False, "failed_attempts": 0})
+        with step("Verify account is active"):
+            auth.info("Account status", data={"active": True, "last_login": "2026-03-30T10:15:00Z"})
 
     with step("MFA challenge"):
-        substep("Generate TOTP seed")
-        auth.info("TOTP challenge issued", data={"method": "totp", "digits": 6, "interval": 30})
-        substep("Validate TOTP code")
-        totp_code = "482917"
-        auth.info("TOTP code submitted", data={"code_length": len(totp_code)})
-        auth.info("MFA verification passed", data={"method": "totp", "verified": True})
+        with step("Generate TOTP seed"):
+            auth.info("TOTP challenge issued", data={"method": "totp", "digits": 6, "interval": 30})
+        with step("Validate TOTP code"):
+            totp_code = "482917"
+            auth.info("TOTP code submitted", data={"code_length": len(totp_code)})
+            auth.info("MFA verification passed", data={"method": "totp", "verified": True})
 
     with step("Issue session token"):
         token = result["token"]
@@ -96,10 +96,10 @@ def test_login_valid_non_mfa_user(log):
 
     with step("Submit credentials for alice"):
         auth.info("Login attempt", data={"username": "alice", "ip": "192.168.1.50"})
-        substep("Validate username format")
-        auth.debug("Username validated", data={"length": 5, "allowed_chars": True})
-        substep("Rate-limit check")
-        auth.info("Rate limit status", data={"bucket": "alice", "remaining": 9, "window_seconds": 300})
+        with step("Validate username format"):
+            auth.debug("Username validated", data={"length": 5, "allowed_chars": True})
+        with step("Rate-limit check"):
+            auth.info("Rate limit status", data={"bucket": "alice", "remaining": 9, "window_seconds": 300})
 
     with step("Authenticate"):
         result = _simulate_login("alice", "Al1ceP@ss")
@@ -122,14 +122,14 @@ def test_login_unknown_user(log):
 
     with step("Submit credentials for unknown user"):
         auth.info("Login attempt", data={"username": "nobody", "ip": "203.0.113.7"})
-        substep("Look up user in directory")
-        auth.warning("User not found in LDAP", data={"username": "nobody", "searched": ["ldap", "local_db"]})
+        with step("Look up user in directory"):
+            auth.warning("User not found in LDAP", data={"username": "nobody", "searched": ["ldap", "local_db"]})
 
     with step("Return authentication failure"):
         result = _simulate_login("nobody", "anything")
         auth.info("Auth result", data={"ok": False, "error": result["error"], "code": 401})
-        substep("Increment failed attempt counter")
-        auth.info("Failed attempt recorded", data={"ip": "203.0.113.7", "total_failures": 4})
+        with step("Increment failed attempt counter"):
+            auth.info("Failed attempt recorded", data={"ip": "203.0.113.7", "total_failures": 4})
 
     with step("Security event"):
         sec = log.child("security")
@@ -149,15 +149,15 @@ def test_login_wrong_password(log):
 
     with step("Submit wrong password"):
         auth.info("Login attempt", data={"username": "bob", "ip": "10.0.0.99"})
-        substep("Hash submitted password")
-        wrong_hash = hashlib.sha256(b"wrong_password").hexdigest()
-        auth.debug("Password hashed", data={"algo": "sha256"})
+        with step("Hash submitted password"):
+            wrong_hash = hashlib.sha256(b"wrong_password").hexdigest()
+            auth.debug("Password hashed", data={"algo": "sha256"})
 
     with step("Compare hashes"):
         result = _simulate_login("bob", "wrong_password")
         auth.warning("Password mismatch", data={"username": "bob"})
-        substep("Update failed attempt counter")
-        auth.info("Failed attempts", data={"username": "bob", "count": 2, "max": 5})
+        with step("Update failed attempt counter"):
+            auth.info("Failed attempts", data={"username": "bob", "count": 2, "max": 5})
 
     with step("Audit trail"):
         audit = log.child("audit")
@@ -206,10 +206,10 @@ def test_login_credential_matrix(log, username, password, expect_ok):
 
     with step(f"Authenticate user={username!r}"):
         auth.info("Attempt", data={"username": username, "password_length": len(password)})
-        substep("Hash password")
-        auth.debug("SHA-256 digest computed")
-        substep("Look up user record")
-        auth.info("User lookup", data={"found": username in _VALID_USERS})
+        with step("Hash password"):
+            auth.debug("SHA-256 digest computed")
+        with step("Look up user record"):
+            auth.info("User lookup", data={"found": username in _VALID_USERS})
 
     with step("Evaluate result"):
         result = _simulate_login(username, password)
@@ -234,13 +234,13 @@ def test_session_expiry(log):
     with step("Create session"):
         token = "a1b2c3d4e5f60000"
         session.info("Session created", data={"token_prefix": token[:8], "ttl": 3600})
-        substep("Store in session backend")
-        session.info("Stored in Redis", data={"key": f"sess:{token[:8]}", "db": 2})
+        with step("Store in session backend"):
+            session.info("Stored in Redis", data={"key": f"sess:{token[:8]}", "db": 2})
 
     with step("Advance time past TTL"):
         session.info("Simulating clock advance", data={"advance_seconds": 3601})
-        substep("Query session store")
-        session.warning("Session not found -- expired", data={"key": f"sess:{token[:8]}"})
+        with step("Query session store"):
+            session.warning("Session not found -- expired", data={"key": f"sess:{token[:8]}"})
 
     with step("Verify expiry behavior"):
         session.info("Client receives 401", data={"status": 401, "body": "session_expired"})
@@ -255,14 +255,14 @@ def test_session_refresh(log):
 
     with step("Create session with 30-min TTL"):
         session.info("Session created", data={"ttl": 1800, "user": "alice"})
-        substep("Record creation timestamp")
-        session.debug("Timestamps", data={"created_at": 1711900000, "expires_at": 1711901800})
+        with step("Record creation timestamp"):
+            session.debug("Timestamps", data={"created_at": 1711900000, "expires_at": 1711901800})
 
     with step("Activity within window"):
         for i in range(3):
-            substep(f"Request {i + 1}")
-            session.info(f"Request received", data={"request_num": i + 1, "path": f"/api/resource/{i}"})
-            session.debug("TTL refreshed", data={"new_expires_at": 1711901800 + (i + 1) * 600})
+            with step(f"Request {i + 1}"):
+                session.info(f"Request received", data={"request_num": i + 1, "path": f"/api/resource/{i}"})
+                session.debug("TTL refreshed", data={"new_expires_at": 1711901800 + (i + 1) * 600})
 
     with step("Verify session still active"):
         session.info("Session lookup", data={"found": True, "remaining_ttl": 1200})
@@ -276,14 +276,14 @@ def test_concurrent_sessions_limit(log):
 
     with step("Create 3 sessions for bob"):
         for i in range(3):
-            substep(f"Session {i + 1}")
-            session.info(f"Session created", data={"session_id": f"sess_{i}", "device": f"device_{i}"})
+            with step(f"Session {i + 1}"):
+                session.info(f"Session created", data={"session_id": f"sess_{i}", "device": f"device_{i}"})
 
     with step("Attempt 4th session"):
         session.warning("Max sessions reached", data={"max": 3, "current": 3})
-        substep("Evict oldest session")
-        session.info("Evicted session", data={"evicted": "sess_0", "reason": "max_concurrent"})
-        session.info("New session created", data={"session_id": "sess_3", "device": "device_3"})
+        with step("Evict oldest session"):
+            session.info("Evicted session", data={"evicted": "sess_0", "reason": "max_concurrent"})
+            session.info("New session created", data={"session_id": "sess_3", "device": "device_3"})
 
     with step("Verify session count"):
         active = ["sess_1", "sess_2", "sess_3"]
@@ -314,8 +314,8 @@ def test_mfa_verification(log, mfa_method, code, valid):
 
     with step(f"Issue MFA challenge via {mfa_method}"):
         mfa.info("Challenge issued", data={"method": mfa_method, "user": "admin"})
-        substep("Generate expected code")
-        mfa.debug("Expected code generated", data={"digits": 6, "ttl": 300})
+        with step("Generate expected code"):
+            mfa.debug("Expected code generated", data={"digits": 6, "ttl": 300})
 
     with step("Validate submitted code"):
         mfa.info("Code submitted", data={"method": mfa_method, "code_length": len(code)})
@@ -345,11 +345,11 @@ def test_rate_limiting_enforced(log):
 
     with step("Simulate 7 rapid attempts"):
         for i in range(1, 8):
-            substep(f"Attempt {i}")
-            blocked = i > 5
-            rl.info("Login attempt", data={"attempt": i, "ip": "10.0.0.77", "blocked": blocked})
-            if blocked:
-                rl.warning("Rate limit exceeded", data={"attempt": i, "retry_after": 600 - (i - 5) * 10})
+            with step(f"Attempt {i}"):
+                blocked = i > 5
+                rl.info("Login attempt", data={"attempt": i, "ip": "10.0.0.77", "blocked": blocked})
+                if blocked:
+                    rl.warning("Rate limit exceeded", data={"attempt": i, "retry_after": 600 - (i - 5) * 10})
 
     with step("Verify rate limit response"):
         rl.info("Final status", data={"blocked": True, "remaining_lockout": 580})
@@ -363,14 +363,14 @@ def test_account_lockout_after_failures(log):
 
     with step("Simulate 5 failed login attempts"):
         for i in range(1, 6):
-            substep(f"Failed attempt {i}")
-            auth.warning("Bad password", data={"username": "bob", "attempt": i})
+            with step(f"Failed attempt {i}"):
+                auth.warning("Bad password", data={"username": "bob", "attempt": i})
 
     with step("Attempt login after lockout"):
         auth.info("Login attempt on locked account", data={"username": "bob", "locked": True})
-        substep("Check lockout status")
-        auth.error("Account is locked", data={"unlock_at": "2026-04-02T12:30:00Z", "failed_count": 5})
-        response_code = 423
+        with step("Check lockout status"):
+            auth.error("Account is locked", data={"unlock_at": "2026-04-02T12:30:00Z", "failed_count": 5})
+            response_code = 423
 
     with step("Verify lockout response"):
         auth.info("Expected 423 Locked", data={"actual": response_code})
@@ -410,9 +410,9 @@ def test_password_policy(log, password, meets_policy):
             "has_special": any(not c.isalnum() for c in password),
         }
         for check_name, passed in checks.items():
-            substep(f"Check: {check_name}")
-            lvl = "info" if passed else "warning"
-            getattr(policy, lvl)(f"{check_name}: {'pass' if passed else 'fail'}", data={"value": passed})
+            with step(f"Check: {check_name}"):
+                lvl = "info" if passed else "warning"
+                getattr(policy, lvl)(f"{check_name}: {'pass' if passed else 'fail'}", data={"value": passed})
 
     with step("Policy verdict"):
         all_pass = all(checks.values())
@@ -446,10 +446,10 @@ def test_login_with_flaky_auth_service(log, flaky_service):
 
     with step("Call authentication service"):
         auth.info("Connecting to auth-svc", data={"host": "auth.internal", "port": 8443})
-        substep("Send credential payload")
-        auth.info("Payload sent", data={"username": "alice", "encrypted": True})
-        result = flaky_service("login_auth_svc")
-        auth.info("Service response", data={"result": result})
+        with step("Send credential payload"):
+            auth.info("Payload sent", data={"username": "alice", "encrypted": True})
+            result = flaky_service("login_auth_svc")
+            auth.info("Service response", data={"result": result})
 
     with step("Process auth response"):
         auth.info("Token extracted", data={"token_prefix": "abc12345"})
@@ -466,9 +466,9 @@ def test_login_with_flaky_session_store(log, flaky_service):
 
     with step("Store session in Redis"):
         session.info("Connecting to session store", data={"host": "redis-cluster.internal"})
-        substep("Execute SET command")
-        result = flaky_service("login_session_redis")
-        session.info("Session stored", data={"result": result, "ttl": 3600})
+        with step("Execute SET command"):
+            result = flaky_service("login_session_redis")
+            session.info("Session stored", data={"result": result, "ttl": 3600})
 
     assert result == "ok:login_session_redis"
 
@@ -482,11 +482,11 @@ def test_login_with_flaky_audit_log(log, flaky_service):
 
     with step("Write audit event to message queue"):
         audit.info("Publishing to audit queue", data={"queue": "audit.login.events"})
-        substep("Serialize event")
-        audit.debug("Event serialized", data={"format": "avro", "size_bytes": 512})
-        substep("Publish")
-        result = flaky_service("login_audit_mq")
-        audit.info("Audit event published", data={"result": result, "message_id": "msg_00a1"})
+        with step("Serialize event"):
+            audit.debug("Event serialized", data={"format": "avro", "size_bytes": 512})
+        with step("Publish"):
+            result = flaky_service("login_audit_mq")
+            audit.info("Audit event published", data={"result": result, "message_id": "msg_00a1"})
 
     assert result.startswith("ok")
 
@@ -502,11 +502,11 @@ def test_login_response_time_sla(log):
 
     with step("Measure login latency"):
         perf.info("Starting timer")
-        substep("Send login request")
-        perf.info("Request sent", data={"endpoint": "/api/v1/auth/login", "method": "POST"})
-        substep("Receive response")
-        response_time = 3.47
-        perf.warning("Slow response", data={"elapsed_seconds": response_time, "threshold": 2.0})
+        with step("Send login request"):
+            perf.info("Request sent", data={"endpoint": "/api/v1/auth/login", "method": "POST"})
+        with step("Receive response"):
+            response_time = 3.47
+            perf.warning("Slow response", data={"elapsed_seconds": response_time, "threshold": 2.0})
 
     with step("Evaluate SLA compliance"):
         perf.error("SLA breached", data={"actual": response_time, "limit": 2.0})

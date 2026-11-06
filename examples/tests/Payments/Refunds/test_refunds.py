@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -28,33 +28,33 @@ def test_refund_reason_routing(log, reason: str, expected_approval: str):
     refund = log.child("refund")
     policy = log.child("policy")
 
-    step("Submit refund request")
-    refund.info("Refund requested", data={
-        "order_id": "ord_rr1",
-        "reason": reason,
-        "amount": 89.99,
-        "currency": "USD",
-        "customer_id": "cust_rr1",
-    })
-    refund.debug("Order details fetched", data={"order_date": "2026-03-15", "payment_method": "card", "charge_id": "ch_rr1"})
+    with step("Submit refund request"):
+        refund.info("Refund requested", data={
+            "order_id": "ord_rr1",
+            "reason": reason,
+            "amount": 89.99,
+            "currency": "USD",
+            "customer_id": "cust_rr1",
+        })
+        refund.debug("Order details fetched", data={"order_date": "2026-03-15", "payment_method": "card", "charge_id": "ch_rr1"})
 
-    with step("Evaluate refund policy"):
-        substep("Check refund window")
-        policy.info("Checking return window", data={"order_date": "2026-03-15", "days_since": 18, "max_days": 30})
-        policy.debug("Within return window")
+        with step("Evaluate refund policy"):
+            with step("Check refund window"):
+                policy.info("Checking return window", data={"order_date": "2026-03-15", "days_since": 18, "max_days": 30})
+                policy.debug("Within return window")
 
-        substep("Match reason to workflow")
-        policy.info("Reason classification", data={"reason": reason, "category": expected_approval})
-        if expected_approval == "requires_investigation":
-            policy.warning("Investigation required", data={"reason": reason, "escalated_to": "fraud_team"})
-        else:
-            policy.info("Auto-approval criteria met", data={"reason": reason})
+            with step("Match reason to workflow"):
+                policy.info("Reason classification", data={"reason": reason, "category": expected_approval})
+                if expected_approval == "requires_investigation":
+                    policy.warning("Investigation required", data={"reason": reason, "escalated_to": "fraud_team"})
+                else:
+                    policy.info("Auto-approval criteria met", data={"reason": reason})
 
-    step("Route refund")
-    refund.info("Refund routed", data={"workflow": expected_approval, "estimated_processing_days": 3 if expected_approval == "auto_approved" else 10})
-    refund.debug("Workflow event emitted", data={"event": "refund.routed", "queue": expected_approval})
+    with step("Route refund"):
+        refund.info("Refund routed", data={"workflow": expected_approval, "estimated_processing_days": 3 if expected_approval == "auto_approved" else 10})
+        refund.debug("Workflow event emitted", data={"event": "refund.routed", "queue": expected_approval})
 
-    assert expected_approval in ("auto_approved", "requires_investigation")
+        assert expected_approval in ("auto_approved", "requires_investigation")
 
 
 @pytest.mark.parametrize(
@@ -70,36 +70,36 @@ def test_refund_partial_amounts(log, refund_pct: float):
     order_total = 200.00
     refund_amount = round(order_total * refund_pct, 2)
 
-    step("Calculate refund amount")
-    refund.info("Refund calculation", data={
-        "order_total": order_total,
-        "refund_pct": refund_pct,
-        "refund_amount": refund_amount,
-    })
-    refund.debug("Tax portion of refund", data={"tax_refunded": round(refund_amount * 0.08, 2)})
-
-    with step("Process refund"):
-        substep("Validate amount against original charge")
-        refund.info("Validation passed", data={"refund_amount": refund_amount, "original_charge": order_total})
-
-        substep("Issue refund via gateway")
-        refund.info("Refund issued", data={
-            "refund_id": f"ref_{int(refund_pct * 100)}",
-            "charge_id": "ch_partial1",
-            "amount": refund_amount,
-            "status": "succeeded",
+    with step("Calculate refund amount"):
+        refund.info("Refund calculation", data={
+            "order_total": order_total,
+            "refund_pct": refund_pct,
+            "refund_amount": refund_amount,
         })
+        refund.debug("Tax portion of refund", data={"tax_refunded": round(refund_amount * 0.08, 2)})
 
-    step("Update ledger")
-    ledger.info("Ledger entry created", data={
-        "type": "refund",
-        "amount": -refund_amount,
-        "balance_after": round(order_total - refund_amount, 2),
-    })
-    ledger.debug("General journal entry", data={"debit": "refunds_payable", "credit": "cash", "amount": refund_amount})
+        with step("Process refund"):
+            with step("Validate amount against original charge"):
+                refund.info("Validation passed", data={"refund_amount": refund_amount, "original_charge": order_total})
 
-    assert refund_amount <= order_total
-    assert refund_amount > 0
+            with step("Issue refund via gateway"):
+                refund.info("Refund issued", data={
+                    "refund_id": f"ref_{int(refund_pct * 100)}",
+                    "charge_id": "ch_partial1",
+                    "amount": refund_amount,
+                    "status": "succeeded",
+                })
+
+    with step("Update ledger"):
+        ledger.info("Ledger entry created", data={
+            "type": "refund",
+            "amount": -refund_amount,
+            "balance_after": round(order_total - refund_amount, 2),
+        })
+        ledger.debug("General journal entry", data={"debit": "refunds_payable", "credit": "cash", "amount": refund_amount})
+
+        assert refund_amount <= order_total
+        assert refund_amount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -114,41 +114,41 @@ def test_refund_full_with_credit_note(log):
 
     order_total = 149.99
 
-    step("Initiate full refund")
-    refund.info("Full refund requested", data={"order_id": "ord_full1", "amount": order_total, "reason": "defective_product"})
-    refund.debug("Customer refund history", data={"prior_refunds": 0, "lifetime_value": 1250.00})
+    with step("Initiate full refund"):
+        refund.info("Full refund requested", data={"order_id": "ord_full1", "amount": order_total, "reason": "defective_product"})
+        refund.debug("Customer refund history", data={"prior_refunds": 0, "lifetime_value": 1250.00})
 
-    with step("Reverse payment"):
-        substep("Send refund to gateway")
-        gateway.info("POST /v1/refunds", data={
-            "charge_id": "ch_full1",
-            "amount": int(order_total * 100),
-            "reason": "requested_by_customer",
-        })
-        gateway.debug("Gateway response time", data={"elapsed_ms": 287})
-        gateway.info("Refund processed", data={"refund_id": "re_full1", "status": "succeeded"})
+        with step("Reverse payment"):
+            with step("Send refund to gateway"):
+                gateway.info("POST /v1/refunds", data={
+                    "charge_id": "ch_full1",
+                    "amount": int(order_total * 100),
+                    "reason": "requested_by_customer",
+                })
+                gateway.debug("Gateway response time", data={"elapsed_ms": 287})
+                gateway.info("Refund processed", data={"refund_id": "re_full1", "status": "succeeded"})
 
-        substep("Verify refund status")
-        gateway.info("GET /v1/refunds/re_full1", data={"status": "succeeded", "amount": int(order_total * 100)})
+            with step("Verify refund status"):
+                gateway.info("GET /v1/refunds/re_full1", data={"status": "succeeded", "amount": int(order_total * 100)})
 
-    with step("Generate credit note"):
-        substep("Create credit note document")
-        cn.info("Credit note created", data={
-            "cn_id": "CN-2026-00142",
-            "order_id": "ord_full1",
-            "amount": order_total,
-            "currency": "USD",
-            "issue_date": "2026-04-02",
-        })
+        with step("Generate credit note"):
+            with step("Create credit note document"):
+                cn.info("Credit note created", data={
+                    "cn_id": "CN-2026-00142",
+                    "order_id": "ord_full1",
+                    "amount": order_total,
+                    "currency": "USD",
+                    "issue_date": "2026-04-02",
+                })
 
-        substep("Email credit note to customer")
-        cn.info("Email sent", data={"to": "customer@example.com", "template": "credit_note", "cn_id": "CN-2026-00142"})
-        cn.debug("Email service response", data={"message_id": "msg_cn1", "status": "queued"})
+            with step("Email credit note to customer"):
+                cn.info("Email sent", data={"to": "customer@example.com", "template": "credit_note", "cn_id": "CN-2026-00142"})
+                cn.debug("Email service response", data={"message_id": "msg_cn1", "status": "queued"})
 
-    step("Update order status")
-    refund.info("Order status updated", data={"order_id": "ord_full1", "status": "refunded"})
+    with step("Update order status"):
+        refund.info("Order status updated", data={"order_id": "ord_full1", "status": "refunded"})
 
-    assert True
+        assert True
 
 
 def test_refund_to_original_payment_method(log):
@@ -156,33 +156,33 @@ def test_refund_to_original_payment_method(log):
     refund = log.child("refund")
     card = log.child("card")
 
-    step("Look up original payment method")
-    card.info("Fetching payment method", data={"charge_id": "ch_opm1"})
-    card.debug("Payment method details", data={
-        "type": "card",
-        "brand": "visa",
-        "last4": "4242",
-        "exp_month": 12,
-        "exp_year": 2027,
-        "fingerprint": "fp_abc123",
-    })
-    card.info("Original payment method found", data={"method_id": "pm_opm1", "type": "visa ending 4242"})
+    with step("Look up original payment method"):
+        card.info("Fetching payment method", data={"charge_id": "ch_opm1"})
+        card.debug("Payment method details", data={
+            "type": "card",
+            "brand": "visa",
+            "last4": "4242",
+            "exp_month": 12,
+            "exp_year": 2027,
+            "fingerprint": "fp_abc123",
+        })
+        card.info("Original payment method found", data={"method_id": "pm_opm1", "type": "visa ending 4242"})
 
-    with step("Process refund to original method"):
-        substep("Create refund object")
-        refund.info("Creating refund", data={"amount": 65.00, "method_id": "pm_opm1"})
-        refund.debug("Idempotency key generated", data={"key": "idk_ref_opm1"})
+        with step("Process refund to original method"):
+            with step("Create refund object"):
+                refund.info("Creating refund", data={"amount": 65.00, "method_id": "pm_opm1"})
+                refund.debug("Idempotency key generated", data={"key": "idk_ref_opm1"})
 
-        substep("Submit to card network")
-        card.info("Refund submitted to Visa network", data={"amount": 65.00, "arn": "74927384950123456789012"})
-        card.debug("Network response", data={"response_code": "00", "message": "approved"})
-        card.info("Refund will appear in 5-10 business days")
+            with step("Submit to card network"):
+                card.info("Refund submitted to Visa network", data={"amount": 65.00, "arn": "74927384950123456789012"})
+                card.debug("Network response", data={"response_code": "00", "message": "approved"})
+                card.info("Refund will appear in 5-10 business days")
 
-    step("Notify customer")
-    refund.info("Refund confirmation sent", data={"channel": "email", "amount": 65.00, "method": "visa ending 4242"})
-    refund.debug("Push notification sent", data={"channel": "mobile_push", "title": "Refund Processed"})
+    with step("Notify customer"):
+        refund.info("Refund confirmation sent", data={"channel": "email", "amount": 65.00, "method": "visa ending 4242"})
+        refund.debug("Push notification sent", data={"channel": "mobile_push", "title": "Refund Processed"})
 
-    assert True
+        assert True
 
 
 def test_refund_multi_item_partial(log):
@@ -196,30 +196,30 @@ def test_refund_multi_item_partial(log):
         {"sku": "SKU-MR3", "name": "Socks (3-pack)", "price": 12.99, "qty": 1, "refund": True},
     ]
 
-    step("Identify refundable items")
-    for item in order_items:
-        items_log.info("Item review", data={"sku": item["sku"], "name": item["name"], "refund_requested": item["refund"]})
-    refund_items = [i for i in order_items if i["refund"]]
-    items_log.info("Refundable items identified", data={"count": len(refund_items)})
+    with step("Identify refundable items"):
+        for item in order_items:
+            items_log.info("Item review", data={"sku": item["sku"], "name": item["name"], "refund_requested": item["refund"]})
+        refund_items = [i for i in order_items if i["refund"]]
+        items_log.info("Refundable items identified", data={"count": len(refund_items)})
 
-    with step("Calculate partial refund"):
-        substep("Sum refundable line totals")
-        refund_total = sum(i["price"] * i["qty"] for i in refund_items)
-        refund.info("Refund total calculated", data={"refund_total": refund_total})
+        with step("Calculate partial refund"):
+            with step("Sum refundable line totals"):
+                refund_total = sum(i["price"] * i["qty"] for i in refund_items)
+                refund.info("Refund total calculated", data={"refund_total": refund_total})
 
-        substep("Calculate proportional tax refund")
-        tax_refund = round(refund_total * 0.0875, 2)
-        refund.info("Tax refund calculated", data={"tax_refund": tax_refund, "rate": 0.0875})
+            with step("Calculate proportional tax refund"):
+                tax_refund = round(refund_total * 0.0875, 2)
+                refund.info("Tax refund calculated", data={"tax_refund": tax_refund, "rate": 0.0875})
 
-        substep("Final refund amount")
-        final_refund = round(refund_total + tax_refund, 2)
-        refund.info("Final refund amount", data={"subtotal_refund": refund_total, "tax_refund": tax_refund, "total": final_refund})
+            with step("Final refund amount"):
+                final_refund = round(refund_total + tax_refund, 2)
+                refund.info("Final refund amount", data={"subtotal_refund": refund_total, "tax_refund": tax_refund, "total": final_refund})
 
-    step("Process partial refund")
-    refund.info("Refund issued", data={"refund_id": "re_multi1", "amount": final_refund, "status": "succeeded"})
-    refund.debug("Inventory return initiated", data={"skus": [i["sku"] for i in refund_items]})
+    with step("Process partial refund"):
+        refund.info("Refund issued", data={"refund_id": "re_multi1", "amount": final_refund, "status": "succeeded"})
+        refund.debug("Inventory return initiated", data={"skus": [i["sku"] for i in refund_items]})
 
-    assert refund_total == 92.97
+        assert refund_total == 92.97
 
 
 def test_refund_restocking_fee(log):
@@ -230,25 +230,25 @@ def test_refund_restocking_fee(log):
     order_amount = 599.99
     restocking_pct = 0.15
 
-    step("Check restocking fee policy")
-    fee.info("Evaluating restocking fee", data={"category": "electronics", "policy": "15% restocking fee after 14 days"})
-    fee.debug("Order age check", data={"order_date": "2026-03-10", "days_since": 23, "threshold_days": 14})
-    fee.info("Restocking fee applies", data={"rate": restocking_pct})
+    with step("Check restocking fee policy"):
+        fee.info("Evaluating restocking fee", data={"category": "electronics", "policy": "15% restocking fee after 14 days"})
+        fee.debug("Order age check", data={"order_date": "2026-03-10", "days_since": 23, "threshold_days": 14})
+        fee.info("Restocking fee applies", data={"rate": restocking_pct})
 
-    with step("Calculate net refund"):
-        substep("Compute restocking fee")
-        restock_fee = round(order_amount * restocking_pct, 2)
-        fee.info("Restocking fee", data={"fee": restock_fee})
+        with step("Calculate net refund"):
+            with step("Compute restocking fee"):
+                restock_fee = round(order_amount * restocking_pct, 2)
+                fee.info("Restocking fee", data={"fee": restock_fee})
 
-        substep("Net refund after fee")
-        net_refund = round(order_amount - restock_fee, 2)
-        refund.info("Net refund calculated", data={"gross": order_amount, "restocking_fee": restock_fee, "net": net_refund})
+            with step("Net refund after fee"):
+                net_refund = round(order_amount - restock_fee, 2)
+                refund.info("Net refund calculated", data={"gross": order_amount, "restocking_fee": restock_fee, "net": net_refund})
 
-    step("Process net refund")
-    refund.info("Refund processed", data={"refund_id": "re_restock1", "amount": net_refund, "fee_deducted": restock_fee})
-    refund.debug("Fee revenue recorded", data={"revenue_type": "restocking_fee", "amount": restock_fee})
+    with step("Process net refund"):
+        refund.info("Refund processed", data={"refund_id": "re_restock1", "amount": net_refund, "fee_deducted": restock_fee})
+        refund.debug("Fee revenue recorded", data={"revenue_type": "restocking_fee", "amount": restock_fee})
 
-    assert net_refund == 509.99
+        assert net_refund == 509.99
 
 
 def test_refund_store_credit_issuance(log):
@@ -258,29 +258,29 @@ def test_refund_store_credit_issuance(log):
 
     amount = 75.00
 
-    step("Customer requests store credit")
-    refund.info("Store credit refund selected", data={"order_id": "ord_sc1", "amount": amount})
-    refund.debug("Store credit bonus check", data={"bonus_pct": 0.10, "eligible": True})
+    with step("Customer requests store credit"):
+        refund.info("Store credit refund selected", data={"order_id": "ord_sc1", "amount": amount})
+        refund.debug("Store credit bonus check", data={"bonus_pct": 0.10, "eligible": True})
 
-    with step("Issue store credit with bonus"):
-        substep("Calculate bonus amount")
-        bonus = round(amount * 0.10, 2)
-        total_credit = round(amount + bonus, 2)
-        credit.info("Bonus applied", data={"base": amount, "bonus": bonus, "total_credit": total_credit})
+        with step("Issue store credit with bonus"):
+            with step("Calculate bonus amount"):
+                bonus = round(amount * 0.10, 2)
+                total_credit = round(amount + bonus, 2)
+                credit.info("Bonus applied", data={"base": amount, "bonus": bonus, "total_credit": total_credit})
 
-        substep("Create credit entry")
-        credit.info("Store credit issued", data={
-            "credit_id": "sc_001",
-            "customer_id": "cust_sc1",
-            "amount": total_credit,
-            "expires": "2027-04-02",
-        })
-        credit.debug("Credit balance updated", data={"previous_balance": 0.00, "new_balance": total_credit})
+            with step("Create credit entry"):
+                credit.info("Store credit issued", data={
+                    "credit_id": "sc_001",
+                    "customer_id": "cust_sc1",
+                    "amount": total_credit,
+                    "expires": "2027-04-02",
+                })
+                credit.debug("Credit balance updated", data={"previous_balance": 0.00, "new_balance": total_credit})
 
-    step("Confirm with customer")
-    refund.info("Store credit confirmation sent", data={"email": "customer@example.com", "credit_amount": total_credit})
+    with step("Confirm with customer"):
+        refund.info("Store credit confirmation sent", data={"email": "customer@example.com", "credit_amount": total_credit})
 
-    assert total_credit == 82.50
+        assert total_credit == 82.50
 
 
 def test_refund_subscription_proration(log):
@@ -292,36 +292,36 @@ def test_refund_subscription_proration(log):
     days_in_period = 30
     days_used = 12
 
-    step("Fetch subscription details")
-    sub.info("Subscription loaded", data={
-        "sub_id": "sub_pro1",
-        "plan": "pro_monthly",
-        "price": monthly_price,
-        "period_start": "2026-03-01",
-        "period_end": "2026-03-31",
-    })
-    sub.debug("Usage stats", data={"api_calls": 1247, "storage_gb": 3.2})
-
-    with step("Calculate prorated refund"):
-        substep("Determine unused days")
-        unused_days = days_in_period - days_used
-        sub.info("Days calculation", data={"total": days_in_period, "used": days_used, "unused": unused_days})
-
-        substep("Compute prorated amount")
-        daily_rate = round(monthly_price / days_in_period, 4)
-        prorated_refund = round(daily_rate * unused_days, 2)
-        refund.info("Prorated refund calculated", data={
-            "daily_rate": daily_rate,
-            "unused_days": unused_days,
-            "refund_amount": prorated_refund,
+    with step("Fetch subscription details"):
+        sub.info("Subscription loaded", data={
+            "sub_id": "sub_pro1",
+            "plan": "pro_monthly",
+            "price": monthly_price,
+            "period_start": "2026-03-01",
+            "period_end": "2026-03-31",
         })
+        sub.debug("Usage stats", data={"api_calls": 1247, "storage_gb": 3.2})
 
-    step("Process prorated refund")
-    refund.info("Refund issued", data={"refund_id": "re_pro1", "amount": prorated_refund})
-    sub.info("Subscription cancelled", data={"sub_id": "sub_pro1", "effective_date": "2026-03-12", "access_until": "2026-03-31"})
+        with step("Calculate prorated refund"):
+            with step("Determine unused days"):
+                unused_days = days_in_period - days_used
+                sub.info("Days calculation", data={"total": days_in_period, "used": days_used, "unused": unused_days})
 
-    assert prorated_refund == round(daily_rate * unused_days, 2)
-    assert prorated_refund < monthly_price
+            with step("Compute prorated amount"):
+                daily_rate = round(monthly_price / days_in_period, 4)
+                prorated_refund = round(daily_rate * unused_days, 2)
+                refund.info("Prorated refund calculated", data={
+                    "daily_rate": daily_rate,
+                    "unused_days": unused_days,
+                    "refund_amount": prorated_refund,
+                })
+
+    with step("Process prorated refund"):
+        refund.info("Refund issued", data={"refund_id": "re_pro1", "amount": prorated_refund})
+        sub.info("Subscription cancelled", data={"sub_id": "sub_pro1", "effective_date": "2026-03-12", "access_until": "2026-03-31"})
+
+        assert prorated_refund == round(daily_rate * unused_days, 2)
+        assert prorated_refund < monthly_price
 
 
 def test_refund_batch_processing(log):
@@ -336,22 +336,22 @@ def test_refund_batch_processing(log):
         {"order_id": "ord_b4", "amount": 89.00},
     ]
 
-    step("Load refund batch")
-    batch.info("Batch loaded from CSV", data={"file": "refunds_2026_04.csv", "row_count": len(refunds)})
-    batch.debug("CSV validation passed", data={"columns": ["order_id", "amount"], "encoding": "utf-8"})
+    with step("Load refund batch"):
+        batch.info("Batch loaded from CSV", data={"file": "refunds_2026_04.csv", "row_count": len(refunds)})
+        batch.debug("CSV validation passed", data={"columns": ["order_id", "amount"], "encoding": "utf-8"})
 
-    with step("Process each refund"):
-        for i, r in enumerate(refunds):
-            substep(f"Refund {r['order_id']}")
-            refund.info("Processing refund", data=r)
-            refund.debug("Gateway call", data={"charge_id": f"ch_{r['order_id']}", "refund_amount": r["amount"]})
-            refund.info("Refund succeeded", data={"refund_id": f"re_{r['order_id']}", "status": "succeeded"})
+        with step("Process each refund"):
+            for i, r in enumerate(refunds):
+                with step(f"Refund {r['order_id']}"):
+                    refund.info("Processing refund", data=r)
+                    refund.debug("Gateway call", data={"charge_id": f"ch_{r['order_id']}", "refund_amount": r["amount"]})
+                    refund.info("Refund succeeded", data={"refund_id": f"re_{r['order_id']}", "status": "succeeded"})
 
-    step("Batch summary")
-    total_refunded = sum(r["amount"] for r in refunds)
-    batch.info("Batch complete", data={"processed": len(refunds), "failed": 0, "total_refunded": total_refunded})
+    with step("Batch summary"):
+        total_refunded = sum(r["amount"] for r in refunds)
+        batch.info("Batch complete", data={"processed": len(refunds), "failed": 0, "total_refunded": total_refunded})
 
-    assert total_refunded == 176.99
+        assert total_refunded == 176.99
 
 
 def test_refund_fraud_flagged_order(log):
@@ -359,23 +359,23 @@ def test_refund_fraud_flagged_order(log):
     refund = log.child("refund")
     fraud = log.child("fraud")
 
-    step("Submit refund for flagged order")
-    refund.info("Refund requested", data={"order_id": "ord_fraud1", "amount": 320.00})
-    fraud.warning("Order has fraud flag", data={"flag_reason": "velocity_check", "risk_score": 87})
+    with step("Submit refund for flagged order"):
+        refund.info("Refund requested", data={"order_id": "ord_fraud1", "amount": 320.00})
+        fraud.warning("Order has fraud flag", data={"flag_reason": "velocity_check", "risk_score": 87})
 
-    with step("Escalate to fraud team"):
-        substep("Create investigation ticket")
-        fraud.info("Ticket created", data={"ticket_id": "FRAUD-2026-0891", "priority": "high"})
-        fraud.debug("Assigned to analyst", data={"analyst": "fraud_team_a"})
+        with step("Escalate to fraud team"):
+            with step("Create investigation ticket"):
+                fraud.info("Ticket created", data={"ticket_id": "FRAUD-2026-0891", "priority": "high"})
+                fraud.debug("Assigned to analyst", data={"analyst": "fraud_team_a"})
 
-        substep("Hold refund pending review")
-        refund.info("Refund held", data={"refund_id": "re_fraud1", "status": "on_hold", "reason": "fraud_investigation"})
+            with step("Hold refund pending review"):
+                refund.info("Refund held", data={"refund_id": "re_fraud1", "status": "on_hold", "reason": "fraud_investigation"})
 
-    step("Verify hold status")
-    refund.info("Refund status check", data={"refund_id": "re_fraud1", "status": "on_hold"})
+    with step("Verify hold status"):
+        refund.info("Refund status check", data={"refund_id": "re_fraud1", "status": "on_hold"})
 
-    status = "on_hold"
-    assert status == "on_hold"
+        status = "on_hold"
+        assert status == "on_hold"
 
 
 def test_refund_currency_conversion(log):
@@ -386,33 +386,33 @@ def test_refund_currency_conversion(log):
     original_amount_eur = 85.00
     original_rate = 1.0850
 
-    step("Fetch original FX details")
-    fx.info("Original transaction FX", data={
-        "charged_currency": "EUR",
-        "settled_currency": "USD",
-        "original_rate": original_rate,
-        "settled_amount": round(original_amount_eur * original_rate, 2),
-    })
-
-    with step("Calculate refund in settlement currency"):
-        substep("Fetch current FX rate")
-        current_rate = 1.0920
-        fx.info("Current FX rate", data={"pair": "EUR/USD", "rate": current_rate, "source": "ecb"})
-        fx.debug("Rate delta since original charge", data={"delta": round(current_rate - original_rate, 4)})
-
-        substep("Use original rate for refund")
-        refund_usd = round(original_amount_eur * original_rate, 2)
-        refund.info("Refund amount calculated at original rate", data={
-            "refund_eur": original_amount_eur,
-            "refund_usd": refund_usd,
-            "rate_used": original_rate,
+    with step("Fetch original FX details"):
+        fx.info("Original transaction FX", data={
+            "charged_currency": "EUR",
+            "settled_currency": "USD",
+            "original_rate": original_rate,
+            "settled_amount": round(original_amount_eur * original_rate, 2),
         })
 
-    step("Issue refund")
-    refund.info("Refund processed", data={"refund_id": "re_fx1", "amount_usd": refund_usd, "amount_eur": original_amount_eur})
-    fx.debug("FX P&L impact", data={"unrealized_gain": round((current_rate - original_rate) * original_amount_eur, 2)})
+        with step("Calculate refund in settlement currency"):
+            with step("Fetch current FX rate"):
+                current_rate = 1.0920
+                fx.info("Current FX rate", data={"pair": "EUR/USD", "rate": current_rate, "source": "ecb"})
+                fx.debug("Rate delta since original charge", data={"delta": round(current_rate - original_rate, 4)})
 
-    assert refund_usd == 92.23
+            with step("Use original rate for refund"):
+                refund_usd = round(original_amount_eur * original_rate, 2)
+                refund.info("Refund amount calculated at original rate", data={
+                    "refund_eur": original_amount_eur,
+                    "refund_usd": refund_usd,
+                    "rate_used": original_rate,
+                })
+
+    with step("Issue refund"):
+        refund.info("Refund processed", data={"refund_id": "re_fx1", "amount_usd": refund_usd, "amount_eur": original_amount_eur})
+        fx.debug("FX P&L impact", data={"unrealized_gain": round((current_rate - original_rate) * original_amount_eur, 2)})
+
+        assert refund_usd == 92.23
 
 
 # ---------------------------------------------------------------------------
@@ -423,54 +423,54 @@ def test_refund_gateway_timeout_flaky(log, flaky_service):
     """Refund gateway times out on first attempt."""
     gw = log.child("gateway")
 
-    step("Submit refund to gateway")
-    gw.info("POST /v1/refunds", data={"charge_id": "ch_gw_fl1", "amount": 45.00})
-    try:
-        flaky_service("refund_gateway_post")
-    except ConnectionError:
-        gw.warning("Gateway timeout on first attempt", data={"elapsed_ms": 30000})
+    with step("Submit refund to gateway"):
+        gw.info("POST /v1/refunds", data={"charge_id": "ch_gw_fl1", "amount": 45.00})
+        try:
+            flaky_service("refund_gateway_post")
+        except ConnectionError:
+            gw.warning("Gateway timeout on first attempt", data={"elapsed_ms": 30000})
 
-    step("Retry refund submission")
-    result = flaky_service("refund_gateway_post")
-    gw.info("Refund succeeded on retry", data={"result": result, "refund_id": "re_gw_fl1"})
+    with step("Retry refund submission"):
+        result = flaky_service("refund_gateway_post")
+        gw.info("Refund succeeded on retry", data={"result": result, "refund_id": "re_gw_fl1"})
 
-    assert result == "ok:refund_gateway_post"
+        assert result == "ok:refund_gateway_post"
 
 
 def test_refund_notification_service_flaky(log, flaky_service):
     """Customer notification service fails on first call."""
     notify = log.child("notifications")
 
-    step("Send refund notification")
-    notify.info("Sending email notification", data={"to": "customer@example.com", "template": "refund_processed"})
-    try:
-        flaky_service("refund_email_service")
-    except ConnectionError:
-        notify.warning("Email service unavailable, queuing for retry")
+    with step("Send refund notification"):
+        notify.info("Sending email notification", data={"to": "customer@example.com", "template": "refund_processed"})
+        try:
+            flaky_service("refund_email_service")
+        except ConnectionError:
+            notify.warning("Email service unavailable, queuing for retry")
 
-    step("Retry notification delivery")
-    result = flaky_service("refund_email_service")
-    notify.info("Email sent successfully", data={"result": result, "message_id": "msg_ref_notify1"})
+    with step("Retry notification delivery"):
+        result = flaky_service("refund_email_service")
+        notify.info("Email sent successfully", data={"result": result, "message_id": "msg_ref_notify1"})
 
-    assert result == "ok:refund_email_service"
+        assert result == "ok:refund_email_service"
 
 
 def test_refund_ledger_service_flaky(log, flaky_service):
     """Accounting ledger service has intermittent failures."""
     ledger = log.child("ledger")
 
-    step("Post refund to ledger")
-    ledger.info("Creating journal entry", data={"debit": "refunds_expense", "credit": "accounts_payable", "amount": 110.00})
-    try:
-        flaky_service("refund_ledger_post")
-    except ConnectionError:
-        ledger.warning("Ledger service connection failed")
+    with step("Post refund to ledger"):
+        ledger.info("Creating journal entry", data={"debit": "refunds_expense", "credit": "accounts_payable", "amount": 110.00})
+        try:
+            flaky_service("refund_ledger_post")
+        except ConnectionError:
+            ledger.warning("Ledger service connection failed")
 
-    step("Retry ledger posting")
-    result = flaky_service("refund_ledger_post")
-    ledger.info("Journal entry posted", data={"result": result, "entry_id": "je_ref1"})
+    with step("Retry ledger posting"):
+        result = flaky_service("refund_ledger_post")
+        ledger.info("Journal entry posted", data={"result": result, "entry_id": "je_ref1"})
 
-    assert result == "ok:refund_ledger_post"
+        assert result == "ok:refund_ledger_post"
 
 
 # ---------------------------------------------------------------------------
@@ -484,27 +484,27 @@ def test_refund_exceeds_original_charge(log):
     original = 100.00
     requested = 150.00
 
-    step("Submit over-refund request")
-    refund.info("Refund requested", data={"order_id": "ord_over1", "original": original, "requested": requested})
-    refund.error("Refund amount exceeds original charge", data={"excess": requested - original})
+    with step("Submit over-refund request"):
+        refund.info("Refund requested", data={"order_id": "ord_over1", "original": original, "requested": requested})
+        refund.error("Refund amount exceeds original charge", data={"excess": requested - original})
 
-    step("Assert refund is blocked")
-    assert requested <= original, f"Refund {requested} exceeds original charge {original}"
+    with step("Assert refund is blocked"):
+        assert requested <= original, f"Refund {requested} exceeds original charge {original}"
 
 
 def test_refund_already_refunded(log):
     """Attempting to refund an already-refunded order should fail."""
     refund = log.child("refund")
 
-    step("Check prior refund status")
-    refund.info("Querying refund history", data={"order_id": "ord_dup_ref"})
-    refund.info("Prior refund found", data={"refund_id": "re_dup1", "status": "succeeded", "amount": 80.00})
+    with step("Check prior refund status"):
+        refund.info("Querying refund history", data={"order_id": "ord_dup_ref"})
+        refund.info("Prior refund found", data={"refund_id": "re_dup1", "status": "succeeded", "amount": 80.00})
 
-    step("Attempt duplicate refund")
-    refund.error("Order already fully refunded", data={"order_id": "ord_dup_ref", "existing_refund": "re_dup1"})
+    with step("Attempt duplicate refund"):
+        refund.error("Order already fully refunded", data={"order_id": "ord_dup_ref", "existing_refund": "re_dup1"})
 
-    allowed = False
-    assert allowed, "Duplicate refund should have been prevented but was incorrectly allowed"
+        allowed = False
+        assert allowed, "Duplicate refund should have been prevented but was incorrectly allowed"
 
 
 # ---------------------------------------------------------------------------

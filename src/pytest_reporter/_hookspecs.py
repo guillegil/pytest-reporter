@@ -22,8 +22,9 @@ class ReporterSpec:
         contributions: setting ``report_seed["value"]`` bypasses the hook entirely.
 
         Return ``None`` to pass control to the next registered implementation.
-        When all implementations return ``None`` and ``pytest_strategy`` is not
-        installed, the report shows ``\"Not Provided\"``.
+        When all implementations return ``None``, the seed of the
+        pytest-strategies rows that ran is shown, and ``\"Not Provided\"``
+        when no strategy row ran.
 
         Example (conftest.py)::
 

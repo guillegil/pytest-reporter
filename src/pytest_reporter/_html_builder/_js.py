@@ -953,6 +953,13 @@ function showSubTab(tab, run) {
     addRow('Duration', run.duration.toFixed(4) + 's');
     addRow('Run ID', run.run_id);
     if (run.parametrize_id) addRow('Parametrize ID', run.parametrize_id);
+    if (run.strategy) {
+      // pytest-strategies row: "levels \u00b7 directed zero", and its seed
+      const st = run.strategy;
+      const row = [st.kind, st.name].filter(Boolean).join(' ');
+      addRow('Strategy', [st.strategy, row].filter(Boolean).join(' \u00b7 '));
+      if (st.seed != null) addRow('Row seed', String(st.seed));
+    }
     content.appendChild(grid);
 
     // Parameters table
@@ -1174,6 +1181,11 @@ function showSubTab(tab, run) {
           body.appendChild(el('h4', {style:'margin-top:12px;font-size:12px;color:var(--c-text2)'}, 'Procedure'));
           body.appendChild(renderProcedure(attempt.procedure));
         }
+        // Verification checks of this attempt
+        if (attempt.check_results && attempt.check_results.length > 0) {
+          body.appendChild(el('h4', {style:'margin-top:12px;font-size:12px;color:var(--c-text2)'}, 'Checks'));
+          body.appendChild(renderCheckResults(attempt.check_results));
+        }
         card.appendChild(body);
         section.appendChild(card);
       });
@@ -1327,14 +1339,15 @@ function renderFormattedDesc(node) {
 }
 
 // renderNode — recursive procedure node renderer (depth 1..3).
-// depth 1 = L1 step, depth 2 = L2 substep, depth 3 = L3 sub-substep.
-// Preserves renderFormattedDesc, _appendCheckInline, status dots, durations,
-// and exc at every depth. Old 2-level procedure.json is a depth-<=2 tree and
-// renders identically (leaf substeps have no .substeps → recursion terminates).
+// depth 1 = L1 step, depth 2 = L2 substep, depth 3 = L3 sub-substep (deeper
+// nodes render at depth 3). Nodes come from stepdoc: kind 'step', 'action'
+// (a line of the executed report) or 'check' (a Verify line). Files without a
+// kind (pytest-reporter 0.2) are steps. Text is set via textContent only.
 function renderNode(node, depth) {
-  const cls = depth === 1 ? 'procedure-step'
+  const kind = node.kind || 'step';
+  const cls = (depth === 1 ? 'procedure-step'
             : depth === 2 ? 'procedure-substep'
-            : 'procedure-substep procedure-subsubstep';
+            : 'procedure-substep procedure-subsubstep') + ' proc-kind-' + kind;
   const row = el('div', {className: cls});
   const descSpan = el('span', {className: 'procedure-step-desc'});
   descSpan.appendChild(renderFormattedDesc(node));
@@ -1347,12 +1360,18 @@ function renderNode(node, depth) {
     el('span', {className: 'procedure-step-number'}, numText),
     descSpan
   );
+  if (node.result) {
+    header.appendChild(el('span', {className: 'procedure-result'}, '\u2192 ' + node.result));
+  }
   _appendCheckInline(header, node.check);
   if (node.duration_seconds > 0) {
     header.appendChild(el('span', {className: 'procedure-step-duration'},
       node.duration_seconds.toFixed(2) + 's'));
   }
   row.appendChild(header);
+  if (node.detail && node.outcome === 'failed') {
+    row.appendChild(el('div', {className: 'procedure-step-exc'}, node.detail));
+  }
   if (node.exc) {
     const excEl = el('div', {className: 'procedure-step-exc'});
     excEl.textContent = node.exc.type + ': ' + node.exc.msg;
@@ -1369,9 +1388,21 @@ function renderNode(node, depth) {
   return row;
 }
 
+// Setup (S1…) and Teardown (T1…) steps from fixtures get a heading of their
+// own; the test's steps get one only when one of the others is present.
+const PROC_SECTIONS = [['setup','Setup'], ['procedure','Procedure'], ['teardown','Teardown']];
+
 function renderProcedure(proc) {
-  const list = el('div', {className: 'procedure-list'});
-  (proc.steps || []).forEach(function(s) { list.appendChild(renderNode(s, 1)); });
+  const list = el('div', {className:'procedure-list'});
+  const steps = proc.steps || [];
+  const sectionOf = s => s.section || 'procedure';
+  const framed = steps.some(s => sectionOf(s) !== 'procedure');
+  PROC_SECTIONS.forEach(function(pair) {
+    const inSection = steps.filter(s => sectionOf(s) === pair[0]);
+    if (inSection.length === 0) return;
+    if (framed) list.appendChild(el('div', {className:'procedure-section'}, pair[1]));
+    inSection.forEach(function(s) { list.appendChild(renderNode(s, 1)); });
+  });
   return list;
 }
 
@@ -1402,7 +1433,7 @@ function renderCheckResults(checks) {
     header.setAttribute('aria-expanded', String(isExpanded));
     header.appendChild(chevronSvg('check-card-chevron'));
     header.appendChild(el('span', {className:`status-dot ${status}`}));
-    header.appendChild(el('span', {className:'check-name'}, check.name || ('Check #' + (idx + 1))));
+    header.appendChild(el('span', {className:'check-name'}, checkLabel(check, idx)));
     if (check.description) {
       header.appendChild(el('span', {className:'check-desc'}, check.description));
     }
@@ -1429,10 +1460,20 @@ function renderCheckResults(checks) {
   return container;
 }
 
+// "3V3 \u203a Vout": a check's verify.section titles, then its name.
+function checkLabel(check, idx) {
+  const name = check.name || ('Check #' + (idx + 1));
+  const section = Array.isArray(check.section) ? check.section : [];
+  return section.length ? section.concat([name]).join(' \u203a ') : name;
+}
+
 // Leaf check detail — the flat field grid for a single (non-guard) descriptor.
+// pytest-verifier records carry a rendered `detail` ("expected 2, got 1"), an
+// `error` when the comparison raised, and where the check was made.
 function renderCheckDetail(check) {
   const detail = el('div', {className:'check-card-detail'});
   const fields = [
+    ['detail', 'Result'], ['error', 'Error'], ['also_failed', 'Also failed'],
     ['actual', 'Actual'], ['expected', 'Expected'],
     ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
     ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],
@@ -1440,6 +1481,11 @@ function renderCheckDetail(check) {
     ['expected_type', 'Expected type'], ['actual_length', 'Actual length'],
     ['haystack', 'Haystack'], ['needle', 'Needle'], ['pattern', 'Pattern'],
     ['msg', 'Message'],
+    ['raised_type', 'Raised'], ['raised_message', 'Raised message'], ['match', 'Match'],
+    ['raised_at', 'Raised at'],
+    ['timeout', 'Timeout (s)'], ['duration', 'Duration (s)'], ['interval', 'Interval (s)'],
+    ['tries', 'Tries'], ['elapsed', 'Elapsed (s)'],
+    ['phase', 'Phase'], ['location', 'Made at'], ['called_from', 'Called from'],
   ];
   fields.forEach(([key, label]) => {
     if (check[key] !== undefined && check[key] !== null) {
@@ -1457,6 +1503,8 @@ function renderCheckBody(check) {
     case 'guard': return renderGuardBody(check);
     case 'conditional': return renderConditionalBody(check);
     case 'all_satisfy': return renderAllSatisfyBody(check);
+    case 'eventually':
+    case 'stable': return renderSamplingBody(check);
     default: return renderCheckDetail(check);
   }
 }
@@ -1565,6 +1613,24 @@ function renderAllSatisfyBody(check) {
     head.appendChild(el('span', {className:'guard-label'}, '#' + (i + 1)));
     row.appendChild(head);
     row.appendChild(renderGuardCheck(c, !ok));
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+// Render an eventually/stable descriptor: its own fields, then the kept try's
+// check (child_checks holds the one try pytest-verifier kept).
+function renderSamplingBody(check) {
+  const wrap = el('div', {className:'guard-body'});
+  wrap.appendChild(renderCheckDetail(check));
+  (check.child_checks || []).forEach(c => {
+    const ok = !!(c && c.passed);
+    const row = el('div', {className:'guard-branch chosen'});
+    const head = el('div', {className:'guard-branch-head'});
+    head.appendChild(el('span', {className:`status-dot ${ok ? 'passed' : 'failed'}`}));
+    head.appendChild(el('span', {className:'guard-label'}, 'kept try'));
+    row.appendChild(head);
+    row.appendChild(renderGuardCheck(c, true));
     wrap.appendChild(row);
   });
   return wrap;

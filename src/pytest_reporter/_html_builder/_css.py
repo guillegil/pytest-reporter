@@ -1333,6 +1333,22 @@ button { font-family: inherit; }
   max-height: 200px;
   overflow: auto;
 }
+.procedure-section {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text3);
+}
+.procedure-result {
+  color: var(--c-text2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.proc-kind-action .procedure-step-desc { font-family: var(--font-mono); font-size: 0.95em; }
+.status-dot.info { background: var(--c-text3); opacity: 0.5; }
+.status-dot.unknown { background: transparent; border: 1px solid var(--c-text3); }
 .procedure-empty {
   padding: 24px;
   text-align: center;

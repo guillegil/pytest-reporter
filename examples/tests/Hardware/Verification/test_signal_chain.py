@@ -7,7 +7,7 @@ import random
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +59,8 @@ def test_gain_flatness(log, verify, testbench, freq_hz):
         gain = _measure_gain_db(freq_hz, 20.0)
         scope.info("Gain measured", data={"gain_db": gain, "frequency_hz": freq_hz})
 
-    step("Gain within ±0.5 dB of 20 dB",
-         check=verify.approx(gain, 20.0, abs_tol=0.5, name=f"Gain @ {freq_hz} Hz", units="dB"))
+    with step("Gain within ±0.5 dB of 20 dB"):
+        verify.approx(gain, 20.0, abs_tol=0.5, name=f"Gain @ {freq_hz} Hz", units="dB")
 
 
 # ---------------------------------------------------------------------------
@@ -79,8 +79,8 @@ def test_signal_to_noise_ratio(log, verify, testbench):
         snr = _measure_snr_db()
         dmm.info("SNR measured", data={"snr_db": snr})
 
-    step("SNR above 60 dB",
-         check=verify.greater(snr, 60.0, name="Signal-to-noise ratio", units="dB"))
+    with step("SNR above 60 dB"):
+        verify.greater(snr, 60.0, name="Signal-to-noise ratio", units="dB")
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +103,8 @@ def test_total_harmonic_distortion(log, verify, testbench):
             "h3_db": round(-72 + random.gauss(0, 2), 1),
         })
 
-    step("THD below 0.1%",
-         check=verify.less(thd, 0.1, name="THD", units="%"))
+    with step("THD below 0.1%"):
+        verify.less(thd, 0.1, name="THD", units="%")
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +135,9 @@ def test_phase_response(log, verify, testbench, freq_hz, max_phase_shift):
     with step("Measure phase"):
         scope.info("Phase measurement", data={"phase_deg": phase, "freq_hz": freq_hz})
 
-    step("Phase within limit",
-         check=verify.greater(phase, max_phase_shift,
-                              name=f"Phase @ {freq_hz} Hz", units="deg"))
+    with step("Phase within limit"):
+        verify.greater(phase, max_phase_shift,
+                       name=f"Phase @ {freq_hz} Hz", units="deg")
 
 
 # ---------------------------------------------------------------------------
@@ -161,10 +161,11 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
     with step("Verify amplifier stage"):
         gain = _measure_gain_db(1_000, 20.0)
         amp.info("Gain measured", data={"gain_db": gain})
-        substep("Check gain")
+        with step("Check gain"):
+            pass
 
-    step("Amplifier gain",
-         check=verify.approx(gain, 20.0, abs_tol=0.5, name="Amp gain", units="dB"))
+    with step("Amplifier gain"):
+        verify.approx(gain, 20.0, abs_tol=0.5, name="Amp gain", units="dB")
 
     with step("Verify filter response"):
         passband_gain = _measure_gain_db(1_000, 0.0)
@@ -172,19 +173,21 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
         filt.info("Passband", data={"gain_db": passband_gain, "freq": "1 kHz"})
         filt.info("Stopband", data={"gain_db": stopband_gain, "freq": "100 kHz"})
 
-    step("Passband flat",
-         check=verify.approx(passband_gain, 0.0, abs_tol=0.5, name="Filter passband", units="dB"))
+    with step("Passband flat"):
+        verify.approx(passband_gain, 0.0, abs_tol=0.5, name="Filter passband", units="dB")
 
-    step("Stopband attenuation",
-         check=verify.less(stopband_gain, -15.0, name="Filter stopband", units="dB"))
+    with step("Stopband attenuation"):
+        verify.less(stopband_gain, -15.0, name="Filter stopband", units="dB")
 
     with step("Verify ADC output"):
         snr = _measure_snr_db()
         thd = _measure_thd_percent()
         adc.info("ADC metrics", data={"snr_db": snr, "thd_pct": thd, "resolution_bits": 16})
 
-    step("ADC SNR", check=verify.greater(snr, 60.0, name="ADC SNR", units="dB"))
-    step("ADC THD", check=verify.less(thd, 0.1, name="ADC THD", units="%"))
+    with step("ADC SNR"):
+        verify.greater(snr, 60.0, name="ADC SNR", units="dB")
+    with step("ADC THD"):
+        verify.less(thd, 0.1, name="ADC THD", units="%")
 
     # Log signal chain summary as table
     log.table([
@@ -239,8 +242,8 @@ def test_adc_linearity_check(log, verify, testbench):
         for vin_mv in [0, 500, 1000, 1500, 2000, 2500, 3000, 3300]:
             code = int(vin_mv / 3300 * 4095) + random.randint(-5, 5)
             readings.append((vin_mv, code))
-            substep(f"Vin = {vin_mv} mV → code {code}")
-            adc.info("Reading", data={"vin_mv": vin_mv, "adc_code": code})
+            with step(f"Vin = {vin_mv} mV → code {code}"):
+                adc.info("Reading", data={"vin_mv": vin_mv, "adc_code": code})
 
     with step("Check linearity at key points"):
         linearity_rows = []
@@ -258,14 +261,14 @@ def test_adc_linearity_check(log, verify, testbench):
         adc.table(linearity_rows, name="adc_linearity_sweep")
 
     # Some of these may fail if random noise is large enough
-    step("Zero-scale accuracy",
-         check=verify.approx(readings[0][1], 0, abs_tol=3, name="Zero-scale code"))
+    with step("Zero-scale accuracy"):
+        verify.approx(readings[0][1], 0, abs_tol=3, name="Zero-scale code")
 
-    step("Mid-scale accuracy",
-         check=verify.approx(readings[4][1], 2048, abs_tol=3, name="Mid-scale code"))
+    with step("Mid-scale accuracy"):
+        verify.approx(readings[4][1], 2048, abs_tol=3, name="Mid-scale code")
 
-    step("Full-scale accuracy",
-         check=verify.approx(readings[-1][1], 4095, abs_tol=3, name="Full-scale code"))
+    with step("Full-scale accuracy"):
+        verify.approx(readings[-1][1], 4095, abs_tol=3, name="Full-scale code")
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +288,7 @@ def test_crosstalk_rejection(log, verify, testbench):
         crosstalk_db = round(-45 + random.gauss(0, 2), 1)
         scope.info("Crosstalk measured", data={"crosstalk_db": crosstalk_db, "frequency": "50 kHz"})
 
-    step("Crosstalk below -60 dB",
-         check=verify.less(crosstalk_db, -60.0, name="CH3 crosstalk", units="dB"))
+    with step("Crosstalk below -60 dB"):
+        verify.less(crosstalk_db, -60.0, name="CH3 crosstalk", units="dB")
 
     assert crosstalk_db < -60.0, f"Crosstalk {crosstalk_db} dB exceeds -60 dB limit"

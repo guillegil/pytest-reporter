@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -35,8 +35,8 @@ def test_cache_connect_and_ping(log, redis_client):
     with step("Establish TCP connection to Redis"):
         conn.info("Resolving DNS for redis-primary.internal")
         conn.debug("DNS resolved", data={"ip": "10.0.4.21", "ttl_sec": 300})
-        substep("Opening TCP socket on port 6379")
-        conn.info("TCP handshake complete", data={"latency_ms": 1.2})
+        with step("Opening TCP socket on port 6379"):
+            conn.info("TCP handshake complete", data={"latency_ms": 1.2})
 
     with step("Authenticate with Redis"):
         conn.info("Sending AUTH command")
@@ -45,8 +45,8 @@ def test_cache_connect_and_ping(log, redis_client):
     with step("Run PING/PONG health check"):
         conn.info("Sending PING")
         conn.info("Received PONG", data={"rtt_us": 84})
-        substep("Validate response payload")
-        conn.debug("Response matched expected PONG")
+        with step("Validate response payload"):
+            conn.debug("Response matched expected PONG")
 
     with step("Inspect server info"):
         info = log.child("server_info")
@@ -54,9 +54,9 @@ def test_cache_connect_and_ping(log, redis_client):
         info.debug("Redis version", data={"version": "7.2.4", "mode": "standalone"})
         info.debug("Memory stats", data={"used_memory_mb": 48.3, "peak_memory_mb": 102.7})
         info.info("Keyspace", data={"db0": {"keys": 0, "expires": 0}})
-        substep("Check replication status")
-        info.debug("Replication", data={"role": "master", "connected_slaves": 2})
-        info.info("Persistence", data={"rdb_last_save": "2026-04-02T08:00:00Z", "aof_enabled": True})
+        with step("Check replication status"):
+            info.debug("Replication", data={"role": "master", "connected_slaves": 2})
+            info.info("Persistence", data={"rdb_last_save": "2026-04-02T08:00:00Z", "aof_enabled": True})
 
     with step("Select test database"):
         conn.info("SELECT 1")
@@ -80,21 +80,21 @@ def test_cache_set_get_cycle(log):
     with step("SET user:42:prefs with TTL"):
         cache.info("SET user:42:prefs EX 3600", data={"ttl_sec": 3600})
         cache.debug("Write acknowledged", data={"response": "OK", "slot": 8923})
-        substep("Verify write via EXISTS")
-        cache.info("EXISTS user:42:prefs -> 1")
+        with step("Verify write via EXISTS"):
+            cache.info("EXISTS user:42:prefs -> 1")
 
     with step("GET user:42:prefs"):
         cache.info("GET user:42:prefs")
         cache.debug("Raw bytes received", data={"size_bytes": 62})
-        substep("Deserialize response")
-        ser.info("Decoding JSON response")
-        ser.debug("Decoded successfully", data=payload)
+        with step("Deserialize response"):
+            ser.info("Decoding JSON response")
+            ser.debug("Decoded successfully", data=payload)
 
     with step("Validate round-trip integrity"):
         cache.info("Comparing original vs fetched payload")
         cache.info("Match confirmed", data={"fields_checked": 3, "mismatches": 0})
-        substep("Check TTL remaining")
-        cache.debug("TTL check", data={"remaining_sec": 3599})
+        with step("Check TTL remaining"):
+            cache.debug("TTL check", data={"remaining_sec": 3599})
 
     assert payload["user_id"] == 42
 
@@ -106,8 +106,8 @@ def test_cache_miss_returns_none(log):
     with step("Attempt GET on nonexistent key"):
         cache.info("GET user:99999:session")
         cache.debug("Cache MISS", data={"key": "user:99999:session", "hit": False})
-        substep("Confirm nil response")
-        cache.info("Response is nil -- returning None to caller")
+        with step("Confirm nil response"):
+            cache.info("Response is nil -- returning None to caller")
 
     with step("Record miss metric"):
         cache.info("Incrementing miss counter", data={"metric": "cache.miss", "tags": {"prefix": "user"}})
@@ -128,8 +128,8 @@ def test_cache_delete_key(log):
     with step("DEL session:abc"):
         cache.info("DEL session:abc")
         cache.debug("Key removed", data={"keys_deleted": 1})
-        substep("Verify deletion")
-        cache.info("EXISTS session:abc -> 0")
+        with step("Verify deletion"):
+            cache.info("EXISTS session:abc -> 0")
 
     with step("GET after deletion"):
         cache.info("GET session:abc")
@@ -155,7 +155,8 @@ def test_cache_ttl_expiration_simulation(log):
         cache.info("GET temp:token")
         result = "tok_abc"  # simulated -- not actually expired
         cache.warning("Key still present in mock", data={"value": result})
-        substep("Assert nil (will fail in mock)")
+        with step("Assert nil (will fail in mock)"):
+            pass
 
     assert result is None, f"Expected key to expire, but got: {result}"
 
@@ -180,7 +181,8 @@ def test_cache_incr_decr(log):
 
     with step("Validate final counter value"):
         counter.info("GET page:views:home -> 7")
-        substep("Assert equals expected value")
+        with step("Assert equals expected value"):
+            pass
 
     assert 7 == 7
 
@@ -233,16 +235,16 @@ def test_cache_bulk_write(log, batch_size):
 
     with step(f"MSET {batch_size} keys"):
         bulk.info("Executing MSET", data={"key_count": batch_size})
-        substep("Measure write latency")
-        latency = 0.3 * (batch_size / 100)
-        bulk.info("Write complete", data={"latency_ms": round(latency, 2), "throughput_ops": int(batch_size / max(latency / 1000, 0.001))})
+        with step("Measure write latency"):
+            latency = 0.3 * (batch_size / 100)
+            bulk.info("Write complete", data={"latency_ms": round(latency, 2), "throughput_ops": int(batch_size / max(latency / 1000, 0.001))})
 
     with step("Verify written keys via MGET"):
         bulk.info("MGET on all keys")
         bulk.info("All keys returned successfully", data={"hits": batch_size, "misses": 0})
-        substep("Spot-check first and last keys")
-        bulk.debug("bulk:0 -> val_0 OK")
-        bulk.debug(f"bulk:{batch_size - 1} -> val_{batch_size - 1} OK")
+        with step("Spot-check first and last keys"):
+            bulk.debug("bulk:0 -> val_0 OK")
+            bulk.debug(f"bulk:{batch_size - 1} -> val_{batch_size - 1} OK")
 
     assert batch_size > 0
 
@@ -260,8 +262,8 @@ def test_cache_serializer_roundtrip(log, serializer):
         sizes = {"json": 58, "msgpack": 34, "pickle": 72}
         size = sizes.get(serializer, 50)
         ser.debug("Encoded", data={"format": serializer, "size_bytes": size})
-        substep("Compute checksum")
-        ser.debug("CRC32", data={"checksum": "0xDEADBEEF"})
+        with step("Compute checksum"):
+            ser.debug("CRC32", data={"checksum": "0xDEADBEEF"})
 
     with step("Write to cache"):
         cache.info(f"SET serializer_test:{serializer}", data={"size_bytes": size})
@@ -296,8 +298,8 @@ def test_cache_eviction_policy(log, policy, maxmem):
     with step("Fill cache to 90% capacity"):
         mem.info("Inserting data until memory threshold")
         mem.debug("Memory usage", data={"used_mb": 230, "max_mb": 256 if maxmem == "256mb" else 512, "pct": 90})
-        substep("Monitor eviction count")
-        mem.info("Evictions so far", data={"count": 0})
+        with step("Monitor eviction count"):
+            mem.info("Evictions so far", data={"count": 0})
 
     with step("Insert additional data to trigger pressure"):
         mem.info("Writing 50 more keys")
@@ -309,8 +311,8 @@ def test_cache_eviction_policy(log, policy, maxmem):
 
     with step("Validate cache state post-eviction"):
         mem.info("Checking key survival", data={"surviving_keys": 988, "evicted_keys": 12})
-        substep("Verify no data corruption")
-        mem.debug("Spot-check 10 random keys: all valid")
+        with step("Verify no data corruption"):
+            mem.debug("Spot-check 10 random keys: all valid")
 
     assert True
 
@@ -334,16 +336,16 @@ def test_cache_cluster_failover_retry(log, flaky_service):
             flaky_service("redis_cluster_failover")
         except ConnectionError:
             cluster.error("ConnectionError on first attempt", data={"retry": True})
-            substep("Retry after backoff")
-            cluster.info("Waiting 500ms before retry")
-            result = flaky_service("redis_cluster_failover")
-            cluster.info("Retry succeeded", data={"result": result})
+            with step("Retry after backoff"):
+                cluster.info("Waiting 500ms before retry")
+                result = flaky_service("redis_cluster_failover")
+                cluster.info("Retry succeeded", data={"result": result})
 
     with step("Verify post-failover operation"):
         cluster.info("SET failover_test:1 -> ok")
         cluster.debug("Write succeeded on new primary")
-        substep("Confirm cluster health")
-        cluster.info("CLUSTER INFO", data={"state": "ok", "slots_assigned": 16384})
+        with step("Confirm cluster health"):
+            cluster.info("CLUSTER INFO", data={"state": "ok", "slots_assigned": 16384})
 
     assert True
 
@@ -362,10 +364,10 @@ def test_cache_replica_sync_retry(log, flaky_service):
             flaky_service("redis_replica_sync")
         except ConnectionError:
             replica.error("LOADING error -- replica not ready", data={"retry": True})
-            substep("Wait for sync completion")
-            replica.info("Polling replica status...")
-            result = flaky_service("redis_replica_sync")
-            replica.info("Replica ready", data={"result": result, "lag_bytes": 0})
+            with step("Wait for sync completion"):
+                replica.info("Polling replica status...")
+                result = flaky_service("redis_replica_sync")
+                replica.info("Replica ready", data={"result": result, "lag_bytes": 0})
 
     with step("Execute read on synced replica"):
         replica.info("GET user:1:profile")
@@ -387,16 +389,16 @@ def test_cache_connection_pool_exhaustion_retry(log, flaky_service):
             flaky_service("redis_pool_exhaust")
         except ConnectionError:
             pool.error("Pool exhausted -- no connections available", data={"wait_ms": 0})
-            substep("Wait for connection release")
-            pool.info("Connection returned to pool by another thread")
-            result = flaky_service("redis_pool_exhaust")
-            pool.info("Connection acquired", data={"result": result, "pool_active": 10})
+            with step("Wait for connection release"):
+                pool.info("Connection returned to pool by another thread")
+                result = flaky_service("redis_pool_exhaust")
+                pool.info("Connection acquired", data={"result": result, "pool_active": 10})
 
     with step("Execute command on acquired connection"):
         pool.info("SET pool_test:1 -> ok")
         pool.debug("Command executed", data={"latency_us": 120})
-        substep("Return connection to pool")
-        pool.info("Connection released", data={"pool_active": 9})
+        with step("Return connection to pool"):
+            pool.info("Connection released", data={"pool_active": 9})
 
     assert True
 
@@ -440,8 +442,8 @@ def test_cache_consistency_check_fails(log):
     with step("Read from replica immediately"):
         replica.info("GET consistency:key")
         replica.warning("Stale read detected", data={"expected": "v1", "got": "v0"})
-        substep("Check replication lag")
-        replica.debug("Replication lag", data={"lag_bytes": 4096, "lag_ms": 150})
+        with step("Check replication lag"):
+            replica.debug("Replication lag", data={"lag_bytes": 4096, "lag_ms": 150})
 
     with step("Assert consistency"):
         expected = "v1"
@@ -476,10 +478,10 @@ def test_cache_pipeline_execution(log):
 
     with step("Validate pipeline results"):
         pipe.info("Checking result types and values")
-        substep("Verify SET responses are OK")
-        pipe.debug("All SET responses: OK")
-        substep("Verify INCR results")
-        pipe.debug("INCR a -> 2, INCR b -> 3")
+        with step("Verify SET responses are OK"):
+            pipe.debug("All SET responses: OK")
+        with step("Verify INCR results"):
+            pipe.debug("INCR a -> 2, INCR b -> 3")
 
     assert results[-1] == "3"
 
@@ -505,8 +507,8 @@ def test_cache_scan_pattern(log):
 
     with step("Validate scan results"):
         scan.info("All 100 user:* keys found")
-        substep("Check no duplicates")
-        scan.debug("Unique keys: 100, duplicates: 0")
+        with step("Check no duplicates"):
+            scan.debug("Unique keys: 100, duplicates: 0")
 
     assert True
 
@@ -523,10 +525,10 @@ def test_cache_lua_script(log):
 
     with step("Execute compare-and-swap"):
         lua.info("EVALSHA", data={"keys": ["cas:key"], "args": ["old_val", "new_val"]})
-        substep("Verify current value matches expected")
-        lua.debug("Current value: old_val -- match")
-        substep("Perform swap")
-        lua.info("Swap executed", data={"result": "OK"})
+        with step("Verify current value matches expected"):
+            lua.debug("Current value: old_val -- match")
+        with step("Perform swap"):
+            lua.info("Swap executed", data={"result": "OK"})
 
     with step("Verify new value"):
         lua.info("GET cas:key -> new_val")
@@ -552,8 +554,8 @@ def test_cache_ttl_precision(log, ttl_sec):
         cache.info("TTL ttl_test")
         remaining = ttl_sec  # simulated
         cache.debug("TTL response", data={"remaining_sec": remaining, "expected": ttl_sec})
-        substep("Assert TTL within tolerance")
-        cache.info("TTL within 1s tolerance", data={"delta": 0})
+        with step("Assert TTL within tolerance"):
+            cache.info("TTL within 1s tolerance", data={"delta": 0})
 
     assert abs(ttl_sec - ttl_sec) <= 1
 
@@ -571,9 +573,9 @@ def test_cache_json_module(log):
     with step("JSON.GET nested path"):
         rj.info("JSON.GET store:1 $.store.name")
         rj.debug("Result: Acme", data={"path": "$.store.name", "value": "Acme"})
-        substep("Query array path")
-        rj.info("JSON.GET store:1 $.store.inventory[*].item")
-        rj.debug("Result", data={"values": ["widget", "gadget"]})
+        with step("Query array path"):
+            rj.info("JSON.GET store:1 $.store.inventory[*].item")
+            rj.debug("Result", data={"values": ["widget", "gadget"]})
 
     with step("JSON.NUMINCRBY"):
         rj.info("JSON.NUMINCRBY store:1 $.store.inventory[0].qty 10")

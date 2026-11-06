@@ -1,4 +1,4 @@
-"""Power supply verification tests -- pytest-verify soft assertions + step(check=...)."""
+"""Power supply verification tests -- pytest-verifier checks inside stepdoc steps."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -51,14 +51,14 @@ def test_3v3_rail_voltage(log, verify, testbench):
     with step("Measure output voltage"):
         psu.info("DMM reading", data={"voltage": voltage, "channel": 1})
 
-    step("Verify voltage within ±50 mV",
-         check=verify.approx(voltage, 3.3, abs_tol=0.05, name="CH1 voltage", units="V"))
+    with step("Verify voltage within ±50 mV"):
+        verify.approx(voltage, 3.3, abs_tol=0.05, name="CH1 voltage", units="V")
 
-    step("Verify voltage above minimum",
-         check=verify.greater(voltage, 3.25, name="CH1 Vmin", units="V"))
+    with step("Verify voltage above minimum"):
+        verify.greater(voltage, 3.25, name="CH1 Vmin", units="V")
 
-    step("Verify voltage below maximum",
-         check=verify.less(voltage, 3.35, name="CH1 Vmax", units="V"))
+    with step("Verify voltage below maximum"):
+        verify.less(voltage, 3.35, name="CH1 Vmax", units="V")
 
 
 def test_5v_rail_voltage(log, verify, testbench):
@@ -81,11 +81,11 @@ def test_5v_rail_voltage(log, verify, testbench):
         dmm.info("Voltage", data={"reading": voltage, "units": "V"})
         dmm.info("Current", data={"reading": current, "units": "A"})
 
-    step("Verify voltage ±100 mV",
-         check=verify.approx(voltage, 5.0, abs_tol=0.1, name="CH2 voltage", units="V"))
+    with step("Verify voltage ±100 mV"):
+        verify.approx(voltage, 5.0, abs_tol=0.1, name="CH2 voltage", units="V")
 
-    step("Verify load current",
-         check=verify.approx(current, 0.5, abs_tol=0.01, name="CH2 current", units="A"))
+    with step("Verify load current"):
+        verify.approx(current, 0.5, abs_tol=0.01, name="CH2 current", units="A")
 
 
 def test_12v_rail_voltage(log, verify, testbench):
@@ -101,8 +101,8 @@ def test_12v_rail_voltage(log, verify, testbench):
     with step("Read voltage"):
         psu.info("DMM reading", data={"voltage": voltage})
 
-    step("Verify 12 V within ±1%",
-         check=verify.approx(voltage, 12.0, rel_tol=0.01, name="CH3 voltage", units="V"))
+    with step("Verify 12 V within ±1%"):
+        verify.approx(voltage, 12.0, rel_tol=0.01, name="CH3 voltage", units="V")
 
 
 # ---------------------------------------------------------------------------
@@ -147,9 +147,9 @@ def test_voltage_regulation(log, verify, testbench, channel, nominal_v, toleranc
     with step("Measure output"):
         psu.info("Reading", data={"voltage": voltage, "channel": channel})
 
-    step("Voltage within tolerance",
-         check=verify.approx(voltage, nominal_v, abs_tol=tolerance_v,
-                             name=f"CH{channel} @ {load_a}A", units="V"))
+    with step("Voltage within tolerance"):
+        verify.approx(voltage, nominal_v, abs_tol=tolerance_v,
+                      name=f"CH{channel} @ {load_a}A", units="V")
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +172,8 @@ def test_output_ripple_3v3(log, verify, testbench):
         scope.info("Acquired 10000 points", data={"sample_rate": "2 GSa/s"})
         scope.info("Ripple measurement", data={"peak_to_peak_mv": ripple})
 
-    step("Ripple below 20 mV",
-         check=verify.less(ripple, 20.0, name="CH1 ripple Vpp", units="mV"))
+    with step("Ripple below 20 mV"):
+        verify.less(ripple, 20.0, name="CH1 ripple Vpp", units="mV")
 
 
 def test_output_ripple_5v(log, verify, testbench):
@@ -188,8 +188,8 @@ def test_output_ripple_5v(log, verify, testbench):
     with step("Capture waveform"):
         scope.info("Measurement", data={"ripple_mv": ripple})
 
-    step("Ripple below 30 mV",
-         check=verify.less(ripple, 30.0, name="CH2 ripple Vpp", units="mV"))
+    with step("Ripple below 30 mV"):
+        verify.less(ripple, 30.0, name="CH2 ripple Vpp", units="mV")
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +206,15 @@ def test_overcurrent_protection(log, verify, testbench):
 
     with step("Ramp load to 1.2 A"):
         for load in [0.5, 0.8, 1.0, 1.1, 1.2]:
-            substep(f"Load = {load} A")
-            psu.info("Load step", data={"load_a": load})
+            with step(f"Load = {load} A"):
+                psu.info("Load step", data={"load_a": load})
 
     with step("Check OCP triggered"):
         ocp_tripped = True
         psu.warning("OCP activated", data={"channel": 1, "trip_current_a": 1.05})
 
-    step("OCP triggered",
-         check=verify.is_true(ocp_tripped, name="CH1 OCP status"))
+    with step("OCP triggered"):
+        verify.is_true(ocp_tripped, name="CH1 OCP status")
 
 
 # ---------------------------------------------------------------------------
@@ -244,8 +244,8 @@ def test_load_transient_response(log, verify, testbench):
 
     undershoot_mv = 85.0
 
-    step("Undershoot below 50 mV",
-         check=verify.less(undershoot_mv, 50.0, name="Load transient undershoot", units="mV"))
+    with step("Undershoot below 50 mV"):
+        verify.less(undershoot_mv, 50.0, name="Load transient undershoot", units="mV")
 
     assert undershoot_mv < 50.0, f"Undershoot {undershoot_mv} mV exceeds 50 mV limit"
 
@@ -272,11 +272,11 @@ def test_efficiency_at_full_load(log, verify, testbench):
     with step("Calculate efficiency"):
         psu.info("Efficiency", data={"percent": efficiency})
 
-    step("Efficiency above 90%",
-         check=verify.greater(efficiency, 90.0, name="Full-load efficiency", units="%"))
+    with step("Efficiency above 90%"):
+        verify.greater(efficiency, 90.0, name="Full-load efficiency", units="%")
 
-    step("Output power above 38 W",
-         check=verify.greater(output_power, 38.0, name="Output power", units="W"))
+    with step("Output power above 38 W"):
+        verify.greater(output_power, 38.0, name="Output power", units="W")
 
 
 def test_all_channels_in_range(log, verify, testbench):
@@ -294,8 +294,8 @@ def test_all_channels_in_range(log, verify, testbench):
 
     with step("Read all channels"):
         for ch, v in readings.items():
-            substep(f"CH{ch} = {v} V")
-            psu.info(f"CH{ch} reading", data={"voltage": v})
+            with step(f"CH{ch} = {v} V"):
+                psu.info(f"CH{ch} reading", data={"voltage": v})
 
     nominals = {1: 3.3, 2: 5.0, 3: 12.0}
     tolerances = {1: 0.05, 2: 0.10, 3: 0.24}
@@ -309,11 +309,11 @@ def test_all_channels_in_range(log, verify, testbench):
         name="channel_summary",
     )
 
-    step("CH1 in range [3.25, 3.35] V",
-         check=verify.between(readings[1], 3.25, 3.35, name="CH1 range", units="V"))
+    with step("CH1 in range [3.25, 3.35] V"):
+        verify.between(readings[1], 3.25, 3.35, name="CH1 range", units="V")
 
-    step("CH2 in range [4.90, 5.10] V",
-         check=verify.between(readings[2], 4.90, 5.10, name="CH2 range", units="V"))
+    with step("CH2 in range [4.90, 5.10] V"):
+        verify.between(readings[2], 4.90, 5.10, name="CH2 range", units="V")
 
-    step("CH3 in range [11.76, 12.24] V",
-         check=verify.between(readings[3], 11.76, 12.24, name="CH3 range", units="V"))
+    with step("CH3 in range [11.76, 12.24] V"):
+        verify.between(readings[3], 11.76, 12.24, name="CH3 range", units="V")

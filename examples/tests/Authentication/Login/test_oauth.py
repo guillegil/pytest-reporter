@@ -8,7 +8,7 @@ import urllib.parse
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -81,9 +81,9 @@ def test_oauth_authorize_url(log, provider):
         state = hashlib.sha256(f"state:{time.time()}".encode()).hexdigest()[:16]
         nonce = hashlib.sha256(f"nonce:{time.time()}".encode()).hexdigest()[:16]
         oauth.info("Generating state + nonce", data={"state": state, "nonce": nonce})
-        substep("Assemble query parameters")
-        url = _build_auth_url(provider, state, nonce)
-        oauth.info("URL built", data={"url_length": len(url), "provider": provider})
+        with step("Assemble query parameters"):
+            url = _build_auth_url(provider, state, nonce)
+            oauth.info("URL built", data={"url_length": len(url), "provider": provider})
 
     with step("Validate URL components"):
         parsed = urllib.parse.urlparse(url)
@@ -93,10 +93,10 @@ def test_oauth_authorize_url(log, provider):
             "host": parsed.hostname,
             "params": list(params.keys()),
         })
-        substep("Check required params present")
-        required = {"client_id", "redirect_uri", "response_type", "scope", "state", "nonce"}
-        missing = required - set(params.keys())
-        oauth.info("Param check", data={"required": list(required), "missing": list(missing)})
+        with step("Check required params present"):
+            required = {"client_id", "redirect_uri", "response_type", "scope", "state", "nonce"}
+            missing = required - set(params.keys())
+            oauth.info("Param check", data={"required": list(required), "missing": list(missing)})
 
     assert parsed.scheme == "https"
     assert len(missing) == 0
@@ -117,31 +117,31 @@ def test_oauth_token_exchange(log, provider):
         code = f"4/0AX4XfW-{provider}-mock-code"
         state = "abc123state"
         oauth.info("Callback received", data={"provider": provider, "code_length": len(code)})
-        substep("Validate state parameter")
-        oauth.info("State validated", data={"expected": state, "received": state, "match": True})
+        with step("Validate state parameter"):
+            oauth.info("State validated", data={"expected": state, "received": state, "match": True})
 
     with step("Exchange code for tokens"):
         token_log.info("POST to token endpoint", data={
             "url": _PROVIDERS[provider]["token_url"],
             "grant_type": "authorization_code",
         })
-        substep("Send request")
-        tokens = _simulate_token_exchange(provider, code)
-        token_log.info("Token response received", data={
-            "has_access_token": bool(tokens["access_token"]),
-            "has_refresh_token": bool(tokens["refresh_token"]),
-            "expires_in": tokens["expires_in"],
-        })
-        substep("Validate token type")
-        token_log.debug("Token type", data={"type": tokens["token_type"]})
+        with step("Send request"):
+            tokens = _simulate_token_exchange(provider, code)
+            token_log.info("Token response received", data={
+                "has_access_token": bool(tokens["access_token"]),
+                "has_refresh_token": bool(tokens["refresh_token"]),
+                "expires_in": tokens["expires_in"],
+            })
+        with step("Validate token type"):
+            token_log.debug("Token type", data={"type": tokens["token_type"]})
 
     with step("Decode ID token"):
         id_token = tokens["id_token"]
         oauth.info("ID token received", data={"parts": len(id_token.split(".")), "provider": provider})
-        substep("Verify JWT signature")
-        oauth.info("Signature verification", data={"valid": True, "algo": "RS256"})
-        substep("Extract claims")
-        oauth.debug("Claims", data={"sub": f"{provider}_user_001", "email": f"user@{provider}.example"})
+        with step("Verify JWT signature"):
+            oauth.info("Signature verification", data={"valid": True, "algo": "RS256"})
+        with step("Extract claims"):
+            oauth.debug("Claims", data={"sub": f"{provider}_user_001", "email": f"user@{provider}.example"})
 
     with step("Create local user session"):
         session = log.child("session")
@@ -172,20 +172,20 @@ def test_oauth_refresh_token(log):
 
     with step("Detect expired access token"):
         oauth.warning("Access token expired", data={"checked_at": "2026-04-02T10:00:00Z"})
-        substep("Check refresh token validity")
-        oauth.info("Refresh token still valid", data={"expires_at": "2026-04-09T10:00:00Z"})
+        with step("Check refresh token validity"):
+            oauth.info("Refresh token still valid", data={"expires_at": "2026-04-09T10:00:00Z"})
 
     with step("Request new access token"):
         oauth.info("POST /token", data={"grant_type": "refresh_token", "provider": "google"})
-        substep("Send refresh request")
-        new_access = hashlib.sha256(b"new_access").hexdigest()[:40]
-        oauth.info("New access token received", data={
-            "new_prefix": new_access[:12],
-            "expires_in": 3600,
-        })
-        substep("Optionally rotate refresh token")
-        new_refresh = hashlib.sha256(b"new_refresh").hexdigest()[:40]
-        oauth.debug("Refresh token rotated", data={"old_prefix": refresh[:12], "new_prefix": new_refresh[:12]})
+        with step("Send refresh request"):
+            new_access = hashlib.sha256(b"new_access").hexdigest()[:40]
+            oauth.info("New access token received", data={
+                "new_prefix": new_access[:12],
+                "expires_in": 3600,
+            })
+        with step("Optionally rotate refresh token"):
+            new_refresh = hashlib.sha256(b"new_refresh").hexdigest()[:40]
+            oauth.debug("Refresh token rotated", data={"old_prefix": refresh[:12], "new_prefix": new_refresh[:12]})
 
     with step("Update stored tokens"):
         store = log.child("token_store")
@@ -204,8 +204,8 @@ def test_oauth_refresh_token_expired(log):
             "expired_at": "2026-03-25T10:00:00Z",
             "now": "2026-04-02T10:00:00Z",
         })
-        substep("Server returns invalid_grant")
-        oauth.error("Token refresh failed", data={"error": "invalid_grant", "status": 400})
+        with step("Server returns invalid_grant"):
+            oauth.error("Token refresh failed", data={"error": "invalid_grant", "status": 400})
 
     with step("Trigger re-authentication"):
         oauth.info("Clearing stored tokens", data={"user_id": "usr_42"})
@@ -232,13 +232,13 @@ def test_oauth_token_revocation(log):
             "url": "https://oauth2.googleapis.com/revoke",
             "token_type_hint": "access_token",
         })
-        substep("Send revocation request")
-        oauth.info("Access token revoked", data={"status": 200})
+        with step("Send revocation request"):
+            oauth.info("Access token revoked", data={"status": 200})
 
     with step("Revoke refresh token"):
         oauth.info("POST to revocation endpoint", data={"token_type_hint": "refresh_token"})
-        substep("Send revocation request")
-        oauth.info("Refresh token revoked", data={"status": 200})
+        with step("Send revocation request"):
+            oauth.info("Refresh token revoked", data={"status": 200})
 
     with step("Clean up local session"):
         session = log.child("session")
@@ -274,17 +274,17 @@ def test_oauth_pkce_flow(log):
         })
 
     with step("Include challenge in authorize URL"):
-        substep("Append code_challenge param")
-        oauth.debug("Authorize params", data={
-            "code_challenge": challenge[:20] + "...",
-            "code_challenge_method": "S256",
-        })
+        with step("Append code_challenge param"):
+            oauth.debug("Authorize params", data={
+                "code_challenge": challenge[:20] + "...",
+                "code_challenge_method": "S256",
+            })
 
     with step("Token exchange with verifier"):
-        substep("Include code_verifier in POST body")
-        oauth.info("Verifier sent with token request", data={"verifier_length": len(verifier)})
-        substep("Server validates S256(verifier) == challenge")
-        oauth.info("PKCE validation passed", data={"match": True})
+        with step("Include code_verifier in POST body"):
+            oauth.info("Verifier sent with token request", data={"verifier_length": len(verifier)})
+        with step("Server validates S256(verifier) == challenge"):
+            oauth.info("PKCE validation passed", data={"match": True})
 
     assert len(verifier) >= 43
     assert len(challenge) >= 43
@@ -313,9 +313,9 @@ def test_oauth_scope_negotiation(log, requested_scopes, granted_scopes, expect_m
 
     with step("Evaluate granted scopes"):
         oauth.info("Scopes granted", data={"scopes": granted_scopes})
-        substep("Check if all requested scopes granted")
-        all_granted = set(requested_scopes).issubset(set(granted_scopes))
-        oauth.info("Scope check", data={"all_requested_granted": all_granted, "expected": expect_match})
+        with step("Check if all requested scopes granted"):
+            all_granted = set(requested_scopes).issubset(set(granted_scopes))
+            oauth.info("Scope check", data={"all_requested_granted": all_granted, "expected": expect_match})
 
     assert all_granted == expect_match
 
@@ -334,8 +334,8 @@ def test_oauth_callback_invalid_state(log):
             "expected": "abc123",
             "received": "xyz789",
         })
-        substep("Abort token exchange")
-        oauth.error("CSRF protection triggered", data={"action": "reject"})
+        with step("Abort token exchange"):
+            oauth.error("CSRF protection triggered", data={"action": "reject"})
 
     with step("Return error to user"):
         oauth.info("Redirecting to login with error", data={"error": "state_mismatch"})
@@ -371,14 +371,14 @@ def test_oauth_apple_id_token_name_claim(log):
     with step("First authorization -- name present"):
         claims_first = {"sub": "apple_001", "email": "user@icloud.com", "name": {"firstName": "Jane", "lastName": "Doe"}}
         oauth.info("First auth claims", data=claims_first)
-        substep("Store name locally")
-        oauth.info("Name saved", data={"first": "Jane", "last": "Doe"})
+        with step("Store name locally"):
+            oauth.info("Name saved", data={"first": "Jane", "last": "Doe"})
 
     with step("Subsequent authorization -- name absent"):
         claims_second = {"sub": "apple_001", "email": "user@icloud.com"}
         oauth.info("Re-auth claims", data=claims_second)
-        substep("Fallback to stored name")
-        oauth.info("Using stored name", data={"first": "Jane", "last": "Doe"})
+        with step("Fallback to stored name"):
+            oauth.info("Using stored name", data={"first": "Jane", "last": "Doe"})
 
     assert "name" not in claims_second
 
@@ -390,8 +390,8 @@ def test_oauth_github_no_email_in_profile(log):
     with step("Fetch GitHub profile"):
         profile = {"login": "octocat", "id": 1, "email": None}
         oauth.info("Profile fetched", data=profile)
-        substep("Email is null")
-        oauth.warning("Email not in profile, fetching from /user/emails")
+        with step("Email is null"):
+            oauth.warning("Email not in profile, fetching from /user/emails")
 
     with step("Fetch email from /user/emails"):
         emails = [
@@ -399,9 +399,9 @@ def test_oauth_github_no_email_in_profile(log):
             {"email": "octocat@example.com", "primary": False, "verified": True},
         ]
         oauth.info("Emails fetched", data={"count": len(emails)})
-        substep("Select primary verified email")
-        primary = next(e for e in emails if e["primary"] and e["verified"])
-        oauth.info("Email selected", data={"email": primary["email"]})
+        with step("Select primary verified email"):
+            primary = next(e for e in emails if e["primary"] and e["verified"])
+            oauth.info("Email selected", data={"email": primary["email"]})
 
     assert primary["email"] == "octocat@github.com"
 
@@ -429,9 +429,9 @@ def test_oauth_with_flaky_provider_discovery(log, flaky_service):
 
     with step("Fetch .well-known/openid-configuration"):
         oauth.info("GET discovery document", data={"url": "https://accounts.google.com/.well-known/openid-configuration"})
-        substep("Send HTTP request")
-        result = flaky_service("oauth_discovery")
-        oauth.info("Discovery document received", data={"result": result})
+        with step("Send HTTP request"):
+            result = flaky_service("oauth_discovery")
+            oauth.info("Discovery document received", data={"result": result})
 
     with step("Parse discovery document"):
         oauth.debug("Endpoints extracted", data={
@@ -451,9 +451,9 @@ def test_oauth_with_flaky_token_endpoint(log, flaky_service):
 
     with step("Exchange code for token"):
         oauth.info("POST to token endpoint", data={"provider": "google"})
-        substep("Send request")
-        result = flaky_service("oauth_token_endpoint")
-        oauth.info("Token received", data={"result": result})
+        with step("Send request"):
+            result = flaky_service("oauth_token_endpoint")
+            oauth.info("Token received", data={"result": result})
 
     assert result.startswith("ok")
 
@@ -492,9 +492,9 @@ def test_oauth_token_exchange_latency(log):
 
     with step("Measure token exchange time"):
         perf.info("Timer started")
-        substep("POST /token")
-        elapsed = 4.82
-        perf.warning("Slow token exchange", data={"elapsed_seconds": elapsed})
+        with step("POST /token"):
+            elapsed = 4.82
+            perf.warning("Slow token exchange", data={"elapsed_seconds": elapsed})
 
     with step("Evaluate SLA"):
         perf.error("SLA breached", data={"actual": elapsed, "max_allowed": 3.0})

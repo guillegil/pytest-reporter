@@ -121,16 +121,13 @@ def test_retry_no_parameters_json_in_retries(pytester: Pytester) -> None:
 
 
 def test_retry_procedure_per_attempt(pytester: Pytester) -> None:
-    """Each retry gets its own procedure.json."""
+    """Each retry gets its own procedure.json (steps come from stepdoc, if installed)."""
     pytester.makepyfile("""
-        from pytest_reporter import step
-
         _counter = 0
 
         def test_flaky():
             global _counter
             _counter += 1
-            step("Attempt check")
             assert _counter >= 2
     """)
     result = pytester.runpytest("--report-dir=reports", "--report-retries=1")

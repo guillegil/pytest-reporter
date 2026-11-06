@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from pytest_reporter import step, substep
+from stepdoc import step
 
 
 # ---------------------------------------------------------------------------
@@ -78,19 +78,19 @@ def test_valid_email_accepted(log, form_engine, email):
         v.info("Input value", data={"email": email, "length": len(email)})
         local, domain = email.split("@")
         v.debug("Parsed parts", data={"local": local, "domain": domain})
-        substep("Validate local part")
-        v.info("Local part valid", data={"local": local, "has_plus": "+" in local, "has_dot": "." in local})
-        substep("Validate domain part")
-        v.info("Domain valid", data={"domain": domain, "tld": domain.split(".")[-1]})
+        with step("Validate local part"):
+            v.info("Local part valid", data={"local": local, "has_plus": "+" in local, "has_dot": "." in local})
+        with step("Validate domain part"):
+            v.info("Domain valid", data={"domain": domain, "tld": domain.split(".")[-1]})
 
     with step("Run validation pipeline"):
         v.info("Rule: required -- PASS (non-empty)")
         v.info("Rule: format -- checking RFC 5322 pattern")
         v.debug("Pattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
         v.info("Rule: format -- PASS")
-        substep("Check DNS (simulated)")
-        v.info("MX record lookup", data={"domain": domain, "mx_found": True})
-        v.info("All validation rules passed")
+        with step("Check DNS (simulated)"):
+            v.info("MX record lookup", data={"domain": domain, "mx_found": True})
+            v.info("All validation rules passed")
 
     with step("Update form state"):
         v.info("Field 'email': valid", data={"value": email, "errors": [], "touched": True})
@@ -122,10 +122,10 @@ def test_invalid_email_rejected(log, form_engine, email):
     with step("Display error state"):
         v.info("Field 'email': invalid", data={"value": email, "errors": [error]})
         v.info("Error message displayed", data={"message": error, "color": "#EF4444"})
-        substep("Update field visual state")
-        v.info("Border color changed to error red")
-        v.info("Error icon shown")
-        v.debug("Submit button remains disabled")
+        with step("Update field visual state"):
+            v.info("Border color changed to error red")
+            v.info("Error icon shown")
+            v.debug("Submit button remains disabled")
 
     # All these should fail validation
     valid_pattern = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -151,16 +151,16 @@ def test_password_strength_validation(log, form_engine, password, expected_valid
             "has_special": bool(re.search(r"[!@#$%^&*(),.?\":{}|<>]", password)),
         }
         for rule, passed in checks.items():
-            substep(f"Check: {rule}")
-            pw.info(f"Rule '{rule}': {'PASS' if passed else 'FAIL'}", data={"rule": rule, "passed": passed})
+            with step(f"Check: {rule}"):
+                pw.info(f"Rule '{rule}': {'PASS' if passed else 'FAIL'}", data={"rule": rule, "passed": passed})
 
     with step("Compute strength score"):
         score = sum(checks.values())
         strength = "weak" if score < 3 else "fair" if score < 4 else "strong"
         pw.info("Strength computed", data={"score": score, "max": 5, "strength": strength})
-        substep("Update strength meter UI")
-        colors = {"weak": "#EF4444", "fair": "#F59E0B", "strong": "#22C55E"}
-        pw.info("Meter color", data={"color": colors[strength], "width_pct": score * 20})
+        with step("Update strength meter UI"):
+            colors = {"weak": "#EF4444", "fair": "#F59E0B", "strong": "#22C55E"}
+            pw.info("Meter color", data={"color": colors[strength], "width_pct": score * 20})
 
     with step("Determine validity"):
         is_valid = all(checks.values())
@@ -182,14 +182,14 @@ def test_phone_number_format(log, form_engine, phone, expected_valid):
         ph.info("Raw input", data={"value": phone})
         digits = re.sub(r"\D", "", phone)
         ph.info("Extracted digits", data={"digits": digits, "count": len(digits)})
-        substep("Check country code")
-        if digits.startswith("1") and len(digits) == 11:
-            digits = digits[1:]
-            ph.info("US country code stripped", data={"remaining": digits})
-        elif len(digits) == 10:
-            ph.info("10-digit US number detected")
-        else:
-            ph.warning("Unexpected digit count", data={"count": len(digits)})
+        with step("Check country code"):
+            if digits.startswith("1") and len(digits) == 11:
+                digits = digits[1:]
+                ph.info("US country code stripped", data={"remaining": digits})
+            elif len(digits) == 10:
+                ph.info("10-digit US number detected")
+            else:
+                ph.warning("Unexpected digit count", data={"count": len(digits)})
 
     with step("Validate format"):
         is_valid = len(digits) == 10 and digits.isdigit()
@@ -219,18 +219,18 @@ def test_registration_form_complete(log, form_engine):
 
     with step("Fill out registration form"):
         for field_name, value in fields.items():
-            substep(f"Set field: {field_name}")
-            form.info(f"Setting '{field_name}'", data={"value": str(value), "type": type(value).__name__})
-            form.debug(f"onChange fired for '{field_name}'")
+            with step(f"Set field: {field_name}"):
+                form.info(f"Setting '{field_name}'", data={"value": str(value), "type": type(value).__name__})
+                form.debug(f"onChange fired for '{field_name}'")
 
     with step("Client-side validation"):
         form.info("Running validation on all fields")
         for field_name in fields:
             form.debug(f"Validating '{field_name}': PASS")
         form.info("All fields valid", data={"field_count": len(fields), "errors": 0})
-        substep("Cross-field validation")
-        form.info("Password match check: PASS")
-        form.info("Terms accepted: PASS")
+        with step("Cross-field validation"):
+            form.info("Password match check: PASS")
+            form.info("Terms accepted: PASS")
 
     with step("Submit form"):
         form.info("Submitting to POST /api/register")
@@ -239,9 +239,9 @@ def test_registration_form_complete(log, form_engine):
             "content_type": "application/json",
             "csrf_token": "abc123def456",
         })
-        substep("Simulate server response")
-        form.info("Response received", data={"status": 201, "user_id": "usr_9f8e7d6c"})
-        form.info("Redirect to /welcome")
+        with step("Simulate server response"):
+            form.info("Response received", data={"status": 201, "user_id": "usr_9f8e7d6c"})
+            form.info("Redirect to /welcome")
 
     assert len(fields) == 7
 
@@ -259,12 +259,12 @@ def test_form_dirty_state_tracking(log, form_engine):
         form.info("User changed 'name' to 'Acme Corporation'")
         form.debug("Dirty fields: ['name']")
         form.info("Dirty state: True")
-        substep("Track field-level changes")
-        form.info("Field diff", data={
-            "name": {"original": "Acme Corp", "current": "Acme Corporation", "dirty": True},
-            "email": {"original": "admin@acme.com", "current": "admin@acme.com", "dirty": False},
-            "plan": {"original": "pro", "current": "pro", "dirty": False},
-        })
+        with step("Track field-level changes"):
+            form.info("Field diff", data={
+                "name": {"original": "Acme Corp", "current": "Acme Corporation", "dirty": True},
+                "email": {"original": "admin@acme.com", "current": "admin@acme.com", "dirty": False},
+                "plan": {"original": "pro", "current": "pro", "dirty": False},
+            })
 
     with step("Revert field to original"):
         form.info("User changed 'name' back to 'Acme Corp'")
@@ -274,9 +274,9 @@ def test_form_dirty_state_tracking(log, form_engine):
     with step("Modify and attempt navigation"):
         form.info("User changed 'plan' to 'enterprise'")
         form.info("Dirty state: True")
-        substep("Intercept navigation")
-        form.info("beforeunload handler triggered")
-        form.info("Unsaved changes dialog shown", data={"message": "You have unsaved changes. Leave anyway?"})
+        with step("Intercept navigation"):
+            form.info("beforeunload handler triggered")
+            form.info("Unsaved changes dialog shown", data={"message": "You have unsaved changes. Leave anyway?"})
 
     assert True
 
@@ -301,18 +301,18 @@ def test_multi_step_wizard(log, form_engine):
         with step(f"Complete step {i + 1}: {step_name}"):
             wiz.info(f"Step {i + 1} active: {step_name}")
             for field, value in data.items():
-                substep(f"Fill: {field}")
-                wiz.info(f"Set '{field}' = '{value}'")
+                with step(f"Fill: {field}"):
+                    wiz.info(f"Set '{field}' = '{value}'")
             wiz.info("Step validation passed")
-            substep("Navigate to next step")
-            wiz.info(f"Progress: {(i + 1) * 25}%")
+            with step("Navigate to next step"):
+                wiz.info(f"Progress: {(i + 1) * 25}%")
 
     with step("Review and submit"):
         wiz.info("All steps complete, showing review summary")
         for i, (name, data) in enumerate(steps_data[:-1]):
             wiz.info(f"Section '{name}'", data=data)
-        substep("Submit wizard data")
-        wiz.info("Wizard submitted successfully", data={"redirect": "/dashboard"})
+        with step("Submit wizard data"):
+            wiz.info("Wizard submitted successfully", data={"redirect": "/dashboard"})
 
     assert len(steps_data) == 4
 
@@ -328,21 +328,21 @@ def test_inline_edit_field(log, form_engine):
 
     with step("Switch to edit mode"):
         edit.info("Double-click detected on field")
-        substep("Transform to input")
-        edit.info("Display text replaced with <input>", data={"type": "text", "value": "Acme Corp"})
-        edit.info("Input focused and text selected")
-        edit.debug("Escape key listener attached for cancel")
+        with step("Transform to input"):
+            edit.info("Display text replaced with <input>", data={"type": "text", "value": "Acme Corp"})
+            edit.info("Input focused and text selected")
+            edit.debug("Escape key listener attached for cancel")
 
     with step("Edit and save"):
         edit.info("User typed 'Acme Corporation'")
         edit.info("Enter key pressed")
-        substep("Validate inline")
-        edit.info("Validation passed (non-empty, max 100 chars)")
-        substep("Save via API")
-        edit.info("PATCH /api/company/name", data={"old": "Acme Corp", "new": "Acme Corporation"})
-        edit.info("API response: 200 OK")
-        substep("Return to display mode")
-        edit.info("Input replaced with updated text")
+        with step("Validate inline"):
+            edit.info("Validation passed (non-empty, max 100 chars)")
+        with step("Save via API"):
+            edit.info("PATCH /api/company/name", data={"old": "Acme Corp", "new": "Acme Corporation"})
+            edit.info("API response: 200 OK")
+        with step("Return to display mode"):
+            edit.info("Input replaced with updated text")
 
     assert True
 
@@ -364,17 +364,17 @@ def test_file_upload_form(log, form_engine):
         ]
         upload.info("Drop event received", data={"file_count": len(files)})
         for f in files:
-            substep(f"Validate: {f['name']}")
-            upload.info(f"File '{f['name']}'", data=f)
-            upload.debug(f"Extension check: PASS")
-            upload.debug(f"Size check: {f['size_kb']}KB < 10240KB -- PASS")
+            with step(f"Validate: {f['name']}"):
+                upload.info(f"File '{f['name']}'", data=f)
+                upload.debug(f"Extension check: PASS")
+                upload.debug(f"Size check: {f['size_kb']}KB < 10240KB -- PASS")
 
     with step("Upload files"):
         for f in files:
-            substep(f"Upload: {f['name']}")
-            upload.info(f"Uploading '{f['name']}'", data={"progress": "0%"})
-            upload.info(f"Upload progress", data={"file": f["name"], "progress": "50%"})
-            upload.info(f"Upload complete", data={"file": f["name"], "progress": "100%", "url": f"/uploads/{f['name']}"})
+            with step(f"Upload: {f['name']}"):
+                upload.info(f"Uploading '{f['name']}'", data={"progress": "0%"})
+                upload.info(f"Upload progress", data={"file": f["name"], "progress": "50%"})
+                upload.info(f"Upload complete", data={"file": f["name"], "progress": "100%", "url": f"/uploads/{f['name']}"})
         upload.info("All files uploaded", data={"total_files": 3, "total_size_kb": sum(f["size_kb"] for f in files)})
 
     assert len(files) == 3
@@ -400,26 +400,26 @@ def test_date_picker_rendering(log, form_engine):
         dp.info("Click on date input field")
         dp.info("Calendar popup opened", data={"month": "March", "year": 2026})
         dp.debug("Calendar grid rendered: 6 weeks x 7 days")
-        substep("Highlight today")
-        dp.info("Today marker on March 28", data={"is_today": True, "class": "today"})
+        with step("Highlight today"):
+            dp.info("Today marker on March 28", data={"is_today": True, "class": "today"})
 
     with step("Navigate months"):
         dp.info("Click next month arrow")
         dp.info("Calendar updated", data={"month": "April", "year": 2026})
-        substep("Verify disabled dates")
-        dp.info("Past dates disabled", data={"disabled_before": "2026-03-28"})
-        dp.debug("Weekend styling applied (lighter text)")
+        with step("Verify disabled dates"):
+            dp.info("Past dates disabled", data={"disabled_before": "2026-03-28"})
+            dp.debug("Weekend styling applied (lighter text)")
 
     with step("Select date range"):
         dp.info("Click start date: April 5")
         dp.info("Range start set", data={"start": "2026-04-05"})
-        substep("Highlight hover range")
-        dp.info("Hovering over April 10 -- preview range highlighted")
-        dp.info("Click end date: April 10")
-        dp.info("Range selected", data={"start": "2026-04-05", "end": "2026-04-10", "days": 6})
-        substep("Close picker")
-        dp.info("Date picker closed")
-        dp.info("Input value updated: 'Apr 5 - Apr 10, 2026'")
+        with step("Highlight hover range"):
+            dp.info("Hovering over April 10 -- preview range highlighted")
+            dp.info("Click end date: April 10")
+            dp.info("Range selected", data={"start": "2026-04-05", "end": "2026-04-10", "days": 6})
+        with step("Close picker"):
+            dp.info("Date picker closed")
+            dp.info("Input value updated: 'Apr 5 - Apr 10, 2026'")
 
     assert True
 
@@ -446,12 +446,12 @@ def test_select_dropdown_search(log, form_engine):
     with step("Open and search"):
         sel.info("Click to open dropdown")
         sel.info("Search input focused")
-        substep("Type search query")
-        sel.info("User typed 'uni'", data={"query": "uni"})
-        filtered = [o for o in options if "uni" in o["label"].lower()]
-        sel.info("Filtered results", data={"matches": [o["label"] for o in filtered], "count": len(filtered)})
-        substep("Highlight first match")
-        sel.info("'United States' highlighted via keyboard")
+        with step("Type search query"):
+            sel.info("User typed 'uni'", data={"query": "uni"})
+            filtered = [o for o in options if "uni" in o["label"].lower()]
+            sel.info("Filtered results", data={"matches": [o["label"] for o in filtered], "count": len(filtered)})
+        with step("Highlight first match"):
+            sel.info("'United States' highlighted via keyboard")
 
     with step("Select option"):
         sel.info("Enter pressed -- selecting 'United States'")
