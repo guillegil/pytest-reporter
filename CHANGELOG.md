@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The HTML report's Summary tab lists every failed run, with the line that says why it
+  failed (the pytest-verifier summary or the traceback's first `E` line), a link to the run,
+  and a **Copy rerun command** button that copies `pytest "<nodeid>" …` for all of them.
+- A failed run starts with a strip that names the phase that failed and why, lists its
+  failed checks, and links to the traceback and the Checks tab.
+- The Summary counter cards open the Tests tab filtered to that status (Retried shows
+  the retried tests, with a chip to clear it).
+
+### Changed
+
+- A test opens on its first failed run instead of run 01, and a run's phase logs open
+  on the phase that failed (or was skipped) instead of Setup.
+- When the run has failures, the Tests tab starts on them: only failed tests shown,
+  their folders expanded, the first one open.
+- Search and the status filters now apply together, and folders with nothing left to
+  show are hidden. The status filter buttons expose `aria-pressed`.
+
 ## [0.3.0]
 
 pytest-reporter no longer has a step API of its own: procedures come from
