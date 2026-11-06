@@ -602,7 +602,10 @@ function renderSummary() {
           else showTreeSubset([c.k], false);
         });
       }
-      if (c.k !== 'total' && total > 0) {
+      // Every card has a second line, so the figures line up across the row.
+      if (c.k === 'total') {
+        card.appendChild(el('div', {className:'counter-pct'}, val === 1 ? 'run' : 'runs'));
+      } else if (total > 0) {
         const pct = Math.round((val / total) * 100);
         card.appendChild(el('div', {className:'counter-pct'}, pct + '%'));
       }
@@ -935,8 +938,10 @@ function renderTreeNode(name, node, depth) {
 
   // Build label: breadcrumb for collapsed chains (_segments), plain name otherwise.
   // Each segment emits a data-seg attribute for navigateToGroup D4 matching.
-  const nameEl = el('span', {className:'tree-name' + (isClass ? ' tree-class' : '')});
   const segs = node._segments || [name];
+  // The full name shows on hover when the panel cuts it short.
+  const nameEl = el('span', {className:'tree-name' + (isClass ? ' tree-class' : ''),
+    title: segs.join(' / ')});
   segs.forEach((seg, i) => {
     nameEl.appendChild(el('span', {'data-seg': seg}, seg));
     if (i < segs.length - 1) {
@@ -1006,7 +1011,7 @@ function renderTestLeaf(test, depth) {
 
   // Class context comes from the parent class node (file -> class -> method),
   // so the leaf shows just the bare method/function name — aligned with peers.
-  const nameEl = el('span', {className:'tree-name'}, displayName);
+  const nameEl = el('span', {className:'tree-name', title: displayName}, displayName);
 
   const badges = el('span', {className:'tree-badges', 'aria-hidden':'true'});
   // Flaky marker: any run that needed retries gets a ↻ pill so passed-on-retry
@@ -1218,7 +1223,8 @@ function showTestDetail(test, initialRun) {
   // Stats row
   const agg = test.aggregate;
   const stats = el('div', {className:'detail-header-stats'});
-  stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, String(agg.total_runs)), ' runs'));
+  stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, String(agg.total_runs)),
+    agg.total_runs === 1 ? ' run' : ' runs'));
   stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, formatDuration(agg.total_duration_seconds)), ' total'));
   if (agg.passed) stats.appendChild(el('span', {className:'detail-header-stat'},
     el('span', {className:'status-dot passed'}), el('strong', null, String(agg.passed)), ' passed'));
@@ -1293,37 +1299,30 @@ function refreshRunPills(test, panel) {
   const shown = filtered.slice(0, MAX);
   const rest = filtered.slice(MAX);
 
-  shown.forEach(run => {
+  function addPill(run, before) {
     const pillText = run.run_id + (run.parametrize_id ? ` [${run.parametrize_id}]` : '');
     const pill = makeRunPill(run, pillText);
     pill.addEventListener('click', () => showRunDetail(run));
-    container.appendChild(pill);
-  });
+    container.insertBefore(pill, before || null);
+  }
+  shown.forEach(run => addPill(run));
 
   if (rest.length > 0) {
-    const rc = {passed:0,failed:0,skipped:0,error:0};
-    rest.forEach(r => rc[r.outcome]++);
-    const micro = `${rc.passed}p/${rc.failed}f/${rc.skipped}s/${rc.error}e`;
-    const btn = el('button', {className:'show-more-btn'}, `Show more (${micro})`);
+    const bad = rest.filter(r => isBad(r.outcome)).length;
+    const moreText = `Show ${rest.length} more` + (bad ? ` (${bad} failed)` : '');
+    const btn = el('button', {className:'show-more-btn', type:'button', 'aria-expanded':'false'}, moreText);
     let expanded = false;
-    btn.addEventListener('click', () => {
-      if (!expanded) {
-        rest.forEach(run => {
-          const pill = makeRunPill(run, run.run_id);
-          pill.addEventListener('click', () => showRunDetail(run));
-          container.insertBefore(pill, btn);
-        });
-        btn.textContent = 'Collapse';
-        expanded = true;
-      } else {
-        while (container.children.length > MAX + 1) {
-          container.removeChild(container.children[MAX]);
-        }
-        btn.textContent = `Show more (${micro})`;
-        expanded = false;
-      }
-    });
+    const setExpanded = on => {
+      if (on) rest.forEach(run => addPill(run, btn));
+      else while (container.children.length > MAX + 1) container.removeChild(container.children[MAX]);
+      btn.textContent = on ? 'Show fewer' : moreText;
+      btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      expanded = on;
+    };
+    btn.addEventListener('click', () => setExpanded(!expanded));
     container.appendChild(btn);
+    // The run on screen always has its pill showing.
+    if (rest.includes(selectedRun)) setExpanded(true);
   }
 }
 
@@ -1332,6 +1331,10 @@ function showRunDetail(run) {
   // Keep the header command in sync with the selected run's exact nodeid.
   const cmdCode = document.querySelector('#detail-cmd .detail-cmd-code');
   if (cmdCode) cmdCode.textContent = testCommand(run.nodeid);
+  // A run past the first 20 opens the rest of the pills, so its own shows.
+  const pills = [...document.querySelectorAll('#run-pills .run-pill')];
+  const more = document.querySelector('#run-pills .show-more-btn[aria-expanded="false"]');
+  if (more && !pills.some(p => p._run === run)) more.click();
   // Update pill selection
   document.querySelectorAll('#run-pills .run-pill').forEach(p => {
     const on = p._run === run;
@@ -1543,7 +1546,13 @@ function showSubTab(tab, run) {
           if (a.data_uri) {
             const img = el('img', {className:'artifact-thumb', src:a.data_uri, alt:a.name, loading:'lazy'});
             card.appendChild(img);
+            card.setAttribute('role', 'button');
+            card.tabIndex = 0;
+            card.setAttribute('aria-label', 'Open ' + a.name);
             card.addEventListener('click', () => openLightbox(a.data_uri, a.name));
+            card.addEventListener('keydown', e => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLightbox(a.data_uri, a.name); }
+            });
           }
           card.appendChild(el('div', {className:'artifact-info'},
             el('div', {className:'artifact-name'}, a.name),
@@ -2165,14 +2174,29 @@ function formatTimestamp(ts) {
        + `of ${y} at ${hh}:${mm}:${ss}`;
 }
 
+// A modal image viewer: focus moves to its close button and stays there, and
+// Escape, the button or a click anywhere closes it and returns focus.
 function openLightbox(src, alt) {
-  const overlay = el('div', {className:'lightbox-overlay'});
+  const opener = document.activeElement;
+  const overlay = el('div', {className:'lightbox-overlay', role:'dialog', 'aria-modal':'true',
+    'aria-label': alt || 'Image'});
+  const close = el('button', {className:'lightbox-close', type:'button', 'aria-label':'Close image'});
+  close.innerHTML = '<svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+  overlay.appendChild(close);
   overlay.appendChild(el('img', {src, alt}));
-  overlay.addEventListener('click', () => overlay.remove());
-  document.addEventListener('keydown', function esc(e) {
-    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc); }
-  });
+  function dismiss() {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    if (opener && opener.focus) opener.focus();
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') dismiss();
+    else if (e.key === 'Tab') { e.preventDefault(); close.focus(); }
+  }
+  overlay.addEventListener('click', dismiss);
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
+  close.focus();
 }
 
 // Tree visibility combines the search text, the status filters and the
@@ -2381,8 +2405,8 @@ function renderSessionLogs() {
 
   // Expand / Collapse all
   const actions = el('div', {className:'session-log-actions'});
-  const expandAllBtn = el('button', {className:'session-log-action-btn'}, 'Expand all');
-  const collapseAllBtn = el('button', {className:'session-log-action-btn'}, 'Collapse all');
+  const expandAllBtn = el('button', {className:'session-log-action-btn', type:'button'}, 'Expand all');
+  const collapseAllBtn = el('button', {className:'session-log-action-btn', type:'button'}, 'Collapse all');
   expandAllBtn.addEventListener('click', () => {
     treeEl.querySelectorAll('.session-log-section').forEach(s => setDisclosure(s, true));
   });
@@ -2427,7 +2451,8 @@ function renderSessionLogs() {
     const header = el('div', {className:'session-log-section-header'});
     header.appendChild(chevronSvg('session-log-chevron'));
     header.appendChild(el('span', {className:'session-log-section-name'}, name));
-    header.appendChild(el('span', {className:'session-log-section-count'}, allEntries.length + ' entries'));
+    header.appendChild(el('span', {className:'session-log-section-count'},
+      allEntries.length + (allEntries.length === 1 ? ' entry' : ' entries')));
     header.appendChild(levelPills(counts));
     wireDisclosure(header, section);
     section.appendChild(header);
@@ -2441,7 +2466,8 @@ function renderSessionLogs() {
       const childHeader = el('div', {className:'session-log-section-header'});
       childHeader.appendChild(chevronSvg('session-log-chevron'));
       childHeader.appendChild(el('span', {className:'session-log-section-name'}, childName));
-      childHeader.appendChild(el('span', {className:'session-log-section-count'}, String(childEntries.length)));
+      childHeader.appendChild(el('span', {className:'session-log-section-count'},
+        childEntries.length + (childEntries.length === 1 ? ' entry' : ' entries')));
       childHeader.appendChild(levelPills(childCounts));
       wireDisclosure(childHeader, childSection);
       childSection.appendChild(childHeader);
@@ -2472,10 +2498,11 @@ function renderSessionLogs() {
       const textOk = !q || entry.textContent.toLowerCase().includes(q);
       entry.classList.toggle('log-hidden', !(levelOk && textOk));
     });
-    // Hide sections with zero visible entries
+    // Hide sections with zero visible entries; a search opens the ones it matched.
     treeEl.querySelectorAll('.session-log-section').forEach(sec => {
       const has = sec.querySelector('.log-entry:not(.log-hidden)');
       sec.classList.toggle('log-hidden', !has);
+      if (q && has) setDisclosure(sec, true);
     });
   }
   search.addEventListener('input', applyFilters);

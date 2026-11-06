@@ -365,7 +365,7 @@ button { font-family: inherit; }
 .ratio-bar-seg.error { background: var(--c-error); }
 .ratio-bar-legend {
   display: flex;
-  gap: 16px;
+  gap: 6px 16px;
   margin-top: 10px;
   flex-wrap: wrap;
 }
@@ -624,7 +624,10 @@ button { font-family: inherit; }
 .pass-rate-bar-stats .prs-dur { font-family: var(--font-mono); color: var(--c-text2); font-size: var(--fs-xs); }
 
 @media (max-width: 640px) {
-  .summary-hero { flex-direction: column; gap: 20px; padding: 22px 20px; }
+  /* Pass rate and total time side by side, the distribution below them. */
+  .summary-hero { flex-wrap: wrap; justify-content: space-around; gap: 20px 24px; padding: 22px 20px; }
+  .summary-hero-divider { display: none; }
+  .summary-hero-body { flex-basis: 100%; }
 }
 
 /* ================================================================
@@ -683,9 +686,9 @@ button { font-family: inherit; }
 }
 .search-input::placeholder { color: var(--c-text3); }
 .search-input:focus {
-  outline: none;
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
   border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-dim);
 }
 .tree-controls-row {
   display: flex;
@@ -1224,6 +1227,21 @@ button { font-family: inherit; }
   cursor: pointer;
   backdrop-filter: blur(4px);
 }
+.lightbox-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--c-border2);
+  background: var(--c-surface);
+  color: var(--c-text);
+  cursor: pointer;
+}
+.lightbox-close:hover { background: var(--c-surface2); }
+.lightbox-close:focus { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.artifact-card[role="button"] { cursor: zoom-in; }
+.artifact-card[role="button"]:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 .lightbox-overlay img {
   max-width: 90vw;
   max-height: 90vh;
@@ -1764,7 +1782,7 @@ button { font-family: inherit; }
   font-size: var(--fs-sm);
   transition: border-color 0.15s var(--ease-out);
 }
-.session-log-search:focus { outline: none; border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-dim); }
+.session-log-search:focus { outline: 2px solid var(--c-accent); outline-offset: 1px; border-color: var(--c-accent); }
 .session-log-search::placeholder { color: var(--c-text3); }
 .session-log-level-filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .session-log-level-btn {
@@ -1920,12 +1938,14 @@ button { font-family: inherit; }
 .report-info-row {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
   padding: 8px 0;
   font-size: var(--fs-md);
   border-bottom: 1px solid var(--c-border);
 }
 .report-info-row:last-child { border-bottom: none; }
-.report-info-label { color: var(--c-text3); font-weight: 500; }
+.report-info-label { color: var(--c-text3); font-weight: 500; flex-shrink: 0; }
 .report-info-value { color: var(--c-text); font-family: var(--font-mono); font-size: var(--fs-sm); text-align: right; }
 .report-info-value.mono { font-family: var(--font-mono); }
 .report-info-not-provided { color: var(--c-text3); font-style: italic; font-size: var(--fs-sm); text-align: right; }
@@ -1955,9 +1975,9 @@ button { font-family: inherit; }
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .log-search:focus {
-  outline: none;
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
   border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-dim);
 }
 .plugin-list {
   display: flex;
