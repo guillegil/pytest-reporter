@@ -1030,6 +1030,7 @@ function renderTestLeaf(test, depth) {
     e.stopPropagation();
     markTreeSelected(row);
     showTestDetail(test);
+    showDetailPane(true);
   });
   container.appendChild(row);
   container._test = test;
@@ -1146,6 +1147,29 @@ function renderFailureStrip(run, selectSubTab) {
   return strip;
 }
 
+// ─── Phones: list and detail take turns ─────────────────────────────
+// Below 768px the Tests tab shows either the test list or one test. Picking
+// a test shows its detail; the back button returns to the list, on the row.
+const PHONE_LAYOUT = window.matchMedia ? window.matchMedia('(max-width: 768px)') : {matches: false};
+
+function showDetailPane(on) {
+  const layout = document.querySelector('.tests-layout');
+  if (!layout) return;
+  layout.classList.toggle('show-detail', on);
+  if (!PHONE_LAYOUT.matches) return;
+  if (on) {
+    window.scrollTo(0, 0);
+    const title = document.querySelector('.detail-panel .detail-header h2');
+    if (title) title.focus({preventScroll: true});
+  } else {
+    const row = document.querySelector('.tree-row[aria-selected="true"]');
+    if (row) {
+      row.scrollIntoView({block: 'center'});
+      row.focus({preventScroll: true});
+    }
+  }
+}
+
 function showTestDetail(test, initialRun) {
   selectedTest = test;
   const panel = document.querySelector('.detail-panel');
@@ -1162,10 +1186,15 @@ function showTestDetail(test, initialRun) {
   if (test.aggregate.class_name) {
     headerTop.appendChild(el('div', {className:'detail-eyebrow'}, test.aggregate.class_name));
   }
-  headerTop.appendChild(el('h2', null, testDisplayName(test.aggregate)));
+  headerTop.appendChild(el('h2', {tabindex:'-1'}, testDisplayName(test.aggregate)));
   headerTop.appendChild(outcomeBadge);
   header.appendChild(headerTop);
   header.appendChild(el('div', {className:'file-path'}, test.aggregate.file));
+  const back = el('button', {className:'detail-back', type:'button'});
+  back.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  back.appendChild(document.createTextNode('All tests'));
+  back.addEventListener('click', () => showDetailPane(false));
+  panel.appendChild(back);
 
   // Exact "run only this test" command — updates with the selected run's nodeid.
   const firstRun = initialRun || firstFailingRun(test);
@@ -1405,8 +1434,9 @@ function showSubTab(tab, run) {
         const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`, type:'button',
           role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': idx===activeIdx ? 'true' : 'false',
           tabindex: idx===activeIdx ? '0' : '-1'},
-          el('span', {className:`status-dot ${phase.outcome}`, 'aria-hidden':'true'}),
-          when.charAt(0).toUpperCase() + when.slice(1),
+          el('span', {className:'phase-tab-label'},
+            el('span', {className:`status-dot ${phase.outcome}`, 'aria-hidden':'true'}),
+            when.charAt(0).toUpperCase() + when.slice(1)),
           srText(', ' + (LABELS[phase.outcome] || phase.outcome)),
           el('span', {className:'phase-meta'}, phase.duration.toFixed(4) + 's')
         );
@@ -2223,6 +2253,8 @@ function showTreeSubset(statuses, onlyRetried) {
   retriedOnly = !!onlyRetried;
   switchTab('tests');
   refreshTree(true);
+  document.querySelector('.tests-layout').classList.remove('show-detail');
+  window.scrollTo(0, 0);
 }
 
 function selectTreeRow(test) {
@@ -2252,10 +2284,7 @@ function openRunInTests(test, run) {
   switchTab('tests');
   selectTreeRow(test);
   showTestDetail(test, run);
-  const panel = document.querySelector('.detail-panel');
-  if (panel && window.matchMedia('(max-width: 768px)').matches) {
-    panel.scrollIntoView({block:'start'});
-  }
+  showDetailPane(true);
 }
 
 // ─── Session Logs Tab ────────────────────────────────────────────────
