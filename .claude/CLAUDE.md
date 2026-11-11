@@ -323,7 +323,7 @@ node may hold `substeps` of the same shape.
 
 ### Test detail sub-tabs:
 - **Summary:** Duration, outcome, parameters table, phase logs as horizontal tabs (Setup/Call/Teardown).
-- **Procedure:** Numbered outline from `procedure.json`, grouped into Setup / Procedure / Teardown when fixtures made steps; actions and checks show their result.
+- **Procedure:** Numbered outline from `procedure.json` in Setup / Call / Teardown tabs (by each step's `section`), opening on the failed phase, else Call; actions and checks show their result. Printing shows all three.
 - **Artifacts:** HTML = sandboxed iframes, Images = thumbnail grid + lightbox, Others = file cards.
 - **Retries:** Original failure pinned at top (red), retry cards below (collapsible), final attempt expanded.
 
