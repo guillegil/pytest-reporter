@@ -1482,7 +1482,9 @@ button { font-family: inherit; }
 }
 .proc-mono {
   font-family: var(--font-mono);
-  background: var(--c-surface2);
+  /* Steps sit on surface2, so the span takes the next surface and a hairline. */
+  background: var(--c-surface3);
+  border: 1px solid var(--c-border);
   padding: 0 4px;
   border-radius: 3px;
   font-size: 0.92em;

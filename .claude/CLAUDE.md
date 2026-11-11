@@ -272,6 +272,9 @@ node may hold `substeps` of the same shape.
   teardown; entries (steps, actions, checks) share the child numbering, as in stepdoc.
 - Outcomes: stepdoc `passed/failed/error/unknown/not_run` → `passed/failed/error/unknown/skipped`;
   actions are `info`; unjudged checks `unknown`.
+- A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets
+  `description_segments` (`[{"text", "style": "mono"|null}]`, `_stepdoc.title_segments`);
+  the HTML renders them as `.proc-mono`. `description` keeps the backticks.
 - 0.2 files (no `kind`, optional `description_segments`, `check`) still render.
 - stepdoc records only with one of its options: `_stepdoc.activate()` (from the
   `tryfirst` `pytest_configure`) sets `--stepdoc-record=<run>/stepdoc.json` when the user
