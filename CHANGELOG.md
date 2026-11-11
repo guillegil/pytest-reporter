@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Step titles with Markdown code spans (stepdoc's `` `backticks` `` or `fmt.mono(...)`) show
+  those parts in monospace on the Procedure tab. `procedure.json` keeps the title in
+  `description` and adds `description_segments` for such steps.
+
 - The Procedure sub-tab shows the procedure in **Setup**, **Call** and **Teardown** tabs,
   like the phase logs: each tab shows its worst outcome and how many steps it has, and the
   tab opens on the phase that failed (else on Call). Retry attempts use the same tabs, and

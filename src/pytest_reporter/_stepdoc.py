@@ -20,6 +20,7 @@ this off.
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -43,6 +44,50 @@ _OUTCOME = {
 _ASSIGN_OPS = {"write", "set"}
 _BARE_OPS = {"request"}
 _MAX_VALUE = 200
+_TICKS = re.compile(r"`+")
+
+
+def title_segments(title: str) -> list[dict[str, Any]] | None:
+    """A step title's Markdown code spans as ``description_segments``.
+
+    stepdoc titles mark monospace with backticks (``"Write `dut.reg1 = 1`"``,
+    or ``stepdoc.fmt.mono``). A run of backticks opens a span that ends at the
+    next run of the same length; an unmatched run is plain text; one space is
+    stripped from both ends of a padded span (Markdown's rules, as in
+    ``stepdoc.fmt.spans``). Returns ``None`` when the title has no span.
+    """
+    out: list[dict[str, Any]] = []
+
+    def add(text: str, mono: bool) -> None:
+        if not text:
+            return
+        if out and not mono and out[-1]["style"] is None:
+            out[-1]["text"] += text
+        else:
+            out.append({"text": text, "style": "mono" if mono else None})
+
+    pos = 0
+    while True:
+        m = _TICKS.search(title, pos)
+        if m is None:
+            add(title[pos:], False)
+            break
+        n = len(m.group())
+        close = next((c for c in _TICKS.finditer(title, m.end()) if len(c.group()) == n), None)
+        if close is None:
+            add(title[pos : m.end()], False)
+            pos = m.end()
+            continue
+        add(title[pos : m.start()], False)
+        body = title[m.end() : close.start()]
+        if len(body) >= 2 and body[0] == " " and body[-1] == " " and body.strip():
+            body = body[1:-1]
+        if body.strip():
+            add(body, True)
+        else:
+            add(title[m.start() : close.end()], False)
+        pos = close.end()
+    return out if any(seg["style"] == "mono" for seg in out) else None
 
 
 def activate(config: pytest.Config, run_dir: Path) -> str | None:
@@ -162,6 +207,9 @@ class StepCollector:
             "exc": _exc(getattr(step, "error", None)),
             "section": str(getattr(step, "section", "procedure") or "procedure"),
         }
+        segments = title_segments(node["description"])
+        if segments is not None:
+            node["description_segments"] = segments
         children = [
             self._entry(e, f"{number}.{i}")
             for i, e in enumerate(getattr(step, "entries", None) or [], 1)

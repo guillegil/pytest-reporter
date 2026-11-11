@@ -332,3 +332,59 @@ def test_html_renders_xss_safely(pytester: Pytester) -> None:
     data_block = html[html.index(_DATA_BLOCK) :]
     data_block = data_block[: data_block.index("</script>")]
     assert "alert(1)" in data_block  # the title is in the data, escaped
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("plain title", None),
+        ("a lone ` stays", None),
+        (
+            "Write into `dut.reg1 = 1` now",
+            [
+                {"text": "Write into ", "style": None},
+                {"text": "dut.reg1 = 1", "style": "mono"},
+                {"text": " now", "style": None},
+            ],
+        ),
+        (
+            "``a`b`` and `c`",
+            [
+                {"text": "a`b", "style": "mono"},
+                {"text": " and ", "style": None},
+                {"text": "c", "style": "mono"},
+            ],
+        ),
+        ("`` `edge ``", [{"text": "`edge", "style": "mono"}]),
+        ("empty `` span", None),
+    ],
+)
+def test_title_code_spans_become_segments(
+    title: str, expected: list[dict[str, Any]] | None
+) -> None:
+    from pytest_reporter._stepdoc import title_segments
+
+    assert title_segments(title) == expected
+
+
+@requires_stepdoc
+def test_step_title_code_spans_reach_procedure_json(pytester: Pytester) -> None:
+    pytester.makepyfile(
+        test_mono="""
+        from stepdoc import step
+
+        def test_a():
+            with step("Write into `dut.reg1 = 1`"):
+                pass
+            with step("Plain"):
+                pass
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+    first, second = _procedure(pytester, "test_mono", "test_a")["steps"]
+    assert first["description"] == "Write into `dut.reg1 = 1`"
+    assert first["description_segments"] == [
+        {"text": "Write into ", "style": None},
+        {"text": "dut.reg1 = 1", "style": "mono"},
+    ]
+    assert "description_segments" not in second
