@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Procedure sub-tab shows the procedure in **Setup**, **Call** and **Teardown** tabs,
+  like the phase logs: each tab shows its worst outcome and how many steps it has, and the
+  tab opens on the phase that failed (else on Call). Retry attempts use the same tabs, and
+  printing shows all three.
+
 - The HTML report's Summary tab lists every failed run, with the line that says why it
   failed (the pytest-verifier summary or the traceback's first `E` line), a link to the run,
   and a **Copy rerun command** button that copies `pytest "<nodeid>" …` for all of them.

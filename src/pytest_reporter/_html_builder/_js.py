@@ -1482,7 +1482,7 @@ function showSubTab(tab, run) {
     if (proc.steps.length === 0) {
       content.appendChild(el('div', {className:'procedure-empty'}, 'No procedure defined'));
     } else {
-      content.appendChild(renderProcedure(proc));
+      content.appendChild(renderProcedure(proc, run));
     }
 
   } else if (tab === 'checks') {
@@ -1653,7 +1653,7 @@ function showSubTab(tab, run) {
         // Procedure
         if (attempt.procedure && attempt.procedure.steps && attempt.procedure.steps.length > 0) {
           body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Procedure'));
-          body.appendChild(renderProcedure(attempt.procedure));
+          body.appendChild(renderProcedure(attempt.procedure, attempt));
         }
         // Verification checks of this attempt
         if (attempt.check_results && attempt.check_results.length > 0) {
@@ -1862,22 +1862,72 @@ function renderNode(node, depth) {
   return row;
 }
 
-// Setup (S1…) and Teardown (T1…) steps from fixtures get a heading of their
-// own; the test's steps get one only when one of the others is present.
-const PROC_SECTIONS = [['setup','Setup'], ['procedure','Procedure'], ['teardown','Teardown']];
+// The procedure in Setup / Call / Teardown tabs, like the phase logs: Setup
+// (S1…) and Teardown (T1…) hold the steps fixtures ran, Call the test's own.
+// Each tab shows the worst outcome and the number of its top-level steps; the
+// tab opens on the phase that failed when it has steps, else on Call.
+const PROC_SECTIONS = [['setup','Setup','setup'], ['procedure','Call','call'], ['teardown','Teardown','teardown']];
+const PROC_RANK = {error:5, failed:4, unknown:3, passed:2, skipped:1, info:0};
 
-function renderProcedure(proc) {
-  const list = el('div', {className:'procedure-list'});
+function procOutcome(steps) {
+  let worst = null;
+  steps.forEach(function(s) {
+    const o = s.outcome || 'unknown';
+    if (worst === null || (PROC_RANK[o] || 0) > (PROC_RANK[worst] || 0)) worst = o;
+  });
+  return worst;
+}
+
+function renderProcedure(proc, run) {
   const steps = proc.steps || [];
   const sectionOf = s => s.section || 'procedure';
-  const framed = steps.some(s => sectionOf(s) !== 'procedure');
-  PROC_SECTIONS.forEach(function(pair) {
-    const inSection = steps.filter(s => sectionOf(s) === pair[0]);
-    if (inSection.length === 0) return;
-    if (framed) list.appendChild(el('div', {className:'procedure-section'}, pair[1]));
-    inSection.forEach(function(s) { list.appendChild(renderNode(s, 1)); });
+  const bySection = {};
+  PROC_SECTIONS.forEach(function(p) { bySection[p[0]] = steps.filter(s => sectionOf(s) === p[0]); });
+
+  const interest = run ? phaseOfInterest(run) : null;
+  let active = PROC_SECTIONS.findIndex(p => p[2] === interest && bySection[p[0]].length > 0);
+  if (active < 0) active = bySection.procedure.length > 0 ? 1
+    : PROC_SECTIONS.findIndex(p => bySection[p[0]].length > 0);
+
+  const wrap = el('div', {className:'procedure-tabs'});
+  const bar = el('div', {className:'phase-tabs-bar', role:'tablist', 'aria-label':'Procedure phases'});
+  const panels = [];
+  PROC_SECTIONS.forEach(function(pair, idx) {
+    const inSection = bySection[pair[0]];
+    const outcome = procOutcome(inSection);
+    const on = idx === active;
+    const tabId = uid('proctab'), panelId = uid('procpanel');
+    const label = el('span', {className:'phase-tab-label'});
+    if (outcome) label.appendChild(el('span', {className:'status-dot ' + outcome, 'aria-hidden':'true'}));
+    label.appendChild(document.createTextNode(pair[1]));
+    const count = inSection.length;
+    const btn = el('button', {className:'phase-tab-btn' + (on ? ' active' : ''), type:'button',
+      role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': on ? 'true' : 'false',
+      tabindex: on ? '0' : '-1'},
+      label,
+      outcome ? srText(', ' + (LABELS[outcome] || outcome)) : null,
+      el('span', {className:'phase-meta'}, count + (count === 1 ? ' step' : ' steps'))
+    );
+    const panel = el('div', {className:'phase-tab-panel procedure-tab-panel' + (on ? ' active' : ''),
+      role:'tabpanel', id:panelId, 'aria-labelledby':tabId, tabindex:'0', 'data-phase':pair[1]});
+    if (count === 0) {
+      panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No steps in ' + pair[1].toLowerCase()));
+    } else {
+      const list = el('div', {className:'procedure-list'});
+      inSection.forEach(function(s) { list.appendChild(renderNode(s, 1)); });
+      panel.appendChild(list);
+    }
+    btn.addEventListener('click', function() {
+      setSelectedTab(Array.from(bar.querySelectorAll('.phase-tab-btn')), btn);
+      panels.forEach(p => p.classList.toggle('active', p === panel));
+    });
+    bar.appendChild(btn);
+    panels.push(panel);
   });
-  return list;
+  wireTablist(bar, '.phase-tab-btn', b => b.click());
+  wrap.appendChild(bar);
+  panels.forEach(p => wrap.appendChild(p));
+  return wrap;
 }
 
 function renderCheckResults(checks) {

@@ -1454,6 +1454,10 @@ button { font-family: inherit; }
   max-height: 200px;
   overflow: auto;
 }
+/* The procedure's Setup / Call / Teardown tabs reuse the phase-tab look; a
+   procedure is read top to bottom, so its panel is not capped in height. */
+.procedure-tab-panel { max-height: none; overflow: visible; }
+.procedure-tab-panel .procedure-list { padding: 10px; }
 .procedure-section {
   margin-top: 6px;
   font-size: var(--fs-xs);
@@ -2412,6 +2416,12 @@ h1, h2, h3, h4 { text-wrap: balance; }
   pre, .phase-log, [class*="longrepr"] { max-height: none !important; overflow: visible !important; white-space: pre-wrap; }
   .counter-card, .chart-card, .check-card, .failure-strip, .failures-panel, .procedure-step,
   .retry-card, .log-entry { break-inside: avoid; }
+  .procedure-tabs .phase-tabs-bar { display: none; }
+  .procedure-tab-panel { display: block; border: none; }
+  .procedure-tab-panel::before {
+    content: attr(data-phase); display: block; margin-top: 8px;
+    font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; color: var(--c-text3);
+  }
   * { box-shadow: none !important; }
   .meta-badge, .tree-badge, .run-pill, .detail-header-outcome, .check-card,
   .failure-strip, .counter-card, .log-entry-level, .pass-rate-bar-fill, .legend-dot, .status-dot {
