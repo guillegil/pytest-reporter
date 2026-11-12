@@ -68,6 +68,7 @@ pytest_reporter/
 ├── _html_builder.py         # Self-contained HTML report generation at session end
 ├── _table.py                # Table normalization and HTML artifact builder
 ├── _console_capture.py      # TeeFile — captures pytest.log output
+├── _retention.py            # report_keep_runs / report_max_age_days: prune old runs/ folders
 └── _symlinks.py             # 01_latest/ hard-copy refresh (update_latest_copy)
 ```
 
@@ -171,6 +172,8 @@ reports/
 - Non-parametrized tests: single `default/` folder.
 - Failure files include run identifier: `test_login_01_error.log`.
 - `01_latest/` hard copy refreshed at END of run (after all files written).
+- Retention (`report_keep_runs`, `report_max_age_days` ini settings, off by default) deletes old
+  timestamp-named run folders after `01_latest/` is refreshed; never the current run.
 - Timestamp format: `YYYY_MM_DD_HH_MM_SS` (UTC, underscores only).
 
 ## JSON Schemas

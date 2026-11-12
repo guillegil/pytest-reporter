@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Old runs can be deleted automatically. Set `report_keep_runs = N` to keep the N most
+  recent runs, and/or `report_max_age_days = D` to delete runs older than D days, under
+  `[tool.pytest.ini_options]` in `pyproject.toml`. Both are off by default; runs are
+  deleted at the end of the session, never the current one, and only folders named like a
+  run.
+
 - A check whose expected value comes from a variable shows the variable and this run's
   value on the Procedure tab: `Verify 'Readback' == <wdata> (243)` instead of `== 243`, so
   the line reads like stepdoc's procedure and still says what was compared. Checks with

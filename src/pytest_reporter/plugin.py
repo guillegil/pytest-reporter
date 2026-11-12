@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 
-from . import _hookspecs, _stepdoc
+from . import _hookspecs, _retention, _stepdoc
 from ._context import RunContext
 from ._logger import Logger
 from .reporter import Reporter
@@ -44,6 +44,26 @@ def pytest_addoption(parser: Parser) -> None:
         "procedures (and save its run record as stepdoc.json in the run folder) "
         "when no stepdoc option is given (default: true)",
     )
+    # pytest 8.4+ has int/float ini types, which [tool.pytest] (native TOML)
+    # needs for a number; older versions read the setting as a string.
+    numeric = _retention.NUMERIC_INI
+    int_type: Literal["int", "string"] = "int" if numeric else "string"
+    float_type: Literal["float", "string"] = "float" if numeric else "string"
+    parser.addini(
+        _retention.KEEP_RUNS,
+        type=int_type,
+        default=0 if numeric else "",
+        help="With --report-dir, keep only the N most recent runs under runs/ "
+        "(this run included) and delete older ones at the end of the session "
+        "(default: off)",
+    )
+    parser.addini(
+        _retention.MAX_AGE_DAYS,
+        type=float_type,
+        default=0.0 if numeric else "",
+        help="With --report-dir, delete runs under runs/ that started more than "
+        "this many days ago at the end of the session (default: off)",
+    )
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -55,10 +75,11 @@ def pytest_configure(config: Config) -> None:
         # Only register on the controller, not xdist workers
         if not hasattr(config, "workerinput"):
             max_retries: int = config.getoption("--report-retries", default=0)
+            retention = _retention.read_policy(config)
             context = RunContext(Path(report_dir))
             _stepdoc.activate(config, context.run_dir)
             config.pluginmanager.register(
-                Reporter(config, context, max_retries=max_retries),
+                Reporter(config, context, max_retries=max_retries, retention=retention),
                 "pytest_reporter",
             )
 

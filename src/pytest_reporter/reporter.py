@@ -18,6 +18,7 @@ from ._junit_writer import write_junit_xml
 from ._logger import Logger
 from ._phase_capture import capture_phase_logs, write_run_finish_files
 from ._report_builder import build_html_data
+from ._retention import RetentionPolicy, prune_runs
 from ._retry import run_with_retries
 from ._safety import guard, guard_void
 from ._stepdoc import StepCollector
@@ -32,9 +33,19 @@ if TYPE_CHECKING:
 class Reporter:
     """Orchestrates data collection and report generation."""
 
-    def __init__(self, config: Config, context: RunContext, *, max_retries: int = 0) -> None:
+    def __init__(
+        self,
+        config: Config,
+        context: RunContext,
+        *,
+        max_retries: int = 0,
+        retention: RetentionPolicy | None = None,
+    ) -> None:
         self.config = config
         self.context = context
+        # Which old runs under runs/ to delete at session end (off by default)
+        self.retention = retention or RetentionPolicy()
+        self._pruned_runs: list[Path] = []
         self.collector = DataCollector()
         self.session_logger = Logger()
         self.max_retries = max_retries
@@ -271,6 +282,13 @@ class Reporter:
         # guarded write block above so it fires even when the build failed.
         update_latest_copy(self.context.reports_dir, self.context.run_dir)
 
+        # Delete old runs last, once this run is complete, and never this run.
+        self._pruned_runs = guard(
+            "pytest_sessionfinish (run retention)",
+            lambda: prune_runs(self.context.run_dir.parent, self.context.run_dir, self.retention),
+            default=[],
+        )
+
     def _do_terminal_summary(
         self,
         terminalreporter: pytest.TerminalReporter,
@@ -282,3 +300,8 @@ class Reporter:
         terminalreporter.write_line(f"  HTML:  {self.context.run_dir / 'report.html'}")
         terminalreporter.write_line(f"  JUnit: {self.context.run_dir / 'junit.xml'}")
         terminalreporter.write_line(f"  Latest: {self.context.reports_dir / '01_latest'}")
+        if self._pruned_runs:
+            count = len(self._pruned_runs)
+            terminalreporter.write_line(
+                f"  Deleted {count} old run{'s' if count != 1 else ''} (retention rule)"
+            )
