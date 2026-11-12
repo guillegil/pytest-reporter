@@ -117,6 +117,27 @@ Open `reports/01_latest/report.html` to see the dashboard.
 | ini setting | Default | Description |
 |---|---|---|
 | `report_stepdoc` | `true` | With stepdoc installed, make it record the procedures (and save `stepdoc.json` in the run folder) when you pass no `--stepdoc-*` option. `false` leaves stepdoc alone. |
+| `report_keep_runs` | *(off)* | Keep only the N most recent runs in `runs/` (this run counts as one) and delete the older ones when the session ends. |
+| `report_max_age_days` | *(off)* | Delete runs in `runs/` that started more than this many days ago when the session ends. Fractions such as `0.5` work. |
+
+### Deleting old runs
+
+Every run adds a folder under `reports/runs/`. To stop them piling up, add a retention rule
+to `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+report_keep_runs = 20        # keep the 20 most recent runs
+report_max_age_days = 30     # and delete any run older than 30 days
+```
+
+Both rules are off by default (unset or `0`), and you can use either one alone. With both,
+a run is deleted when either rule says so. Old runs are deleted at the end of the session,
+after this run's report is written, and the terminal summary says how many were removed.
+The current run and `01_latest/` are never deleted, and only folders named like a run
+(`YYYY_MM_DD_HH_MM_SS`) are touched, so anything else you keep in `runs/` stays. A run's
+age comes from its folder name (UTC). A value that is not a number, or is negative, stops
+pytest with a usage error.
 
 ---
 
@@ -387,6 +408,7 @@ src/pytest_reporter/
 ├── _dashboard_config.py    # Summary dashboard group normalization
 ├── _table.py               # DataFrame normalization + HTML artifacts
 ├── _console_capture.py     # pytest.log tee
+├── _retention.py           # report_keep_runs / report_max_age_days: delete old runs
 ├── _symlinks.py            # 01_latest/ hard-copy refresh
 ├── _safety.py              # Crash-safety guard — the observer never breaks the run
 ├── _types.py               # TypedDicts and dataclasses
