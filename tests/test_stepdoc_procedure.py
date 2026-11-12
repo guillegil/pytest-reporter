@@ -317,6 +317,51 @@ def test_verifier_checks_land_in_their_step(pytester: Pytester) -> None:
 
 
 @requires_stepdoc
+@requires_verifier
+def test_verifier_check_shows_names_and_values(pytester: Pytester) -> None:
+    """An expected value given by name reads ``<name> (value)``: the procedure's
+    symbolic form with this run's value."""
+    pytester.makepyfile(
+        test_sym="""
+        import pytest
+        from stepdoc import step
+
+        @pytest.fixture
+        def wdata():
+            return 243
+
+        def test_a(verify, wdata):
+            with step("Read back"):
+                verify.equal(wdata, wdata, name="Read from `DA_SCRATCH_1_ADDR`")
+                verify.between(5, 1, wdata, name="Range")
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+    step = _procedure(pytester, "test_sym", "test_a")["steps"][0]
+    assert [c["description"] for c in step["substeps"]] == [
+        "Verify 'Read from `DA_SCRATCH_1_ADDR`' == <wdata> (243)",
+        "Verify 'Range' ∈ [1, <wdata> (243)]",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("symbolic", "concrete", "expected"),
+    [
+        ("'R' == <wdata>", "'R' == 243", "'R' == <wdata> (243)"),
+        ("'R' == <wdata> * 2", "'R' == 486", "'R' == <wdata> * 2 (486)"),
+        ("'Reply' == <reply>", "'Reply' == 'OK'", "'Reply' == <reply> ('OK')"),
+        ("'I' ∈ [<lo> A, <hi> A]", "'I' ∈ [0.1A, 0.5A]", "'I' ∈ [<lo> A (0.1A), <hi> A (0.5A)]"),
+        ("'V' == <vref> V ± 0.05V", "'V' == 3.3V ± 0.05V", "'V' == <vref> V (3.3V) ± 0.05V"),
+        ("'L' == <exp>", "'L' == [1, 2]", "'L' == <exp> ([1, 2])"),
+    ],
+)
+def test_with_values(symbolic: str, concrete: str, expected: str) -> None:
+    from pytest_reporter._stepdoc import with_values
+
+    assert with_values(symbolic, concrete) == expected
+
+
+@requires_stepdoc
 def test_html_renders_xss_safely(pytester: Pytester) -> None:
     pytester.makepyfile(
         test_xss="""

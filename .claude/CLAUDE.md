@@ -270,6 +270,9 @@ node may hold `substeps` of the same shape.
 - Numbers are renumbered per attempt (stepdoc numbers continue across the reporter's
   retries, which run inside one stepdoc protocol): `S1…` setup, `1…` procedure, `T1…`
   teardown; entries (steps, actions, checks) share the child numbering, as in stepdoc.
+- A check with stepdoc's `symbolic_text` (an expected value given by name) gets
+  `_stepdoc.with_values`: the symbolic text with this run's value after each name,
+  `Verify 'R' == <wdata> (243)`.
 - Outcomes: stepdoc `passed/failed/error/unknown/not_run` → `passed/failed/error/unknown/skipped`;
   actions are `info`; unjudged checks `unknown`.
 - A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets
