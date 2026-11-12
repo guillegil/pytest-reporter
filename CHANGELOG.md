@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A check whose expected value comes from a variable shows the variable and this run's
+  value on the Procedure tab: `Verify 'Readback' == <wdata> (243)` instead of `== 243`, so
+  the line reads like stepdoc's procedure and still says what was compared. Checks with
+  literal expected values are unchanged.
+
 - Step titles with Markdown code spans (stepdoc's `` `backticks` `` or `fmt.mono(...)`) show
   those parts in monospace on the Procedure tab. `procedure.json` keeps the title in
   `description` and adds `description_segments` for such steps.

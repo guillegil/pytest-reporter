@@ -20,6 +20,7 @@ this off.
 
 from __future__ import annotations
 
+import difflib
 import re
 import time
 from datetime import UTC, datetime
@@ -45,6 +46,8 @@ _ASSIGN_OPS = {"write", "set"}
 _BARE_OPS = {"request"}
 _MAX_VALUE = 200
 _TICKS = re.compile(r"`+")
+# Words (with a decimal part), <names>, runs of spaces, or any other character.
+_TOKEN = re.compile(r"<[^<>\s]+>|\w+(?:\.\w+)*|\s+|.")
 
 
 def title_segments(title: str) -> list[dict[str, Any]] | None:
@@ -229,6 +232,9 @@ class StepCollector:
 def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     passed = getattr(check, "passed", None)
     text = str(getattr(check, "text", ""))
+    symbolic = getattr(check, "symbolic_text", None)
+    if isinstance(symbolic, str) and symbolic and symbolic != text:
+        text = with_values(symbolic, text)
     selected = getattr(check, "selected", None)
     if selected:
         text += f" [→ {selected}]"
@@ -252,6 +258,29 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     if children:
         node["substeps"] = children
     return node
+
+
+def with_values(symbolic: str, concrete: str) -> str:
+    """A check's symbolic text with this run's values after the names they replace.
+
+    stepdoc's procedure reads ``'Readback' == <wdata>``; this run's check reads
+    ``'Readback' == 243``. Each part where the two differ keeps the symbolic
+    form, followed by the run's value in parentheses: ``'Readback' == <wdata> (243)``.
+    """
+    sym, conc = _TOKEN.findall(symbolic), _TOKEN.findall(concrete)
+    out: list[str] = []
+    matcher = difflib.SequenceMatcher(None, sym, conc, autojunk=False)
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        sym_part, conc_part = "".join(sym[i1:i2]), "".join(conc[j1:j2])
+        if op == "equal" or not sym_part.strip():
+            out.append(conc_part)
+        elif not conc_part.strip():
+            out.append(sym_part)
+        else:
+            lead = sym_part[: len(sym_part) - len(sym_part.lstrip())]
+            trail = sym_part[len(sym_part.rstrip()) :]
+            out.append(f"{lead}{sym_part.strip()} ({conc_part.strip()}){trail}")
+    return "".join(out)
 
 
 def _check_result(check: Any) -> str | None:  # noqa: ANN401
