@@ -147,7 +147,8 @@ class ProcedureNodeJson(TypedDict, total=False):
     or a ``check`` (a ``Verify ...`` line: an assert, a pytest-verifier check,
     ``step(..., check=...)``), or a ``repeat`` (a loop stepdoc collapsed: one
     pass as ``substeps``, the number of passes in ``result``). Steps carry
-    timing, ``section`` (``setup``, ``procedure`` or ``teardown``) and ``exc``; actions and checks may carry a
+    timing, ``section`` (``setup``, ``procedure`` or ``teardown``) and ``exc``;
+    actions and checks may carry a
     ``result`` (``got 1024``), and checks a ``detail``. ``substeps`` is absent
     for leaves. Files written by pytest-reporter 0.2 (no ``kind``) are steps.
     """
