@@ -433,3 +433,104 @@ def test_step_title_code_spans_reach_procedure_json(pytester: Pytester) -> None:
         {"text": "dut.reg1 = 1", "style": "mono"},
     ]
     assert "description_segments" not in second
+
+
+requires_stepdoc_repeat = pytest.mark.skipif(
+    importlib.util.find_spec("stepdoc") is None or not hasattr(__import__("stepdoc"), "repeat"),
+    reason="stepdoc without loop collapsing (repeat)",
+)
+
+
+def test_repeat_and_repeated_write_nodes() -> None:
+    """stepdoc's Repeat (a collapsed loop) and an Action with count > 1 for a write."""
+    from types import SimpleNamespace as NS
+
+    from pytest_reporter._stepdoc import StepCollector
+
+    def action(target: str, op: str, value: object, direction: str, count: int = 1) -> NS:
+        return NS(target=target, op=op, value=value, direction=direction, meta={}, count=count)
+
+    write = action("dev.fifo.fifo_data", "write", 90, "in", count=16)
+    loop = NS(
+        until="FIFO is empty",
+        count=16,
+        entries=[
+            action("dev.fifo.status.empty", "read", True, "out"),
+            action("dev.fifo.fifo_data", "write", 90, "in"),
+        ],
+    )
+    plain = NS(until=None, count=None, entries=[])
+    collector = StepCollector()
+    assert collector._entry(write, "1.1") == {
+        "kind": "action",
+        "number": "1.1",
+        "description": "Repeat dev.fifo.fifo_data = 90",
+        "outcome": "info",
+        "exc": None,
+        "result": "(16 times)",
+    }
+    node = collector._entry(loop, "1.2")
+    assert _shape([node]) == [
+        (
+            "1.2",
+            "repeat",
+            "Repeat until FIFO is empty",
+            "info",
+            [
+                ("1.2.1", "action", "Read dev.fifo.status.empty", "info"),
+                ("1.2.2", "action", "dev.fifo.fifo_data = 90", "info"),
+            ],
+        )
+    ]
+    assert node["result"] == "16 times"
+    assert collector._entry(plain, "2.1") == {
+        "kind": "repeat",
+        "number": "2.1",
+        "description": "Repeat",
+        "outcome": "info",
+        "exc": None,
+    }
+
+
+@requires_stepdoc_repeat
+def test_loops_from_stepdoc(pytester: Pytester) -> None:
+    pytester.makepyfile(
+        test_loop="""
+        import stepdoc
+        from stepdoc import repeat, step
+
+        def read_fifo():
+            stepdoc.record_action("dev.fifo.fifo_data", "write", 90)
+
+        def empty(state):
+            stepdoc.record_action("dev.fifo.status.empty", "read", state["n"] == 0)
+            return state["n"] == 0
+
+        def test_a():
+            state = {"n": 4}
+            with step("Empty FIFO"):
+                for _ in range(16):
+                    read_fifo()
+                with repeat(until="FIFO is empty"):
+                    while not empty(state):
+                        read_fifo()
+                        state["n"] -= 1
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+
+    step = _procedure(pytester, "test_loop", "test_a")["steps"][0]
+    assert _shape(step["substeps"]) == [
+        ("1.1", "action", "Repeat dev.fifo.fifo_data = 90", "info"),
+        (
+            "1.2",
+            "repeat",
+            "Repeat until FIFO is empty",
+            "info",
+            [
+                ("1.2.1", "action", "Read dev.fifo.status.empty", "info"),
+                ("1.2.2", "action", "dev.fifo.fifo_data = 90", "info"),
+            ],
+        ),
+    ]
+    assert [n.get("result") for n in step["substeps"]] == ["(16 times)", "4 times"]
