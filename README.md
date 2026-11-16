@@ -228,6 +228,7 @@ def test_voltage_sweep(log, verify, psu):
 - Steps run by fixtures go into a **Setup** (`S1`, `S2`, …) or **Teardown** (`T1`, …) section of their own. The Procedure sub-tab shows **Setup**, **Call** and **Teardown** as tabs, each with its worst outcome and step count, and opens on the phase that failed (else on Call).
 - Checks appear in the step that made them: `assert` statements (passing ones need `enable_assertion_pass_hook = true`), `step("…", check=...)`, and every `verify.*` check of pytest-verifier, with its result (`→ got 3.31`). When the expected value is a variable, the line names it and gives this run's value: `Verify 'Readback' == <wdata> (243)`.
 - Text between backticks in a step title is shown in monospace, as in Markdown: `` step("Write into `dut.reg1 = 1`") ``, or `step(f"Write into {fmt.mono(reg.path)}")` with stepdoc's `fmt.mono`.
+- A loop that stepdoc collapses shows one pass with how often it ran (`Mixed (repeat) → 16 times`). When a write sent a different value on each pass, its line lists them: `dev.fifo.data = 0, 1, … 15` (all of them up to four).
 - Actions recorded by stepdoc bridges (`stepdoc.record_action(...)`) appear as lines of the step (`dac.code = 12`, `Measure dmm.voltage → 1.65 V`).
 - With `--report-retries`, each attempt has its own procedure.
 

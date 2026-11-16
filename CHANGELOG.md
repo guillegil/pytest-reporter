@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A loop whose pass writes a different value each time (`dev.fifo.data = i`) shows as one
+  pass on the Procedure tab, with every value on the action's line:
+  `dev.fifo.data = 0, 1, … 15` (all of them up to four). Action nodes in `procedure.json`
+  keep the values as `values` (at most 64, the first and the last 32) and their total as
+  `values_count`. Numbers, booleans, `null` and short strings stay as they are; other
+  values (bytes, containers, NaN, enums) are kept as their text, cut at 200 characters. When the values span the passes of a loop, the result says so, as
+  stepdoc's report does: `(4 times per pass, 12 values)` for a write repeated in each
+  pass, `(5 values)` when an unfinished last pass added one. A request sent with other
+  bodies reads `Repeat …` instead of `Poll …`.
+  Needs a stepdoc version that keeps loop values (`Action.values`); older ones are
+  unchanged.
+- pytest-verifier checks made in every pass of a loop show once in the loop's pass on the
+  Procedure tab (`Verify 'Readback': got == 7` under `Each word (repeat)`, `6 times`),
+  in a retry's `retries/NN/procedure.json` too. stepdoc folds them when it places the
+  checks, before the reporter reads its steps; no reporter change, needs a stepdoc version
+  that does (`Recorder.attempt`).
 - Loops that stepdoc collapses show as one entry on the Procedure tab: `Repeat until FIFO is
   empty → 16 times`, with one pass of the loop under it, instead of a line per pass.
   `procedure.json` has a new node kind, `repeat`. A write repeated from one line reads

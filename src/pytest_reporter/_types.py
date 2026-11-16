@@ -154,6 +154,14 @@ class ProcedureNodeJson(TypedDict, total=False):
     ``result``. Steps and repeats may carry stepdoc's ``note=`` as ``note``;
     checks may carry ``Check.note`` (pytest-verifier's ``note=`` or a source
     comment) as ``note``, shown after the check's text in parentheses.
+    A write or request that sent another value on each pass of a loop (stepdoc's
+    ``Action.values``) reads ``dev.fifo.data = 0, 1, … 15`` (all values up to
+    four, else the first two, ``…`` and the last) and keeps them as ``values``
+    (at most 64: the first and the last 32; ``None``, ``bool``, ``int``, finite
+    ``float`` and ``str`` up to 200 characters as they are, anything else as its
+    repr cut at 200 characters) with ``values_count``, the total;
+    its ``result`` reads ``(4 times per pass, 12 values)`` when a repeated write's
+    values span every pass, ``(5 values)`` when they outnumber the loop's passes.
     ``substeps`` is absent for leaves. Files written by pytest-reporter 0.2 (no
     ``kind``) are steps.
     """
@@ -171,6 +179,8 @@ class ProcedureNodeJson(TypedDict, total=False):
     result: str
     detail: str
     note: str
+    values: list[Any]
+    values_count: int
     substeps: list[ProcedureNodeJson]  # recursive; absent / [] => leaf node
 
 

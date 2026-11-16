@@ -21,6 +21,7 @@ this off.
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import time
 from datetime import UTC, datetime
@@ -45,6 +46,8 @@ _OUTCOME = {
 _ASSIGN_OPS = {"write", "set"}
 _BARE_OPS = {"request"}
 _MAX_VALUE = 200
+#: Most values an action node keeps (``values``): the first and the last half.
+MAX_VALUES = 64
 _TICKS = re.compile(r"`+")
 # Words (with a decimal part), <names>, runs of spaces, or any other character.
 _TOKEN = re.compile(r"<[^<>\s]+>|\w+(?:\.\w+)*|\s+|.")
@@ -223,22 +226,24 @@ class StepCollector:
         if segments is not None:
             node["description_segments"] = segments
         _add_note(node, step)
+        passes = _count(getattr(loop, "count", None)) if loop is not None else None
         children = [
-            self._entry(e, f"{number}.{i}")
+            self._entry(e, f"{number}.{i}", passes)
             for i, e in enumerate(getattr(step, "entries", None) or [], 1)
         ]
         if children:
             node["substeps"] = children
         return node
 
-    def _entry(self, entry: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
+    def _entry(self, entry: Any, number: str, passes: int | None = None) -> dict[str, Any]:  # noqa: ANN401
+        """One entry; ``passes`` when it is one pass of a loop that ran that often."""
         if hasattr(entry, "entries") and hasattr(entry, "until"):  # before steps: both have titles
             return self._repeat(entry, number)
         if hasattr(entry, "entries") and hasattr(entry, "title"):
             return self._step(entry, number)
         if hasattr(entry, "passed") and hasattr(entry, "text"):
             return _check(entry, number)
-        return _action(entry, number)
+        return _action(entry, number, passes)
 
     def _repeat(self, repeat: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         """A loop stepdoc collapsed (stepdoc 0.3+): one pass, and how many ran."""
@@ -247,8 +252,9 @@ class StepCollector:
         title = getattr(repeat, "title", None)
         if title:  # an earlier stepdoc 0.3 build named repeat entries
             description = f"{title} ({words})"
+        passes = _count(getattr(repeat, "count", None))
         children = [
-            self._entry(e, f"{number}.{i}")
+            self._entry(e, f"{number}.{i}", passes)
             for i, e in enumerate(getattr(repeat, "entries", None) or [], 1)
         ]
         outcomes = [c["outcome"] for c in children if c["kind"] != "action"]
@@ -285,6 +291,10 @@ def _loop_words(loop: Any) -> str:  # noqa: ANN401
 
 def _number(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def _count(count: Any) -> int | None:  # noqa: ANN401
+    return count if isinstance(count, int) and not isinstance(count, bool) else None
 
 
 def _times(count: Any) -> str | None:  # noqa: ANN401
@@ -411,16 +421,28 @@ def _check_result(check: Any) -> str | None:  # noqa: ANN401
     return None
 
 
-def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
-    """An action as a line of the executed report, like stepdoc's own."""
+def _action(action: Any, number: str, passes: int | None = None) -> dict[str, Any]:  # noqa: ANN401
+    """An action as a line of the executed report, like stepdoc's own.
+
+    A write or request that sent other values on other passes (stepdoc's
+    ``Action.values``, ``Action.values_count`` the total when the list was cut)
+    shows them as a compact sequence, ``dev.fifo.data = 0, 1, … 15``, and the node
+    keeps them as ``values`` (with ``values_count``). When those values span the
+    passes of a loop, the result says so, as stepdoc does: ``(4 times per pass, 12
+    values)`` for a write repeated in each pass, ``(5 values)`` when they outnumber
+    the loop's ``passes`` (an unfinished last pass).
+    """
     op = str(getattr(action, "op", ""))
     target = str(getattr(action, "target", ""))
     direction = str(getattr(action, "direction", "in"))
     meta = getattr(action, "meta", None) or {}
     raw = getattr(action, "value", None)
+    values = _values(action) if direction != "out" else None
     unit = f" {meta['unit']}" if isinstance(meta, dict) and meta.get("unit") else ""
     value = ""
-    if raw is not None and direction != "out":
+    if values is not None:
+        value = sequence(values[0], values[1]) + (unit if direction == "in" else "")
+    elif raw is not None and direction != "out":
         value = _show(raw) + (unit if direction == "in" else "")
     result: str | None = None
     if direction == "out":
@@ -431,7 +453,7 @@ def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         elif "status" in meta:
             result = _show(meta["status"])
     count = int(getattr(action, "count", 1) or 1)
-    if count > 1 and direction != "in":  # polling: the same read or request again
+    if count > 1 and direction != "in" and values is None:  # polling: the same read again
         noun = "reads" if direction == "out" else "calls"
         text = f"Poll {target} {value}".rstrip()
         result = f"{result} ({count} {noun})" if result else f"({count} {noun})"
@@ -441,10 +463,16 @@ def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         text = f"{target}  {value}".rstrip()
     else:
         text = f"{op.capitalize()} {target} {value}".rstrip()
-    if count > 1 and direction == "in":  # the same write again, from one line (a loop)
+    if count > 1 and (direction == "in" or values is not None):  # a write again, one line
         plain = op in _ASSIGN_OPS or op in _BARE_OPS
         text = "Repeat " + (text if plain else f"{op} {target} {value}".rstrip())
-        result = f"({count} times)"
+        if values is not None and values[1] != count:  # the values of every pass
+            words = f"{count} times per pass, {values[1]} values"
+        else:
+            words = f"{count} times"
+        result = f"{result} ({words})" if result else f"({words})"
+    elif values is not None and passes is not None and values[1] != passes:
+        result = f"{result} ({values[1]} values)" if result else f"({values[1]} values)"
     node: dict[str, Any] = {
         "kind": "action",
         "number": number,
@@ -454,7 +482,56 @@ def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     }
     if result is not None:
         node["result"] = result
+    if values is not None:
+        node["values"] = [_json_value(v) for v in values[0]]
+        node["values_count"] = values[1]
     return node
+
+
+def _json_value(value: Any) -> Any:  # noqa: ANN401
+    """A loop value as ``procedure.json`` keeps it: JSON-safe and bounded.
+
+    ``None``, a ``bool``, an ``int`` (64 bits at most), a finite ``float`` and a
+    ``str`` (cut at 200 characters, ending in ``…``) stay as they are; anything
+    else (bytes, containers, NaN, enums, numpy numbers) becomes its display text,
+    ``_show``'s repr cut at 200 characters, as in the node's description.
+    """
+    kind = type(value)
+    if value is None or kind is bool:
+        return value
+    if kind is int and -(2**63) <= value < 2**64:
+        return value
+    if kind is float and math.isfinite(value):
+        return value
+    if kind is str:
+        return value if len(value) <= _MAX_VALUE else value[: _MAX_VALUE - 1] + "…"
+    return _show(value)
+
+
+def _values(action: Any) -> tuple[list[Any], int] | None:  # noqa: ANN401
+    """stepdoc's ``Action.values`` (the value of every pass, in order) and how many
+    there were, capped at ``MAX_VALUES`` (the first and the last half); ``None``
+    when the action sent one value, or stepdoc predates the field."""
+    values = getattr(action, "values", None)
+    if not isinstance(values, (list, tuple)) or not values:
+        return None
+    items = list(values)
+    total = getattr(action, "values_count", None)
+    if not isinstance(total, int) or isinstance(total, bool) or total < len(items):
+        total = len(items)
+    if len(items) > MAX_VALUES:
+        half = MAX_VALUES // 2
+        items = items[:half] + items[-half:]
+    return items, total
+
+
+def sequence(values: list[Any], total: int | None = None) -> str:
+    """The values a loop sent, compact, as stepdoc writes them: all of them up to
+    four (``0, 1, 2``), else the first two and the last (``0, 1, … 15``)."""
+    cut = total is not None and total > len(values)
+    if len(values) < 3 or (len(values) <= 4 and not cut):
+        return ", ".join(_show(v) for v in values) + (", …" if cut else "")
+    return f"{_show(values[0])}, {_show(values[1])}, … {_show(values[-1])}"
 
 
 def _show(value: Any) -> str:  # noqa: ANN401
