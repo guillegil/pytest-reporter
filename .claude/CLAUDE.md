@@ -276,7 +276,8 @@ node may hold `substeps` of the same shape.
 - Outcomes: stepdoc `passed/failed/error/unknown/not_run` → `passed/failed/error/unknown/skipped`;
   actions are `info`; unjudged checks `unknown`.
 - A loop stepdoc collapsed (a `Repeat`: `entries` plus `until` and `count`) is a
-  `"kind": "repeat"` node: `Repeat until <until>`, `result` `"16 times"`, one pass as
+  `"kind": "repeat"` node: `Repeat until <until>` (with a `title`: `<title> (repeat until
+  <until>)`), `result` `"16 times"`, one pass as
   `substeps`, outcome the worst of its checks (else `info`). A write with `count > 1`
   reads `Repeat <target> = <value>` with `(N times)`.
 - A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets

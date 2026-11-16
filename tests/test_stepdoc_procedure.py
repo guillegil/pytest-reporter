@@ -460,6 +460,8 @@ def test_repeat_and_repeated_write_nodes() -> None:
         ],
     )
     plain = NS(until=None, count=None, entries=[])
+    titled = NS(title="Drain the FIFO", until="FIFO is empty", count=2, entries=[])
+    only_title = NS(title="Pulse enable", until=None, count=3, entries=[])
     collector = StepCollector()
     assert collector._entry(write, "1.1") == {
         "kind": "action",
@@ -483,6 +485,10 @@ def test_repeat_and_repeated_write_nodes() -> None:
         )
     ]
     assert node["result"] == "16 times"
+    assert collector._entry(titled, "3.1")["description"] == (
+        "Drain the FIFO (repeat until FIFO is empty)"
+    )
+    assert collector._entry(only_title, "3.2")["description"] == "Pulse enable (repeat)"
     assert collector._entry(plain, "2.1") == {
         "kind": "repeat",
         "number": "2.1",

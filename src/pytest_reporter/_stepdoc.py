@@ -222,10 +222,10 @@ class StepCollector:
         return node
 
     def _entry(self, entry: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
+        if hasattr(entry, "entries") and hasattr(entry, "until"):  # before steps: both have titles
+            return self._repeat(entry, number)
         if hasattr(entry, "entries") and hasattr(entry, "title"):
             return self._step(entry, number)
-        if hasattr(entry, "entries") and hasattr(entry, "until"):
-            return self._repeat(entry, number)
         if hasattr(entry, "passed") and hasattr(entry, "text"):
             return _check(entry, number)
         return _action(entry, number)
@@ -233,6 +233,10 @@ class StepCollector:
     def _repeat(self, repeat: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         """A loop stepdoc collapsed (stepdoc 0.3+): one pass, and how many ran."""
         until = getattr(repeat, "until", None)
+        title = getattr(repeat, "title", None)
+        description = f"Repeat until {until}" if until else "Repeat"
+        if title:  # stepdoc.repeat("Drain the FIFO", until=...)
+            description = f"{title} ({description[0].lower()}{description[1:]})"
         children = [
             self._entry(e, f"{number}.{i}")
             for i, e in enumerate(getattr(repeat, "entries", None) or [], 1)
@@ -241,7 +245,7 @@ class StepCollector:
         node: dict[str, Any] = {
             "kind": "repeat",
             "number": number,
-            "description": f"Repeat until {until}" if until else "Repeat",
+            "description": description,
             "outcome": max(outcomes, key=lambda o: _RANK.get(o, 0)) if outcomes else "info",
             "exc": None,
         }
