@@ -1471,6 +1471,13 @@ button { font-family: inherit; }
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
+.procedure-note {
+  color: var(--c-text2);
+  font-style: italic;
+  font-size: var(--fs-xs);
+  white-space: pre-line;
+  margin: 2px 0 4px 2.4em;
+}
 .proc-kind-action .procedure-step-desc { font-family: var(--font-mono); font-size: 0.95em; }
 .status-dot.info { background: var(--c-text3); opacity: 0.5; }
 .status-dot.unknown { background: transparent; border: 1px solid var(--c-text3); }

@@ -277,8 +277,13 @@ node may hold `substeps` of the same shape.
   actions are `info`; unjudged checks `unknown`.
 - A loop stepdoc collapsed (a `Repeat`: `entries` plus `until` and `count`) is a
   `"kind": "repeat"` node: `Repeat until <until>`, `result` `"16 times"`, one pass as
-  `substeps`, outcome the worst of its checks (else `info`). A write with `count > 1`
-  reads `Repeat <target> = <value>` with `(N times)`.
+  `substeps`, outcome the worst of its checks (else `info`). A titled `stepdoc.repeat()`
+  is a stepdoc `Step` with a `loop` (`until`, `count`, `counter`, `inc`): a step node
+  `<title> (repeat until <until>)` with `result` `"16 times"`. `counter`/`inc` add
+  `, counting <counter>` / `, <counter> +<inc> each pass` (`_stepdoc._loop_words`). A
+  write with `count > 1` reads `Repeat <target> = <value>` with `(N times)`.
+- stepdoc's `note=` on a step or repeat becomes the node's `note`, shown in italics
+  under its line (`.procedure-note`).
 - A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets
   `description_segments` (`[{"text", "style": "mono"|null}]`, `_stepdoc.title_segments`);
   the HTML renders them as `.proc-mono`. `description` keeps the backticks.

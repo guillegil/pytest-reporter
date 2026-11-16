@@ -8,6 +8,7 @@ stepdoc's ``pytest_stepdoc_step_*`` hooks and writes each attempt's steps to
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -460,6 +461,8 @@ def test_repeat_and_repeated_write_nodes() -> None:
         ],
     )
     plain = NS(until=None, count=None, entries=[])
+    titled = NS(title="Drain the FIFO", until="FIFO is empty", count=2, entries=[])
+    only_title = NS(title="Pulse enable", until=None, count=3, entries=[])
     collector = StepCollector()
     assert collector._entry(write, "1.1") == {
         "kind": "action",
@@ -483,6 +486,10 @@ def test_repeat_and_repeated_write_nodes() -> None:
         )
     ]
     assert node["result"] == "16 times"
+    assert collector._entry(titled, "3.1")["description"] == (
+        "Drain the FIFO (repeat until FIFO is empty)"
+    )
+    assert collector._entry(only_title, "3.2")["description"] == "Pulse enable (repeat)"
     assert collector._entry(plain, "2.1") == {
         "kind": "repeat",
         "number": "2.1",
@@ -534,3 +541,67 @@ def test_loops_from_stepdoc(pytester: Pytester) -> None:
         ),
     ]
     assert [n.get("result") for n in step["substeps"]] == ["(16 times)", "4 times"]
+
+
+def test_notes_loop_steps_and_counters() -> None:
+    """stepdoc's note=, a titled repeat() (a step with a loop) and counter=/inc=."""
+    from types import SimpleNamespace as NS
+
+    from pytest_reporter._stepdoc import StepCollector
+
+    collector = StepCollector()
+    loop_step = NS(
+        title="Fill the CMD FIFO",
+        status="passed",
+        section="procedure",
+        started=0.0,
+        ended=0.0,
+        error=None,
+        note="512 words, 12 reserved",
+        loop=NS(until="tx = 1", count=500, counter="write_count", inc=None),
+        entries=[],
+    )
+    node = collector._entry(loop_step, "2")
+    assert node["kind"] == "step"
+    assert node["description"] == ("Fill the CMD FIFO (repeat until tx = 1, counting write_count)")
+    assert node["result"] == "500 times"
+    assert node["note"] == "512 words, 12 reserved"
+    stepped = NS(until=None, count=2, counter="bytes", inc=4, note=None, entries=[])
+    assert collector._entry(stepped, "1.1")["description"] == "Repeat, bytes +4 each pass"
+    assert "note" not in collector._entry(stepped, "1.1")
+
+
+requires_stepdoc_notes = pytest.mark.skipif(
+    importlib.util.find_spec("stepdoc") is None
+    or not hasattr(__import__("stepdoc"), "repeat")
+    or "counter" not in inspect.signature(__import__("stepdoc").repeat).parameters,
+    reason="stepdoc without note=, loop steps and counter=",
+)
+
+
+@requires_stepdoc_notes
+def test_notes_and_loop_steps_from_stepdoc(pytester: Pytester) -> None:
+    pytester.makepyfile(
+        test_loop="""
+        import stepdoc
+        from stepdoc import repeat, step
+
+        def test_a():
+            with step("Turn off", note="Power is cut first."):
+                pass
+            with repeat("Fill", until="full", counter="n", note="One read per pass."):
+                n = 0
+                while n < 3:
+                    stepdoc.record_action("dev.fifo.fifo_data", "read", 1)
+                    n += 1
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+
+    steps = _procedure(pytester, "test_loop", "test_a")["steps"]
+    assert [(s["number"], s["description"], s.get("note")) for s in steps] == [
+        ("1", "Turn off", "Power is cut first."),
+        ("2", "Fill (repeat until full, counting n)", "One read per pass."),
+    ]
+    assert steps[1]["result"] == "3 times"
+    assert _shape(steps[1]["substeps"]) == [("2.1", "action", "Read dev.fifo.fifo_data", "info")]

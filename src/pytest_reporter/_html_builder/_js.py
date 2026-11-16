@@ -1843,6 +1843,9 @@ function renderNode(node, depth) {
       node.duration_seconds.toFixed(2) + 's'));
   }
   row.appendChild(header);
+  if (node.note) {
+    row.appendChild(el('div', {className: 'procedure-note'}, node.note));
+  }
   if (node.detail && node.outcome === 'failed') {
     row.appendChild(el('div', {className: 'procedure-step-exc'}, node.detail));
   }

@@ -149,8 +149,11 @@ class ProcedureNodeJson(TypedDict, total=False):
     pass as ``substeps``, the number of passes in ``result``). Steps carry
     timing, ``section`` (``setup``, ``procedure`` or ``teardown``) and ``exc``;
     actions and checks may carry a
-    ``result`` (``got 1024``), and checks a ``detail``. ``substeps`` is absent
-    for leaves. Files written by pytest-reporter 0.2 (no ``kind``) are steps.
+    ``result`` (``got 1024``), and checks a ``detail``. A step made by a titled
+    ``stepdoc.repeat()`` reads ``Fill (repeat until full)`` with the passes in
+    ``result``. Steps and repeats may carry stepdoc's ``note=`` as ``note``.
+    ``substeps`` is absent for leaves. Files written by pytest-reporter 0.2 (no
+    ``kind``) are steps.
     """
 
     kind: str
@@ -165,6 +168,7 @@ class ProcedureNodeJson(TypedDict, total=False):
     section: str
     result: str
     detail: str
+    note: str
     substeps: list[ProcedureNodeJson]  # recursive; absent / [] => leaf node
 
 
