@@ -64,8 +64,16 @@ def _run(script: str) -> Any:  # noqa: ANN401
         ]
         + [_function("checkLabel"), script]
     )
+    # The script goes through stdin and both ways as UTF-8: argv and the default
+    # text encoding follow the locale (cp1252 on Windows runners).
     out = subprocess.run(
-        ["node", "-e", source], capture_output=True, text=True, check=True, timeout=30
+        ["node", "-"],
+        input=source,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        timeout=30,
     )
     return json.loads(out.stdout)
 
