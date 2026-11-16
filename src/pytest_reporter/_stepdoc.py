@@ -210,9 +210,16 @@ class StepCollector:
             "exc": _exc(getattr(step, "error", None)),
             "section": str(getattr(step, "section", "procedure") or "procedure"),
         }
+        loop = getattr(step, "loop", None)
+        if loop is not None:  # a titled stepdoc.repeat(): its entries are one pass
+            node["description"] += f" ({_loop_words(loop)})"
+            result = _times(getattr(loop, "count", None))
+            if result:
+                node["result"] = result
         segments = title_segments(node["description"])
         if segments is not None:
             node["description_segments"] = segments
+        _add_note(node, step)
         children = [
             self._entry(e, f"{number}.{i}")
             for i, e in enumerate(getattr(step, "entries", None) or [], 1)
@@ -232,11 +239,11 @@ class StepCollector:
 
     def _repeat(self, repeat: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         """A loop stepdoc collapsed (stepdoc 0.3+): one pass, and how many ran."""
-        until = getattr(repeat, "until", None)
+        words = _loop_words(repeat)
+        description = words[0].upper() + words[1:]
         title = getattr(repeat, "title", None)
-        description = f"Repeat until {until}" if until else "Repeat"
-        if title:  # stepdoc.repeat("Drain the FIFO", until=...)
-            description = f"{title} ({description[0].lower()}{description[1:]})"
+        if title:  # an earlier stepdoc 0.3 build named repeat entries
+            description = f"{title} ({words})"
         children = [
             self._entry(e, f"{number}.{i}")
             for i, e in enumerate(getattr(repeat, "entries", None) or [], 1)
@@ -249,12 +256,45 @@ class StepCollector:
             "outcome": max(outcomes, key=lambda o: _RANK.get(o, 0)) if outcomes else "info",
             "exc": None,
         }
-        count = getattr(repeat, "count", None)
-        if isinstance(count, int):
-            node["result"] = "once" if count == 1 else f"{count} times"
+        result = _times(getattr(repeat, "count", None))
+        if result:
+            node["result"] = result
+        _add_note(node, repeat)
         if children:
             node["substeps"] = children
         return node
+
+
+def _loop_words(loop: Any) -> str:  # noqa: ANN401
+    """``repeat until FIFO is empty, counting write_count``, as stepdoc writes it."""
+    until = getattr(loop, "until", None)
+    words = f"repeat until {until}" if until else "repeat"
+    counter = getattr(loop, "counter", None)
+    if counter:
+        inc = getattr(loop, "inc", None)
+        if not isinstance(inc, (int, float)) or isinstance(inc, bool) or inc == 1:
+            words += f", counting {counter}"
+        else:
+            sign = "+" if inc >= 0 else "-"
+            words += f", {counter} {sign}{_number(abs(inc))} each pass"
+    return words
+
+
+def _number(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def _times(count: Any) -> str | None:  # noqa: ANN401
+    if not isinstance(count, int) or isinstance(count, bool):
+        return None
+    return "once" if count == 1 else f"{count} times"
+
+
+def _add_note(node: dict[str, Any], source: Any) -> None:  # noqa: ANN401
+    """stepdoc's ``note=`` on a step or repeat: a sentence for the reader."""
+    note = getattr(source, "note", None)
+    if isinstance(note, str) and note.strip():
+        node["note"] = note
 
 
 # Worst outcome wins, as in the Procedure tab.

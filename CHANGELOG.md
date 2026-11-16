@@ -14,8 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `procedure.json` has a new node kind, `repeat`. A write repeated from one line reads
   `Repeat dev.fifo.fifo_data = 90 → (16 times)` instead of `Poll … (16 calls)`. Needs a
   stepdoc version with loop collapsing; older ones are unchanged.
-- A loop named with `stepdoc.repeat("Drain the FIFO", until="FIFO is empty")` reads
-  `Drain the FIFO (repeat until FIFO is empty)` on the Procedure tab.
+- A loop named with `stepdoc.repeat("Drain the FIFO", until="FIFO is empty")` is a step on
+  the Procedure tab: `Drain the FIFO (repeat until FIFO is empty) → 16 times`, with one
+  pass as its substeps. stepdoc's `counter=`/`inc=` show in the text
+  (`…, counting write_count`, `write_count +4 each pass`).
+- stepdoc's `note=` on a step or repeat shows in italics under its line on the Procedure
+  tab, and as `note` in `procedure.json`.
 
 - A check whose expected value comes from a variable shows the variable and this run's
   value on the Procedure tab: `Verify 'Readback' == <wdata> (243)` instead of `== 243`, so
