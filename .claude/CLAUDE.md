@@ -282,6 +282,17 @@ node may hold `substeps` of the same shape.
   `<title> (repeat until <until>)` with `result` `"16 times"`. `counter`/`inc` add
   `, counting <counter>` / `, <counter> +<inc> each pass` (`_stepdoc._loop_words`). A
   write with `count > 1` reads `Repeat <target> = <value>` with `(N times)`.
+- A write or request whose loop passes sent different values (stepdoc's `Action.values`,
+  `values_count` the total when stepdoc cut the list) shows them as a sequence like
+  stepdoc's report (`_stepdoc.sequence`): `dev.fifo.data = 0, 1, … 15` (all values up to
+  four, else the first two, `…`, the last), `Repeat … (N times)` when `count > 1` (a
+  request keeps its status: `201 (5 times)`, never `Poll`). Values that span a loop's
+  passes say so in `result` (`_action`'s `passes`, the enclosing loop's count):
+  `(4 times per pass, 12 values)` when `count > 1`, `(5 values)` when they outnumber the
+  passes (an unfinished last pass). The node keeps `values` (at most 64: the first and
+  the last 32) and `values_count`. Items are JSON-safe and bounded (`_stepdoc._json_value`):
+  `None`, `bool`, `int`, finite `float` and `str` (cut at 200 characters) as they are,
+  anything else (bytes, containers, NaN, enums) as its repr cut at 200 characters.
 - stepdoc's `note=` on a step or repeat becomes the node's `note`, shown in italics
   under its line (`.procedure-note`). A check's `Check.note` (pytest-verifier's `note=`, or
   a source comment stepdoc found) is the check node's `note`, shown inline after its text

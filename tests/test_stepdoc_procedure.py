@@ -686,6 +686,206 @@ def test_loops_from_stepdoc(pytester: Pytester) -> None:
     assert [n.get("result") for n in step["substeps"]] == ["(16 times)", "4 times"]
 
 
+def _has_loop_values() -> bool:
+    """stepdoc that keeps each pass's value when a loop writes a different one."""
+    if importlib.util.find_spec("stepdoc") is None:
+        return False
+    model = importlib.import_module("stepdoc.core.model")
+    return "values_count" in getattr(getattr(model, "Action", None), "__dataclass_fields__", {})
+
+
+requires_stepdoc_loop_values = pytest.mark.skipif(
+    not _has_loop_values(), reason="stepdoc without Action.values (loop values)"
+)
+
+
+def test_action_values_sequence() -> None:
+    """A write that sent another value each pass shows them as a compact sequence."""
+    from types import SimpleNamespace as NS
+
+    from pytest_reporter._stepdoc import MAX_VALUES, _action, sequence
+
+    def write(values: object, total: int, count: int = 1, **kw: object) -> NS:
+        last = values[-1] if isinstance(values, list) else None
+        fields = {"target": "dev.fifo.data", "op": "write", "value": last, "direction": "in"}
+        fields.update(meta={}, count=count, values=values, values_count=total)
+        fields.update(kw)
+        return NS(**fields)
+
+    assert _action(write(list(range(16)), 16), "3.1.1") == {
+        "kind": "action",
+        "number": "3.1.1",
+        "description": "dev.fifo.data = 0, 1, … 15",
+        "outcome": "info",
+        "exc": None,
+        "values": list(range(16)),
+        "values_count": 16,
+    }
+    # Four or fewer: all of them; a unit once, after the sequence.
+    node = _action(write([1, 2, 3, 4], 4, meta={"unit": "mV"}), "1")
+    assert node["description"] == "dev.fifo.data = 1, 2, 3, 4 mV"
+    # The same write again on one line (ACT-4): Repeat, with how often.
+    node = _action(write([0, 1, 2, 3, 4], 5, count=5), "1")
+    assert node["description"] == "Repeat dev.fifo.data = 0, 1, … 4"
+    assert node["result"] == "(5 times)"
+    # A request with other bodies is repeated, not polled; its status stays.
+    request = write(
+        [{"n": 1}, {"n": 2}],
+        2,
+        count=2,
+        op="request",
+        target="POST /users",
+        direction="exchange",
+        meta={"status": 201},
+    )
+    node = _action(request, "1")
+    assert node["description"] == "Repeat POST /users  {'n': 1}, {'n': 2}"
+    assert node["result"] == "201 (2 times)"
+    # A list stepdoc cut: the total says so.
+    assert sequence([0, 1], 70) == "0, 1, …"
+    assert sequence([0, 1, 2, 3], 70) == "0, 1, … 3"
+    long = _action(write(list(range(100)), 100), "1")
+    assert long["values"] == list(range(32)) + list(range(68, 100))
+    assert len(long["values"]) == MAX_VALUES
+    assert long["values_count"] == 100
+    # One value (or stepdoc before Action.values): as before, no values key.
+    node = _action(write(None, 1), "1")
+    assert node["description"] == "dev.fifo.data"
+    assert "values" not in node
+    old = NS(target="dev.a", op="write", value=5, direction="in", meta={}, count=1)
+    assert _action(old, "1")["description"] == "dev.a = 5"
+    # Reads never show values.
+    read = write([1, 2], 2, direction="out", op="read", value=2)
+    assert _action(read, "1")["description"] == "Read dev.fifo.data"
+    # A write repeated in each pass of a loop: the values span every pass.
+    node = _action(write([0, 1, 2, 3, 10, 11, 12, 13], 8, count=4), "1", passes=2)
+    assert node["description"] == "Repeat dev.fifo.data = 0, 1, … 13"
+    assert node["result"] == "(4 times per pass, 8 values)"
+    # One value per pass: nothing to add; more values than passes: say how many.
+    assert "result" not in _action(write(list(range(4)), 4), "1", passes=4)
+    assert _action(write(list(range(5)), 5), "1", passes=4)["result"] == "(5 values)"
+
+
+def test_action_values_json_safe() -> None:
+    """Loop values in a node are JSON-safe and bounded, whatever the loop wrote."""
+    import json
+    from types import SimpleNamespace as NS
+
+    from pytest_reporter._stepdoc import _action
+
+    circular: list[object] = []
+    circular.append(circular)
+    raw = [
+        0.0,
+        float("nan"),
+        float("inf"),
+        b"x" * 100_000,
+        {(1, 2): 3},
+        circular,
+        "s" * 1000,
+        2**200,
+        True,
+        None,
+        7,
+        1.5,
+    ]
+    action = NS(
+        target="dev.buf",
+        op="write",
+        value=raw[-1],
+        direction="in",
+        meta={},
+        count=1,
+        values=raw,
+        values_count=len(raw),
+    )
+    node = _action(action, "1")
+    text = json.dumps(node, allow_nan=False)
+    assert len(text) < 5000
+    values = node["values"]
+    assert values[0] == 0.0
+    assert values[1] == "nan"
+    assert values[2] == "inf"
+    assert isinstance(values[3], str) and values[3].startswith("b'xxx")
+    assert len(values[3]) == 200 and values[3].endswith("…")
+    assert values[4] == "{(1, 2): 3}"
+    assert values[5] == "[[...]]"
+    assert len(values[6]) == 200 and values[6].endswith("…")
+    assert isinstance(values[7], str) and len(values[7]) <= 200
+    assert values[8:] == [True, None, 7, 1.5]
+
+
+@requires_stepdoc_loop_values
+def test_loop_values_from_stepdoc(pytester: Pytester) -> None:
+    """A loop whose pass writes a new value each time collapses to one pass."""
+    pytester.makepyfile(
+        test_loop="""
+        import stepdoc
+        from stepdoc import repeat, step
+
+        def test_a():
+            with step("Outer"):
+                with repeat("Mixed"):
+                    for i in range(16):
+                        stepdoc.record_action("dev.fifo.data", "write", i)
+                        stepdoc.record_action("dev.da", "read", 7)
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+
+    step = _procedure(pytester, "test_loop", "test_a")["steps"][0]
+    assert _shape(step["substeps"]) == [
+        (
+            "1.1",
+            "step",
+            "Mixed (repeat)",
+            "passed",
+            [
+                ("1.1.1", "action", "dev.fifo.data = 0, 1, … 15", "info"),
+                ("1.1.2", "action", "Read dev.da", "info"),
+            ],
+        )
+    ]
+    mixed = step["substeps"][0]
+    assert mixed["result"] == "16 times"
+    assert mixed["substeps"][0]["values"] == list(range(16))
+    assert mixed["substeps"][0]["values_count"] == 16
+    assert "result" not in mixed["substeps"][0]
+
+
+@requires_stepdoc_loop_values
+def test_loop_values_helper_lines_stay_apart(pytester: Pytester) -> None:
+    """A helper called from two lines writes twice; in a loop it is one entry."""
+    pytester.makepyfile(
+        test_helper="""
+        import stepdoc
+        from stepdoc import step
+
+        def set_mode(m):
+            stepdoc.record_action("dev.mode", "write", m)
+
+        def test_a():
+            with step("Configure"):
+                set_mode(1)
+                set_mode(2)
+            with step("Sweep"):
+                for i in range(3):
+                    for j in range(4):
+                        stepdoc.record_action("dev.data", "write", j + 10 * i)
+                    stepdoc.record_action("dev.da", "read", 7)
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+
+    configure, sweep = _procedure(pytester, "test_helper", "test_a")["steps"]
+    assert [s["description"] for s in configure["substeps"]] == ["dev.mode = 1", "dev.mode = 2"]
+    (loop,) = sweep["substeps"]
+    assert loop["kind"] == "repeat" and loop["result"] == "3 times"
+    write = loop["substeps"][0]
+    assert write["description"] == "Repeat dev.data = 0, 1, … 23"
+    assert write["result"] == "(4 times per pass, 12 values)"
+
+
 def test_notes_loop_steps_and_counters() -> None:
     """stepdoc's note=, a titled repeat() (a step with a loop) and counter=/inc=."""
     from types import SimpleNamespace as NS
@@ -748,3 +948,57 @@ def test_notes_and_loop_steps_from_stepdoc(pytester: Pytester) -> None:
     ]
     assert steps[1]["result"] == "3 times"
     assert _shape(steps[1]["substeps"]) == [("2.1", "action", "Read dev.fifo.fifo_data", "info")]
+
+
+def _folds_verifier_loops() -> bool:
+    """stepdoc whose verifier adapter folds checks made in every pass of a loop
+    (and places a retry's checks in its own steps: ``Recorder.attempt``)."""
+    if importlib.util.find_spec("stepdoc") is None:
+        return False
+    recorder = importlib.import_module("stepdoc.core.recorder")
+    return hasattr(recorder.Recorder("probe"), "attempt")
+
+
+requires_stepdoc_verifier_loops = pytest.mark.skipif(
+    not _folds_verifier_loops(), reason="stepdoc that does not fold verifier checks in loops"
+)
+
+
+@requires_verifier
+@requires_stepdoc_verifier_loops
+def test_verifier_checks_in_a_loop_fold_into_its_pass(pytester: Pytester) -> None:
+    """stepdoc places pytest-verifier's checks after the phase and folds the ones
+    made in every pass of a collapsed loop into the one pass shown; the reporter
+    reads its steps afterwards, so procedure.json shows one check, for the first
+    attempt and for a retry alike."""
+    pytester.makepyfile(
+        test_vloop="""
+        import stepdoc
+        from stepdoc import repeat, step
+
+        ATTEMPTS = []
+
+        def write(target, value):  # a bridge: the write's line is its caller's
+            stepdoc.record_action(target, "write", value, value_from=("value",))
+
+        def test_a(verify):
+            ATTEMPTS.append(1)
+            with step("Write words"):
+                with repeat("Each word"):
+                    for i in range(6):
+                        write("dev.fifo.data", i)
+                        got = 7
+                        verify.equal(got, 7, name="Readback")
+            assert len(ATTEMPTS) > 1
+        """
+    )
+    pytester.runpytest("--report-dir=reports", "--report-retries=1").assert_outcomes(passed=1)
+
+    for rest in ((), ("retries", "01")):
+        (step,) = _procedure(pytester, "test_vloop", "test_a", *rest)["steps"]
+        (loop,) = step["substeps"]
+        assert loop["result"] == "6 times"
+        assert [(n["kind"], n["description"]) for n in loop["substeps"]] == [
+            ("action", "dev.fifo.data = 0, 1, … 5"),
+            ("check", "Verify 'Readback': got == 7"),
+        ]
