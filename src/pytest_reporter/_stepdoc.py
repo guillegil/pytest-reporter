@@ -224,9 +224,37 @@ class StepCollector:
     def _entry(self, entry: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         if hasattr(entry, "entries") and hasattr(entry, "title"):
             return self._step(entry, number)
+        if hasattr(entry, "entries") and hasattr(entry, "until"):
+            return self._repeat(entry, number)
         if hasattr(entry, "passed") and hasattr(entry, "text"):
             return _check(entry, number)
         return _action(entry, number)
+
+    def _repeat(self, repeat: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
+        """A loop stepdoc collapsed (stepdoc 0.3+): one pass, and how many ran."""
+        until = getattr(repeat, "until", None)
+        children = [
+            self._entry(e, f"{number}.{i}")
+            for i, e in enumerate(getattr(repeat, "entries", None) or [], 1)
+        ]
+        outcomes = [c["outcome"] for c in children if c["kind"] != "action"]
+        node: dict[str, Any] = {
+            "kind": "repeat",
+            "number": number,
+            "description": f"Repeat until {until}" if until else "Repeat",
+            "outcome": max(outcomes, key=lambda o: _RANK.get(o, 0)) if outcomes else "info",
+            "exc": None,
+        }
+        count = getattr(repeat, "count", None)
+        if isinstance(count, int):
+            node["result"] = "once" if count == 1 else f"{count} times"
+        if children:
+            node["substeps"] = children
+        return node
+
+
+# Worst outcome wins, as in the Procedure tab.
+_RANK = {"error": 5, "failed": 4, "unknown": 3, "passed": 2, "skipped": 1, "info": 0}
 
 
 def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
@@ -317,7 +345,7 @@ def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         elif "status" in meta:
             result = _show(meta["status"])
     count = int(getattr(action, "count", 1) or 1)
-    if count > 1:
+    if count > 1 and direction != "in":  # polling: the same read or request again
         noun = "reads" if direction == "out" else "calls"
         text = f"Poll {target} {value}".rstrip()
         result = f"{result} ({count} {noun})" if result else f"({count} {noun})"
@@ -327,6 +355,10 @@ def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         text = f"{target}  {value}".rstrip()
     else:
         text = f"{op.capitalize()} {target} {value}".rstrip()
+    if count > 1 and direction == "in":  # the same write again, from one line (a loop)
+        plain = op in _ASSIGN_OPS or op in _BARE_OPS
+        text = "Repeat " + (text if plain else f"{op} {target} {value}".rstrip())
+        result = f"({count} times)"
     node: dict[str, Any] = {
         "kind": "action",
         "number": number,

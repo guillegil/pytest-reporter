@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Loops that stepdoc collapses show as one entry on the Procedure tab: `Repeat until FIFO is
+  empty → 16 times`, with one pass of the loop under it, instead of a line per pass.
+  `procedure.json` has a new node kind, `repeat`. A write repeated from one line reads
+  `Repeat dev.fifo.fifo_data = 90 → (16 times)` instead of `Poll … (16 calls)`. Needs a
+  stepdoc version with loop collapsing; older ones are unchanged.
+
 - A check whose expected value comes from a variable shows the variable and this run's
   value on the Procedure tab: `Verify 'Readback' == <wdata> (243)` instead of `== 243`, so
   the line reads like stepdoc's procedure and still says what was compared. Checks with
