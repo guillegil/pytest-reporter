@@ -1121,6 +1121,7 @@ function renderFailureStrip(run, selectSubTab) {
     checks.slice(0, 3).forEach(c => {
       const item = el('li', null,
         el('span', {className:'failure-strip-check-name'}, c.description || c.name || 'Check'));
+      if (checkNote(c)) item.appendChild(el('span', {className:'check-note'}, '(' + checkNote(c) + ')'));
       if (c.detail) item.appendChild(el('span', {className:'failure-strip-check-detail'}, c.detail));
       if (c.location) item.appendChild(el('span', {className:'failure-strip-check-loc'}, c.location));
       list.appendChild(item);
@@ -1825,6 +1826,12 @@ function renderNode(node, depth) {
   const row = el('div', {className: cls});
   const descSpan = el('span', {className: 'procedure-step-desc'});
   descSpan.appendChild(renderFormattedDesc(node));
+  // A check's note (pytest-verifier's note=, or a source comment stepdoc
+  // found) reads after its text, as in stepdoc: "Verify x == 1 (FIFO empty)".
+  const inlineNote = kind === 'check' && node.note;
+  if (inlineNote) {
+    descSpan.appendChild(el('span', {className: 'procedure-check-note'}, ' (' + node.note + ')'));
+  }
   const hasKids = node.substeps && node.substeps.length > 0;
   // Parent nodes (depth 1 or anything with children) get a trailing dot:
   // "1.", "1.1.", "2." — leaves stay bare: "1.1.1".
@@ -1843,7 +1850,7 @@ function renderNode(node, depth) {
       node.duration_seconds.toFixed(2) + 's'));
   }
   row.appendChild(header);
-  if (node.note) {
+  if (node.note && !inlineNote) {
     row.appendChild(el('div', {className: 'procedure-note'}, node.note));
   }
   if (node.detail && node.outcome === 'failed') {
@@ -1960,9 +1967,13 @@ function renderCheckResults(checks) {
     header.setAttribute('aria-expanded', String(isExpanded));
     header.appendChild(chevronSvg('check-card-chevron'));
     header.appendChild(el('span', {className:`status-dot ${status}`}));
-    header.appendChild(el('span', {className:'check-name'}, checkLabel(check, idx)));
+    header.appendChild(el('span', {className:'check-name' + (check.auto_name === true ? ' auto-name' : '')},
+      checkLabel(check, idx)));
     if (check.description) {
       header.appendChild(el('span', {className:'check-desc'}, check.description));
+    }
+    if (checkNote(check)) {
+      header.appendChild(el('span', {className:'check-note'}, '(' + checkNote(check) + ')'));
     }
     header.appendChild(el('span', {className:'check-type-badge'}, check.check_type || ''));
 
@@ -1987,7 +1998,13 @@ function renderCheckResults(checks) {
   return container;
 }
 
-// "3V3 \u203a Vout": a check's verify.section titles, then its name.
+// pytest-verifier's note= on a check (a sentence for the reader), or ''.
+function checkNote(check) {
+  return typeof check.note === 'string' ? check.note.trim() : '';
+}
+
+// "3V3 \u203a Vout": a check's verify.section titles, then its name. A name
+// pytest-verifier took from the source (auto_name: "dat.txfe") reads as is.
 function checkLabel(check, idx) {
   const name = check.name || ('Check #' + (idx + 1));
   const section = Array.isArray(check.section) ? check.section : [];
@@ -2000,7 +2017,7 @@ function checkLabel(check, idx) {
 function renderCheckDetail(check) {
   const detail = el('div', {className:'check-card-detail'});
   const fields = [
-    ['detail', 'Result'], ['error', 'Error'], ['also_failed', 'Also failed'],
+    ['detail', 'Result'], ['note', 'Note'], ['error', 'Error'], ['also_failed', 'Also failed'],
     ['actual', 'Actual'], ['expected', 'Expected'],
     ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
     ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],

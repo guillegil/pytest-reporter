@@ -151,7 +151,9 @@ class ProcedureNodeJson(TypedDict, total=False):
     actions and checks may carry a
     ``result`` (``got 1024``), and checks a ``detail``. A step made by a titled
     ``stepdoc.repeat()`` reads ``Fill (repeat until full)`` with the passes in
-    ``result``. Steps and repeats may carry stepdoc's ``note=`` as ``note``.
+    ``result``. Steps and repeats may carry stepdoc's ``note=`` as ``note``;
+    checks may carry ``Check.note`` (pytest-verifier's ``note=`` or a source
+    comment) as ``note``, shown after the check's text in parentheses.
     ``substeps`` is absent for leaves. Files written by pytest-reporter 0.2 (no
     ``kind``) are steps.
     """
