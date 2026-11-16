@@ -20,11 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`…, counting write_count`, `write_count +4 each pass`).
 - stepdoc's `note=` on a step or repeat shows in italics under its line on the Procedure
   tab, and as `note` in `procedure.json`.
+- A check's note shows after its text on the Procedure tab, in parentheses, as in stepdoc:
+  `Verify dev.block.esmi3_32dat.txfe == 1 (CMD FIFO empty)`. The note is pytest-verifier's
+  `note=`, or the source comment that stepdoc found next to the check. Check nodes in
+  `procedure.json` have it as `note`. Needs a stepdoc version with check notes; a comment
+  note shows only when stepdoc fills it in before the test's `pytest_runtest_logfinish`.
+- Verification cards show a check's `note` after its statement and in the card body, and
+  in the failure banner. A name that pytest-verifier took from the source (`auto_name`,
+  such as `dat.txfe`) shows in monospace.
 
 - A check whose expected value comes from a variable shows the variable and this run's
   value on the Procedure tab: `Verify 'Readback' == <wdata> (243)` instead of `== 243`, so
   the line reads like stepdoc's procedure and still says what was compared. Checks with
   literal expected values are unchanged.
+
+- A check that stepdoc words after the checked value (`dev.block.esmi<channel>_32dat.txfe ==
+  1`, or `'FIFO not full': dev.block.esmi<channel>_ctl.tx == 0` when it has a name) shows that
+  value as this run has it: `Verify dev.block.esmi3_32dat.txfe == 1`. Expected values given
+  by name still show the name and the value, `wdata == <wdata> (243)`.
 
 - Step titles with Markdown code spans (stepdoc's `` `backticks` `` or `fmt.mono(...)`) show
   those parts in monospace on the Procedure tab. `procedure.json` keeps the title in

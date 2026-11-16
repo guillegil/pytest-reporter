@@ -48,6 +48,9 @@ _MAX_VALUE = 200
 _TICKS = re.compile(r"`+")
 # Words (with a decimal part), <names>, runs of spaces, or any other character.
 _TOKEN = re.compile(r"<[^<>\s]+>|\w+(?:\.\w+)*|\s+|.")
+# A check text's parts: ``'<name>': `` (a name given beside the checked
+# expression), then the expression, the operator and the expected side.
+_OPERATOR = re.compile(r" (?:==|!=|>=|<=|>|<|∈|∉|is not|is) ")
 
 
 def title_segments(title: str) -> list[dict[str, Any]] | None:
@@ -291,10 +294,14 @@ def _times(count: Any) -> str | None:  # noqa: ANN401
 
 
 def _add_note(node: dict[str, Any], source: Any) -> None:  # noqa: ANN401
-    """stepdoc's ``note=`` on a step or repeat: a sentence for the reader."""
+    """stepdoc's ``note=`` on a step, repeat or check: a sentence for the reader.
+
+    A check's note is pytest-verifier's ``note=`` or the source comment stepdoc
+    found at the check; the Procedure tab shows it after the text, in parentheses.
+    """
     note = getattr(source, "note", None)
     if isinstance(note, str) and note.strip():
-        node["note"] = note
+        node["note"] = note.strip()
 
 
 # Worst outcome wins, as in the Procedure tab.
@@ -320,6 +327,7 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     result = _check_result(check)
     if result is not None:
         node["result"] = result
+    _add_note(node, check)
     detail = getattr(check, "detail", None)
     if detail:
         node["detail"] = str(detail)
@@ -338,7 +346,41 @@ def with_values(symbolic: str, concrete: str) -> str:
     stepdoc's procedure reads ``'Readback' == <wdata>``; this run's check reads
     ``'Readback' == 243``. Each part where the two differ keeps the symbolic
     form, followed by the run's value in parentheses: ``'Readback' == <wdata> (243)``.
+
+    The checked value before the operator is shown as this run has it: the
+    procedure's ``dev.blk.esmi<channel>_ctl.tx == 1`` reads
+    ``dev.blk.esmi3_ctl.tx == 1``, and a name given to the check
+    (``'Ready': dev.blk.esmi<channel>_ctl.tx == 1``) is kept.
     """
+    head = _name_prefix(symbolic, concrete)
+    if head:
+        return head + with_values(symbolic[len(head) :], concrete[len(head) :])
+    sym_op, conc_op = _OPERATOR.search(symbolic), _OPERATOR.search(concrete)
+    if sym_op and conc_op and sym_op.group() == conc_op.group():
+        left = concrete[: conc_op.start()]
+        if symbolic[: sym_op.start()] != left:
+            right = _annotate(symbolic[sym_op.end() :], concrete[conc_op.end() :])
+            return left + conc_op.group() + right
+    return _annotate(symbolic, concrete)
+
+
+def _name_prefix(symbolic: str, concrete: str) -> str:
+    """The ``'<name>': `` both texts start with, or ``""``.
+
+    stepdoc writes the name raw (``f"'{name}': "``), so a name may hold an
+    apostrophe or an operator. The prefix ends at the first ``': ``, and counts
+    only when the run's text starts with it too.
+    """
+    if not symbolic.startswith("'"):
+        return ""
+    end = symbolic.find("': ", 1)
+    if end < 0:
+        return ""
+    head = symbolic[: end + 3]
+    return head if concrete.startswith(head) else ""
+
+
+def _annotate(symbolic: str, concrete: str) -> str:
     sym, conc = _TOKEN.findall(symbolic), _TOKEN.findall(concrete)
     out: list[str] = []
     matcher = difflib.SequenceMatcher(None, sym, conc, autojunk=False)

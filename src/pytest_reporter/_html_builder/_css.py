@@ -1551,6 +1551,17 @@ button { font-family: inherit; }
   font-weight: 600;
   flex-shrink: 0;
 }
+/* A name pytest-verifier took from the source (dat.txfe) is code. */
+.check-card-header .check-name.auto-name { font-family: var(--font-mono); font-weight: 500; }
+/* pytest-verifier's note= on a check, after its statement. */
+.check-note {
+  color: var(--c-text2);
+  font-size: var(--fs-sm);
+  font-style: italic;
+}
+.check-card-header .check-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A procedure check's note, inline after "Verify ...": as in stepdoc. */
+.procedure-check-note { color: var(--c-text2); font-style: italic; }
 .check-card-header .check-desc {
   color: var(--c-text2);
   font-size: var(--fs-sm);

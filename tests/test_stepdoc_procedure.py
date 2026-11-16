@@ -339,10 +339,123 @@ def test_verifier_check_shows_names_and_values(pytester: Pytester) -> None:
     )
     pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
     step = _procedure(pytester, "test_sym", "test_a")["steps"][0]
+    # stepdoc with check notes starts a named check's text with the checked
+    # expression: 'Name': wdata == <wdata>.
+    name = "'Read from `DA_SCRATCH_1_ADDR`'"
+    first = f"{name}: wdata" if _stepdoc_has_check_notes() else name
     assert [c["description"] for c in step["substeps"]] == [
-        "Verify 'Read from `DA_SCRATCH_1_ADDR`' == <wdata> (243)",
+        f"Verify {first} == <wdata> (243)",
         "Verify 'Range' ∈ [1, <wdata> (243)]",
     ]
+
+
+def _stepdoc_has_check_notes() -> bool:
+    """stepdoc 0.4's Check has ``note`` (and the checked expression in its text)."""
+    try:
+        from stepdoc.core.model import Check
+    except ImportError:
+        return False
+    return "note" in getattr(Check, "__dataclass_fields__", {})
+
+
+requires_stepdoc_check_notes = pytest.mark.skipif(
+    not _stepdoc_has_check_notes(), reason="stepdoc without Check.note"
+)
+
+
+@requires_stepdoc_check_notes
+@requires_verifier
+def test_verifier_check_note_reaches_procedure_and_html(pytester: Pytester) -> None:
+    """A check's note (pytest-verifier's ``note=``) is the check node's ``note``;
+    the Procedure tab shows it after the text."""
+    pytester.makepyfile(
+        test_note="""
+        from stepdoc import step
+
+        def test_a(verify):
+            with step("Verify CMD FIFO flags at startup"):
+                verify.record({
+                    "check_type": "equal", "name": "TXFE", "description": "Verify 'TXFE' == 1",
+                    "actual": 1, "expected": 1, "note": "CMD FIFO empty",
+                })
+                verify.equal(0, 0, name="TX")
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+    step = _procedure(pytester, "test_note", "test_a")["steps"][0]
+    assert [(c["description"], c.get("note")) for c in step["substeps"]] == [
+        ("Verify 'TXFE' == 1", "CMD FIFO empty"),
+        ("Verify 'TX' == 0", None),
+    ]
+    run = _data(pytester)["tests"][0]["runs"][0]
+    assert run["procedure"]["steps"][0]["substeps"][0]["note"] == "CMD FIFO empty"
+    assert run["check_results"][0]["note"] == "CMD FIFO empty"
+
+
+@requires_stepdoc_check_notes
+@requires_verifier
+def test_verifier_comment_note_reaches_procedure(pytester: Pytester) -> None:
+    """A source comment above a check, or after it, is the check node's ``note``.
+
+    stepdoc fills comment notes in when its recorder resolves; the reporter reads
+    them at ``pytest_runtest_logfinish``. Until stepdoc resolves them before then,
+    the test xfails instead of failing.
+    """
+    pytester.makepyfile(
+        test_comment="""
+        from stepdoc import step
+
+        def test_a(verify):
+            with step("Verify CMD FIFO flags at startup"):
+                # CMD FIFO empty
+                verify.equal(1, 1, name="TXFE")
+                verify.equal(0, 0, name="TX")  # room for commands
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+    stepdoc_json = json.loads((_run_dir(pytester) / "stepdoc.json").read_text())
+    assert "CMD FIFO empty" in json.dumps(stepdoc_json)  # stepdoc found the comment
+    step = _procedure(pytester, "test_comment", "test_a")["steps"][0]
+    notes = [c.get("note") for c in step["substeps"]]
+    if notes == [None, None]:
+        pytest.xfail("stepdoc resolves comment notes after pytest_runtest_logfinish")
+    assert notes == ["CMD FIFO empty", "room for commands"]
+
+
+def test_check_node_note() -> None:
+    """stepdoc's Check.note (note= or a source comment) is the node's ``note``;
+    a blank or missing one is left out."""
+    from types import SimpleNamespace as NS
+
+    from pytest_reporter._stepdoc import _check
+
+    def check(**kw: object) -> NS:
+        base = {"text": "dat.txfe == 1", "passed": True, "actual": 1, "children": []}
+        return NS(**{**base, **kw})
+
+    node = _check(
+        check(
+            text="dev.block.esmi3_32dat.txfe == 1",
+            symbolic_text="dev.block.esmi<channel>_32dat.txfe == 1",
+            note="  CMD FIFO empty ",
+        ),
+        "1.1",
+    )
+    assert node["description"] == "Verify dev.block.esmi3_32dat.txfe == 1"
+    assert node["note"] == "CMD FIFO empty"
+    assert node["result"] == "got 1"
+    assert "note" not in _check(check(note="  "), "1.2")
+    assert "note" not in _check(check(), "1.3")  # an older stepdoc: no note attribute
+    named = _check(
+        check(
+            text="'FIFO not full': dev.block.esmi3_ctl.tx == 0",
+            symbolic_text="'FIFO not full': dev.block.esmi<channel>_ctl.tx == 0",
+            note="room for commands",
+        ),
+        "1.3",
+    )
+    assert named["description"] == "Verify 'FIFO not full': dev.block.esmi3_ctl.tx == 0"
+    assert named["note"] == "room for commands"
 
 
 @pytest.mark.parametrize(
@@ -354,6 +467,36 @@ def test_verifier_check_shows_names_and_values(pytester: Pytester) -> None:
         ("'I' ∈ [<lo> A, <hi> A]", "'I' ∈ [0.1A, 0.5A]", "'I' ∈ [<lo> A (0.1A), <hi> A (0.5A)]"),
         ("'V' == <vref> V ± 0.05V", "'V' == 3.3V ± 0.05V", "'V' == <vref> V (3.3V) ± 0.05V"),
         ("'L' == <exp>", "'L' == [1, 2]", "'L' == <exp> ([1, 2])"),
+        # The checked expression (stepdoc 0.4) reads as this run has it.
+        (
+            "dev.block.esmi<channel>_32dat.txfe == 1",
+            "dev.block.esmi3_32dat.txfe == 1",
+            "dev.block.esmi3_32dat.txfe == 1",
+        ),
+        (
+            "'FIFO not full': dev.block.esmi<channel>_ctl.tx == 0",
+            "'FIFO not full': dev.block.esmi3_ctl.tx == 0",
+            "'FIFO not full': dev.block.esmi3_ctl.tx == 0",
+        ),
+        ("'R': wdata == <wdata>", "'R': wdata == 243", "'R': wdata == <wdata> (243)"),
+        ("reg[<i>].value == <exp>", "reg[2].value == 5", "reg[2].value == <exp> (5)"),
+        (
+            "dev.esmi<ch>.level ∈ [<lo>, 5]",
+            "dev.esmi1.level ∈ [1, 5]",
+            "dev.esmi1.level ∈ [<lo> (1), 5]",
+        ),
+        ("dev.esmi<ch>.ready is True", "dev.esmi2.ready is True", "dev.esmi2.ready is True"),
+        ("write_count >= <n>", "write_count >= 8", "write_count >= <n> (8)"),
+        ("'a == b' == <x>", "'a == b' == 3", "'a == b' == <x> (3)"),
+        # A name with an apostrophe and an operator (stepdoc writes it raw).
+        (
+            "'Don't > max': x<ch> == <lim>",
+            "'Don't > max': x3 == 5",
+            "'Don't > max': x3 == <lim> (5)",
+        ),
+        ("'a > b': x<ch> == <lim>", "'a > b': x3 == 5", "'a > b': x3 == <lim> (5)"),
+        ("'it's': x<ch> == 1", "'it's': x3 == 1", "'it's': x3 == 1"),
+        ("'Don't > max' == <lim>", "'Don't > max' == 5", "'Don't > max' == <lim> (5)"),
     ],
 )
 def test_with_values(symbolic: str, concrete: str, expected: str) -> None:

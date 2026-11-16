@@ -283,7 +283,15 @@ node may hold `substeps` of the same shape.
   `, counting <counter>` / `, <counter> +<inc> each pass` (`_stepdoc._loop_words`). A
   write with `count > 1` reads `Repeat <target> = <value>` with `(N times)`.
 - stepdoc's `note=` on a step or repeat becomes the node's `note`, shown in italics
-  under its line (`.procedure-note`).
+  under its line (`.procedure-note`). A check's `Check.note` (pytest-verifier's `note=`, or
+  a source comment stepdoc found) is the check node's `note`, shown inline after its text
+  in parentheses (`.procedure-check-note`), as stepdoc renders it. `procedure.json` is
+  written at `pytest_runtest_logfinish`, so a comment note shows only when stepdoc has
+  resolved it by then (`test_verifier_comment_note_reaches_procedure` xfails otherwise).
+- stepdoc 0.4 words value checks after the checked expression: `<expr> <op> <expected>`,
+  or `'<name>': <expr> <op> <expected>` when the check was named. `with_values` shows the
+  expression before the operator as this run has it (`dev.block.esmi3_32dat.txfe`, not
+  `esmi<channel>`) and annotates only the expected side (`wdata == <wdata> (243)`).
 - A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets
   `description_segments` (`[{"text", "style": "mono"|null}]`, `_stepdoc.title_segments`);
   the HTML renders them as `.proc-mono`. `description` keeps the backticks.
@@ -320,6 +328,9 @@ node may hold `substeps` of the same shape.
 - Passed: green, collapsed. Failed: red, expanded.
 - Raw traceback available in collapsible section within failed cards.
 - Card content varies by check_type (approx shows tolerance, between shows range, etc.).
+- A record's optional `note` (pytest-verifier's `note=`) shows after the statement, in the
+  card body and in the failure banner (`checkNote`); an `auto_name` label (a name taken from
+  the source, `dat.txfe`) shows in monospace. Both are optional: older records lack them.
 
 ## HTML Report (§7)
 
