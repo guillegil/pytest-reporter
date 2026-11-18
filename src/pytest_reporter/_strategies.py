@@ -43,6 +43,9 @@ _STRATEGY_KEYS = ("name", "origin", "arguments", "context", "nsamples", "paramet
 # A file is this run's when it was written after the session started; file
 # systems round modification times, so allow them to be a little earlier.
 _MTIME_SLACK = 2.0
+# The report's JavaScript reads numbers as doubles: a larger integer (a 64-bit
+# register value) is embedded as its text instead, which it shows as written.
+_SAFE_INT = 2**53 - 1
 
 
 class StrategyExport:
@@ -134,11 +137,7 @@ class StrategyExport:
                 self._copy(folder, since)
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as err:
-            warnings.warn(
-                f"pytest-reporter: the pytest-strategies export was skipped "
-                f"(unreadable): {path}: {err}",
-                stacklevel=2,
-            )
+            _warn(f"the pytest-strategies export was skipped (unreadable): {path}: {err}")
             return None
         if not isinstance(document, dict) or document.get("kind") != _KIND:
             return None
@@ -161,10 +160,36 @@ class StrategyExport:
                 if source.is_file() and source.stat().st_mtime >= since - _MTIME_SLACK:
                     shutil.copyfile(source, self._run_dir / name)
             except OSError as err:
-                warnings.warn(
-                    f"pytest-reporter: could not copy {source} into the run folder: {err}",
-                    stacklevel=3,
-                )
+                _warn(f"could not copy {source} into the run folder: {err}")
+
+
+def _warn(message: str) -> None:
+    """Warn, without raising when warnings are errors (``-W error``).
+
+    An export that cannot be read is expected and handled: it must not cost
+    the rest of the report.
+    """
+    try:
+        warnings.warn(f"pytest-reporter: {message}", stacklevel=3)
+    except Warning:
+        pass
+
+
+def _list(value: Any) -> list[Any]:  # noqa: ANN401
+    return value if isinstance(value, list) else []
+
+
+def _js_safe(value: Any) -> Any:  # noqa: ANN401
+    """``value`` with every integer JavaScript cannot hold exactly as ``{"$repr": text}``."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value if -_SAFE_INT <= value <= _SAFE_INT else {"$repr": str(value)}
+    if isinstance(value, list):
+        return [_js_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {key: _js_safe(v) for key, v in value.items()}
+    return value
 
 
 def _blank(value: Any) -> bool:  # noqa: ANN401
@@ -195,10 +220,10 @@ def html_data(
         return None, {}
     by_test: dict[str, list[dict[str, Any]]] = {}
     strategies = rows = 0
-    for test in document.get("tests") or []:
+    for test in _list(document.get("tests")):
         if not isinstance(test, dict) or not isinstance(test.get("nodeid"), str):
             continue
-        used = [_strategy(s) for s in test.get("strategies") or [] if isinstance(s, dict)]
+        used = [_strategy(s) for s in _list(test.get("strategies")) if isinstance(s, dict)]
         if not used:
             continue
         by_test.setdefault(test["nodeid"], []).extend(used)
@@ -207,8 +232,8 @@ def html_data(
     generator = document.get("generator")
     session = {
         "generator": generator if isinstance(generator, dict) else None,
-        "seed": document.get("seed"),
-        "nsamples": document.get("nsamples"),
+        "seed": _js_safe(document.get("seed")),
+        "nsamples": _js_safe(document.get("nsamples")),
         "tests": len(by_test),
         "strategies": strategies,
         "rows": rows,
@@ -218,16 +243,16 @@ def html_data(
 
 
 def _strategy(strategy: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {key: strategy.get(key) for key in _STRATEGY_KEYS}
-    out["rows"] = [_row(r) for r in strategy.get("rows") or [] if isinstance(r, dict)]
+    out: dict[str, Any] = {key: _js_safe(strategy.get(key)) for key in _STRATEGY_KEYS}
+    out["rows"] = [_row(r) for r in _list(strategy.get("rows")) if isinstance(r, dict)]
     return out
 
 
 def _row(row: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {key: row.get(key) for key in _ROW_KEYS}
+    out: dict[str, Any] = {key: _js_safe(row.get(key)) for key in _ROW_KEYS}
     out["items"] = [
         {"nodeid": item.get("nodeid"), "outcome": item.get("outcome")}
-        for item in row.get("items") or []
+        for item in _list(row.get("items"))
         if isinstance(item, dict)
     ]
     return out

@@ -179,7 +179,11 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         A dict ready to be passed to ``build_html_report()``.
     """
     # pytest-strategies' run export: the session's part, and each test's strategies
-    strategies_session, strategies_by_test = strategies_html_data(reporter.strategy_export)
+    # (an export of a shape nobody expected costs the Strategy tab, not the report)
+    try:
+        strategies_session, strategies_by_test = strategies_html_data(reporter.strategy_export)
+    except Exception:  # noqa: BLE001
+        strategies_session, strategies_by_test = None, {}
 
     # Collect all test data
     tests: list[dict] = []  # type: ignore[type-arg]

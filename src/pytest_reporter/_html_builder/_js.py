@@ -1340,7 +1340,24 @@ function refreshRunPills(test, panel) {
   }
 }
 
-function showRunDetail(run) {
+// The sub-tabs a run's detail offers, in order.
+function subTabNames(run) {
+  const tabNames = ['Summary','Procedure','Artifacts'];
+  if (run.check_results && run.check_results.length > 0) {
+    tabNames.splice(2, 0, 'Checks');
+  }
+  if (testStrategies(selectedTest).length > 0) {
+    tabNames.splice(tabNames.indexOf('Artifacts'), 0, 'Strategy');
+  }
+  if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
+    tabNames.push('Retries');
+  }
+  return tabNames;
+}
+
+// `openTab` (a sub-tab's name) opens the run on that sub-tab and moves the
+// focus to it: for a control inside the detail, which this call replaces.
+function showRunDetail(run, openTab) {
   selectedRun = run;
   // Keep the header command in sync with the selected run's exact nodeid.
   const cmdCode = document.querySelector('#detail-cmd .detail-cmd-code');
@@ -1362,16 +1379,7 @@ function showRunDetail(run) {
 
   const subTabs = el('div', {className:'sub-tabs', role:'tablist', 'aria-label':'Run details'});
   const subPanelId = 'sub-tab-content';
-  const tabNames = ['Summary','Procedure','Artifacts'];
-  if (run.check_results && run.check_results.length > 0) {
-    tabNames.splice(2, 0, 'Checks');
-  }
-  if (testStrategies(selectedTest).length > 0) {
-    tabNames.splice(tabNames.indexOf('Artifacts'), 0, 'Strategy');
-  }
-  if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
-    tabNames.push('Retries');
-  }
+  const tabNames = subTabNames(run);
   const selectSubTab = (name) => {
     const tabs = Array.from(subTabs.querySelectorAll('.sub-tab-btn'));
     const tab = tabs.find(b => b.textContent === name) || tabs[0];
@@ -1394,7 +1402,13 @@ function showRunDetail(run) {
   const content = el('div', {className:'run-detail-content', id:'sub-tab-content', role:'tabpanel',
     'aria-labelledby': subTabs.querySelector('.sub-tab-btn').id});
   container.appendChild(content);
-  showSubTab('summary', run);
+  if (typeof openTab === 'string' && tabNames.indexOf(openTab) > 0) {
+    selectSubTab(openTab);
+    const tab = subTabs.querySelector('.sub-tab-btn[aria-selected="true"]');
+    if (tab) tab.focus();
+  } else {
+    showSubTab('summary', run);
+  }
 }
 
 function showSubTab(tab, run) {
@@ -1768,7 +1782,7 @@ function strategyItemEl(item, test, current) {
   const btn = el('button', {className:'strategy-item strategy-item-link', type:'button',
     title:'Open run ' + run.run_id}, dot, label, el('span', {className:'strategy-item-run'}, run.run_id));
   if (run === current) btn.setAttribute('aria-current', 'true');
-  btn.addEventListener('click', () => showRunDetail(run));
+  btn.addEventListener('click', () => showRunDetail(run, 'Strategy'));
   return btn;
 }
 

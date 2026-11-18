@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `@strategy` arguments, the context fingerprint, the sample count and where it came
   from (a strategy with `pin_nsamples=True` is marked **pinned**), its arguments and
   constraints, and every row the test ran with its values and outcome. The row of the run
-  on screen is highlighted and an outcome opens that run. The run's Summary shows the
+  on screen is highlighted and an outcome opens that run. Integers too large for a
+  JavaScript number (64-bit register values) are shown exactly. The run's Summary shows the
   sample count, and the Report tab has a Strategies section (generator, seed, `--nsamples`
   and the number of tests, strategies and rows).
 - The `report_strategies` ini setting (default `true`); `false` leaves pytest-strategies'

@@ -420,22 +420,51 @@ def _named_text(names: dict[str, str], text: str, symbolic: str | None) -> str |
 
     expected = names.get("expected_name")
     if expected is not None:
-        right = rest.replace(expected, names.get("expected_name_symbolic", expected), 1)
+        right = _expected_symbolic(rest, expected, names.get("expected_name_symbolic", expected))
     else:
-        right = _symbolic_rest(rest, symbolic)
+        right = _symbolic_rest(rest, symbolic, text[: len(text) - len(rest)])
     return left + right
 
 
-def _symbolic_rest(rest: str, symbolic: str | None) -> str:
-    """``rest`` (``== 243``) with the names stepdoc found for it: ``== <wdata> (243)``."""
+def _expected_symbolic(rest: str, expected: str, symbolic: str) -> str:
+    """``rest`` (``== wdata (243)``) with the expected name in its symbolic form.
+
+    pytest-verifier writes the name after the operator words and before the
+    value in parentheses, so that occurrence is the one replaced: a name whose
+    text also occurs in the operator (``has length``, ``==``) leaves it alone.
+    """
+    if symbolic == expected:
+        return rest
+    operator = _REST_OPERATOR.match(rest)
+    start = operator.end() if operator else 0
+    found = rest.find(f"{expected} (", start)
+    if found < 0:
+        found = rest.find(expected, start)
+    if found < 0:
+        return rest
+    return rest[:found] + symbolic + rest[found + len(expected) :]
+
+
+def _symbolic_rest(rest: str, symbolic: str | None, left: str = "") -> str:
+    """``rest`` (``== 243``) with the names stepdoc found for it: ``== <wdata> (243)``.
+
+    ``left`` is this run's text before ``rest``. The checked expression or the
+    check's name may hold the operator too (``a == b == <flag>``,
+    ``'x == y' == <wdata>``), so the operator that starts the expected side in
+    the symbolic text is the one after as many operators as ``left`` has.
+    """
     operator = _REST_OPERATOR.match(rest)
     if symbolic is None or operator is None:
         return rest
-    head = symbolic.find("': ") + 3 if symbolic.startswith("'") and "': " in symbolic else 0
-    found = symbolic.find(f" {operator.group()}", head)
+    needle = f" {operator.group()}"
+    found = -1
+    for _ in range((left + operator.group()).count(needle)):
+        found = symbolic.find(needle, found + 1)
+        if found < 0:
+            return rest
     if found < 0:
         return rest
-    sym_right = symbolic[found + 1 + operator.end() :]
+    sym_right = symbolic[found + len(needle) :]
     return operator.group() + _annotate(sym_right, rest[operator.end() :])
 
 

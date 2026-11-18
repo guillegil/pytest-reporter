@@ -167,6 +167,46 @@ def test_procedure_check_actual_name_only() -> None:
     )
 
 
+def test_procedure_check_operator_in_the_name_or_the_expression() -> None:
+    """The operator that starts the expected side is found past the ones the
+    name or the checked expression hold."""
+    # stepdoc found no expression (a literal first argument): 'name' == <wdata>
+    named = _record(
+        name="x == y", auto_name=None, expected_name=None, description="Verify 'x == y' == 243"
+    )
+    check = _stepdoc_check(named, symbolic_text="'x == y' == <wdata>")
+    assert (
+        _check(check, "1.1")["description"]
+        == f"Verify 'x == y': {ACTUAL_SYMBOLIC} == <wdata> (243)"
+    )
+    # The checked expression is a comparison itself
+    record = _record(expected_name=None, description=f"Verify '{ACTUAL}' == False")
+    check = _stepdoc_check(record, text="a == b == False", symbolic_text="a == b == <flag>")
+    assert _check(check, "1.2")["description"] == f"Verify {ACTUAL_SYMBOLIC} == <flag> (False)"
+    # Fewer operators in the symbolic text than in this run's: left as it is
+    check = _stepdoc_check(record, text="a == b == False", symbolic_text="<cmp> == <flag>")
+    assert _check(check, "1.3")["description"] == f"Verify {ACTUAL_SYMBOLIC} == False"
+
+
+def test_procedure_check_expected_name_that_occurs_in_the_operator() -> None:
+    """Only the name before the value is replaced by its symbolic form."""
+    record = _record(
+        check_type="length",
+        expected_name="n",
+        expected_name_symbolic="<k>",
+        description=f"Verify '{ACTUAL}' has length n (2)",
+    )
+    check = _stepdoc_check(record)
+    assert _check(check, "1.1")["description"] == f"Verify {ACTUAL_SYMBOLIC} has length <k> (2)"
+    record = _record(
+        expected_name="=",
+        expected_name_symbolic="<eq>",
+        description=f"Verify '{ACTUAL}' == = (243)",
+    )
+    check = _stepdoc_check(record)
+    assert _check(check, "1.2")["description"] == f"Verify {ACTUAL_SYMBOLIC} == <eq> (243)"
+
+
 def test_procedure_check_expected_name_only() -> None:
     """Without ``actual_name`` the checked value keeps stepdoc's wording, and
     the expected side is not annotated twice."""

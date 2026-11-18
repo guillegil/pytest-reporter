@@ -231,6 +231,46 @@ def _export(tmp_path: Path, **kw: Any) -> StrategyExport:  # noqa: ANN401
     return StrategyExport(_Config(tmp_path, **kw), run_dir)  # type: ignore[arg-type]
 
 
+def test_html_data_with_containers_of_another_type() -> None:
+    """A list that is something else counts as empty; nothing raises."""
+    document = _document()
+    document["tests"] += [
+        {"nodeid": "t.py::test_a", "strategies": 5},
+        {"nodeid": "t.py::test_b", "strategies": [{"name": "b", "rows": 7}]},
+        {
+            "nodeid": "t.py::test_c",
+            "strategies": [{"name": "c", "rows": [{"id": "r", "items": 1}]}],
+        },
+    ]
+    session, by_test = html_data(document)
+    assert session is not None
+    assert "t.py::test_a" not in by_test
+    assert by_test["t.py::test_b"][0]["rows"] == []
+    assert by_test["t.py::test_c"][0]["rows"][0]["items"] == []
+
+
+def test_html_data_keeps_integers_javascript_cannot_hold() -> None:
+    """A 64-bit value would lose its last digits as a JavaScript number."""
+    big = (1 << 64) - 1
+    document = _document()
+    document["seed"] = big
+    strategy = document["tests"][0]["strategies"][0]
+    strategy["arguments"] = {"mask": big, "width": 16, "flag": True}
+    strategy["rows"][0]["values"] = {"channel": 2**53 - 1, "wdata": -big, "list": [big, 1]}
+    session, by_test = html_data(document)
+    assert session is not None
+    text = {"$repr": str(big)}
+    assert session["seed"] == text
+    used = by_test["test_rw.py::test_rw"][0]
+    assert used["arguments"] == {"mask": text, "width": 16, "flag": True}
+    assert used["rows"][0]["values"] == {
+        "channel": 2**53 - 1,
+        "wdata": {"$repr": str(-big)},
+        "list": [text, 1],
+    }
+    json.dumps(by_test)
+
+
 def test_answer_gives_the_run_folder_only_when_no_folder_is_chosen(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     export = _export(tmp_path, strategies_export_dir="")
@@ -482,6 +522,19 @@ def test_an_unreadable_export_does_not_break_the_report(pytester: Pytester) -> N
     assert len(_data(pytester)["tests"][0]["runs"]) == 3
 
 
+def test_an_unreadable_export_with_warnings_as_errors(pytester: Pytester) -> None:
+    """The warning about the file must not cost the report under ``-W error``."""
+    _stand_in(pytester)
+    conftest = pytester.path / "conftest.py"
+    conftest.write_text(
+        conftest.read_text(encoding="utf-8").replace("json.dumps(DOCUMENT)", "'{not json'"),
+        encoding="utf-8",
+    )
+    _run(pytester, "-W", "error::UserWarning")
+    assert (_run_dir(pytester) / "report.html").is_file()
+    assert _data(pytester)["strategies"] is None
+
+
 # ---------------------------------------------------------------------------
 # The Strategy tab (Node)
 # ---------------------------------------------------------------------------
@@ -606,6 +659,46 @@ def test_strategy_tab_text() -> None:
     assert got["chips"] == ["aligned", "small (off)"]
     assert got["idle"] == ["Defined but not run in this session: test-smoke"]
     assert got["links"] == 2  # the rows whose item is one of this test's runs
+
+
+@requires_node
+def test_strategy_sub_tab_is_offered_to_tests_with_strategies() -> None:
+    got = _node(
+        "let selectedTest = {strategies: [{name: 'rw', rows: []}]};\n"
+        "const out = [subTabNames({}), subTabNames({check_results: [{}]})];\n"
+        "selectedTest = {strategies: []};\n"
+        "out.push(subTabNames({}));\n"
+        "console.log(JSON.stringify(out));",
+        "testStrategies",
+        "subTabNames",
+    )
+    assert got == [
+        ["Summary", "Procedure", "Strategy", "Artifacts"],
+        ["Summary", "Procedure", "Checks", "Strategy", "Artifacts"],
+        ["Summary", "Procedure", "Artifacts"],
+    ]
+
+
+@requires_node
+def test_strategy_rows_past_the_first_hundred_are_hidden() -> None:
+    """...except the row of the run on screen."""
+    rows = [
+        {"id": f"r{i}", "kind": "random", "values": {"v": i}, "items": [{"nodeid": f"t[r{i}]"}]}
+        for i in range(150)
+    ]
+    test = {"strategies": [{"name": "many", "rows": rows}], "runs": []}
+    got = _node(
+        f"const test = {json.dumps(test)};\n"
+        "const tab = renderStrategyRows(test.strategies[0], test, {nodeid: 't[r120]'});\n"
+        "const rows = findAll(tab, 'tr').slice(1);\n"
+        "console.log(JSON.stringify({\n"
+        "  shown: rows.filter(tr => !tr.hidden).map(tr => tr.children[0].textContent),\n"
+        "  more: texts(tab, 'show-more-btn'),\n"
+        "}));",
+        *_STRATEGY_FUNCTIONS,
+    )
+    assert got["shown"] == [f"r{i}" for i in range(100)] + ["r120"]
+    assert got["more"] == ["Show all 150 rows"]
 
 
 @requires_node

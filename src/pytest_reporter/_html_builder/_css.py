@@ -1720,7 +1720,7 @@ button { font-family: inherit; }
   background: var(--c-well);
 }
 .check-card-detail .operand-name { overflow-wrap: anywhere; }
-.operand-symbolic { margin-left: 10px; font-family: var(--font-sans, inherit); color: var(--c-text3); }
+.operand-symbolic { margin-left: 10px; display: inline-block; overflow-wrap: normal; font-family: var(--font-sans, inherit); color: var(--c-text3); }
 .operand-symbolic-text { color: var(--c-text2); }
 /* Guard check (if/elif/else chain) rendering */
 .guard-body {
@@ -2441,6 +2441,7 @@ h1, h2, h3, h4 { text-wrap: balance; }
    ================================================================ */
 /* WCAG 2.5.8: no control smaller than 24px, whatever the pointer */
 .filter-btn, .filter-chip, .session-log-level-btn { min-height: 24px; }
+.strategy-item-link { min-height: 24px; }
 .tree-expand-btn { min-width: 24px; min-height: 24px; justify-content: center; }
 
 /* Tab strips scroll sideways instead of wrapping or clipping a tab */
@@ -2501,7 +2502,8 @@ h1, h2, h3, h4 { text-wrap: balance; }
 @media (pointer: coarse) {
   .tab-btn, .sub-tab-btn, .phase-tab-btn, .run-pill, .filter-btn, .filter-chip,
   .strip-btn, .failures-more, .session-log-level-btn, .session-log-action-btn,
-  .detail-back, .search-input, .session-log-search, .detail-cmd {
+  .detail-back, .search-input, .session-log-search, .detail-cmd,
+  .strategy-item-link, .strategy-rows-wrap .show-more-btn {
     min-height: 44px;
   }
   .filter-btn, .filter-chip, .session-log-level-btn { padding-left: 14px; padding-right: 14px; }
@@ -2537,6 +2539,10 @@ h1, h2, h3, h4 { text-wrap: balance; }
    ================================================================ */
 @media print {
   body { background: #fff; min-height: 0; }
+  .strategy-rows-wrap { overflow: visible; }
+  .strategy-rows th, .strategy-rows td { white-space: normal; overflow-wrap: anywhere; }
+  .strategy-rows tr[hidden] { display: table-row; }
+  .strategy-rows-wrap .show-more-btn { display: none; }
   .skip-link, .tabs, .theme-toggle, .tree-panel,
   .detail-cmd-hint, .artifact-expand, .strip-btn, .session-log-search,
   .session-log-actions { display: none !important; }
