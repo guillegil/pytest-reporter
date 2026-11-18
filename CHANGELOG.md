@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Checks made with pytest-verifier's `actual_name=` / `expected_name=` show those names.
+  Verification cards, the failure strip and the Failures list show this run's text
+  (`tb.dev.map.block.reg3.F`); a check that also has a `name=` keeps the name as its label
+  and shows that text beside it. The card body has **Actual name** and **Expected name**
+  rows, each followed by the form with the variable parts (`written as
+  tb.dev.map.block.reg<channel>.F`) when pytest-verifier recorded one.
+- The Procedure tab words such a check with the names as the test writes them, and names the
+  value as this run has it in the result: `Verify tb.dev.map.block.reg<channel>.F == wdata
+  (243) → got tb.dev.map.block.reg3.F = 240`. Check nodes in `procedure.json` have this
+  run's names as `actual_name` and `expected_name`. Checks without operand names are
+  unchanged.
+- With pytest-strategies 4.3+, its run export (`strategies.json` and
+  `strategies.vectors.json`) is saved in the run folder. The reporter answers
+  pytest-strategies' `pytest_strategies_export_dir` hook with the run folder when no folder
+  was chosen; a folder chosen with `--strategy-export`, another implementation of the hook
+  or the `strategies_export_dir` ini option is kept, and the two files are copied into the
+  run folder.
+- A test that uses a strategy has a **Strategy** sub-tab: where each strategy is defined,
+  the `@strategy` arguments, the context fingerprint, the sample count and where it came
+  from (a strategy with `pin_nsamples=True` is marked **pinned**), its arguments and
+  constraints, and every row the test ran with its values and outcome. The row of the run
+  on screen is highlighted and an outcome opens that run. The run's Summary shows the
+  sample count, and the Report tab has a Strategies section (generator, seed, `--nsamples`
+  and the number of tests, strategies and rows).
+- The `report_strategies` ini setting (default `true`); `false` leaves pytest-strategies'
+  export alone and hides the Strategy sub-tab.
+
 - Loops that stepdoc collapses show as one entry on the Procedure tab: `Repeat until FIFO is
   empty → 16 times`, with one pass of the loop under it, instead of a line per pass.
   `procedure.json` has a new node kind, `repeat`. A write repeated from one line reads
@@ -95,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of every property.
 
 ### Fixed
+
+- The test tree of the HTML report was empty when every test was in one file (or one
+  class): the Tests tab said "No tests match the search and filters". The file is now the
+  tree's top row.
 
 - HTML report: secondary text and coloured status text now reach WCAG AA contrast (4.5:1)
   on every surface, in both themes. Grey labels, inactive tabs, times and file paths were

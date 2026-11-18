@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`pytest-reporter` is a pytest plugin that generates structured, human-readable and machine-readable test reports. Each test run produces a timestamped folder containing per-test logs, artifacts, procedures, and an aggregated self-contained HTML report plus JUnit XML for CI/CD. The plugin includes a built-in retry system. Procedures come from `stepdoc`, verification cards from `pytest-verifier` and strategy rows from `pytest-strategies`: all three are optional and never imported.
+`pytest-reporter` is a pytest plugin that generates structured, human-readable and machine-readable test reports. Each test run produces a timestamped folder containing per-test logs, artifacts, procedures, and an aggregated self-contained HTML report plus JUnit XML for CI/CD. The plugin includes a built-in retry system. Procedures come from `stepdoc`, verification cards from `pytest-verifier`, and strategy rows and the run export from `pytest-strategies`: all three are optional and never imported.
 
 **Specification:** The authoritative spec lives in Notion under "Pytest Reporter". Always consult the spec for schema details, edge cases, and design decisions.
 
@@ -22,6 +22,8 @@ pytest-reporter (this plugin)
 │  stepdoc          → pytest_stepdoc_step_* hooks → procedures│
 │  pytest-verifier  → report.verify_checks → check cards      │
 │  pytest-strategies→ `strategy` mark (VectorInfo) → row/seed │
+│                     pytest_strategies_export_dir hook +     │
+│                     strategies.vectors.json → Strategy tab  │
 │                                                             │
 │  HOOKS:                                                     │
 │  ┌──────────────────────────────┐                           │
@@ -39,7 +41,7 @@ pytest-reporter (this plugin)
 
 - **The reporter observes, never judges.** It never raises exceptions to determine test outcomes. It hooks into `pytest_runtest_makereport` to observe what happened and records it. Pass/fail for checks is determined by `pytest-verifier`.
 - **Fixtures are the public API.** `log`, `session_log`, `report_artifacts` are pytest fixtures (no import). The package exports only `Logger`/`ReportLogger`. There is no step API: tests use `from stepdoc import step`.
-- **Integrations stay optional.** Never import stepdoc, pytest-verifier or pytest-strategies. Read what they publish: stepdoc's `pytest_stepdoc_step_started/finished` hooks (`optionalhook=True`), `report.verify_checks`, the `strategy` mark's `VectorInfo.to_dict()`. CI runs the suite with and without them.
+- **Integrations stay optional.** Never import stepdoc, pytest-verifier or pytest-strategies. Read what they publish: stepdoc's `pytest_stepdoc_step_started/finished` hooks (`optionalhook=True`), `report.verify_checks`, the `strategy` mark's `VectorInfo.to_dict()`, and pytest-strategies' run export (its `pytest_strategies_export_dir` hook, `optionalhook=True`, and the files it writes). CI runs the suite with and without them.
 - **Single self-contained HTML report.** `report.html` must be one file with inline HTML, CSS, JS. Artifacts are base64-encoded as data URIs. No external CDN dependencies.
 - **Flat serialization with source paths.** The logger uses a tree API in memory but serializes to flat arrays with `source` path arrays. Never nest on disk.
 
@@ -62,6 +64,8 @@ pytest_reporter/
 ├── _context.py              # RunContext — timestamped run directory management
 ├── _logger.py               # Logger class (+ ReportLogger alias) — tree-based structured logger
 ├── _stepdoc.py              # activate() stepdoc recording; StepCollector: steps → procedure.json
+├── _strategies.py           # StrategyExport: where pytest-strategies writes its run export,
+│                            #   reading strategies.vectors.json; html_data() for the report
 ├── _types.py                # Shared TypedDicts and type aliases
 ├── _json_writer.py          # Phase log, test.log.json, session.log.json writers
 ├── _junit_writer.py         # junit.xml generation
@@ -147,6 +151,8 @@ reports/
         ├── junit.xml
         ├── pytest.log
         ├── session.log.json
+        ├── strategies.json          (pytest-strategies 4.3+)
+        ├── strategies.vectors.json  (pytest-strategies 4.3+)
         ├── failures/
         │   ├── <test>_<run>_error.log
         │   └── <test>_<run>_screenshot.png
@@ -292,6 +298,14 @@ node may hold `substeps` of the same shape.
   or `'<name>': <expr> <op> <expected>` when the check was named. `with_values` shows the
   expression before the operator as this run has it (`dev.block.esmi3_32dat.txfe`, not
   `esmi<channel>`) and annotates only the expected side (`wdata == <wdata> (243)`).
+- A check whose pytest-verifier record (stepdoc keeps it as `Check.source`) has operand
+  names (`actual_name`, `expected_name`, each with an optional `_symbolic` form) is worded
+  by `_stepdoc._named_text`: the symbolic names in the text, this run's `actual_name` in
+  the result. `Verify tb.dev.map.block.reg<channel>.F == wdata (243)` with `result`
+  `got tb.dev.map.block.reg3.F = 240`; with `name=`, `'Stored word': <actual> ...`. The
+  node carries this run's `actual_name` / `expected_name`. Without an `expected_name` the
+  expected side is stepdoc's (`== <wdata> (243)`); without an `actual_name` the checked
+  value keeps stepdoc's wording. A description of another shape leaves the text alone.
 - A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets
   `description_segments` (`[{"text", "style": "mono"|null}]`, `_stepdoc.title_segments`);
   the HTML renders them as `.proc-mono`. `description` keeps the backticks.
@@ -331,6 +345,29 @@ node may hold `substeps` of the same shape.
 - A record's optional `note` (pytest-verifier's `note=`) shows after the statement, in the
   card body and in the failure banner (`checkNote`); an `auto_name` label (a name taken from
   the source, `dat.txfe`) shows in monospace. Both are optional: older records lack them.
+- A record's optional `actual_name` / `expected_name` (pytest-verifier's operand names: this
+  run's text) show in the card body as **Actual name** / **Expected name**, each followed by
+  its `_symbolic` form (`written as reg<channel>`) when the record has one
+  (`operandNameEl`). A check with a `name=` of its own also shows `actual_name` beside its
+  label, in the card header, the failure strip and the failure reason (`checkOperand`;
+  without `name=` the name is that text already).
+
+### Strategy export (pytest-strategies 4.3+)
+
+- `Reporter.pytest_strategies_export_dir` is a hook wrapper (`optionalhook=True`): when no
+  other implementation chose a folder and the user's `strategies_export_dir` ini option is
+  empty, `StrategyExport.answer` gives the run folder. `--strategy-export` wins in
+  pytest-strategies before the hook is asked. `StrategyExport.folder()` follows the same
+  order to find where the files went.
+- At `pytest_sessionfinish` (ours is `trylast`, after pytest-strategies wrote the files)
+  `StrategyExport.load` reads `strategies.vectors.json`. From a folder the user chose, only
+  files written since the session started count, and both files are copied into the run
+  folder. Anything unreadable is skipped (a warning for a broken file), never an error.
+- `_strategies.html_data` gives `DATA.strategies` (generator, seed, `nsamples`, counts) and
+  each test's `strategies` (by node ID without parameters), each with its `rows` and their
+  `items` (`nodeid`, `outcome`). The Strategy sub-tab (`renderStrategies`) shows them; a
+  row's outcome is the report's own for an item that is one of the test's runs.
+- The `report_strategies` ini setting (default true) turns the integration off.
 
 ## HTML Report (§7)
 
@@ -343,7 +380,7 @@ node may hold `substeps` of the same shape.
 ### Four dashboard tabs:
 1. **Summary** — Counters (passed/failed/skipped/error/retried), config-driven donut charts or
    pass-rate bars per group (no whole-suite "All Tests" donut; top counters convey totals).
-2. **Tests** — Left: collapsible tree (folders → files → functions, with status pills). Right: run pills + detail sub-tabs (Summary, Procedure, Artifacts, Retries).
+2. **Tests** — Left: collapsible tree (folders → files → functions, with status pills). Right: run pills + detail sub-tabs (Summary, Procedure, Checks, Strategy, Artifacts, Retries).
 3. **Session Logs** — Collapsible tree by child logger name, reconstructed from `source` arrays. Search bar + level filters.
 4. **Report** — Run metadata, versions, platform, command line args, full `pytest.log` viewer.
 
@@ -351,6 +388,7 @@ node may hold `substeps` of the same shape.
 - **Summary:** Duration, outcome, parameters table, phase logs as horizontal tabs (Setup/Call/Teardown).
 - **Procedure:** Numbered outline from `procedure.json` in Setup / Call / Teardown tabs (by each step's `section`), opening on the failed phase, else Call; actions and checks show their result. Printing shows all three.
 - **Artifacts:** HTML = sandboxed iframes, Images = thumbnail grid + lightbox, Others = file cards.
+- **Strategy:** (tests that use a pytest-strategies strategy, with its 4.3+ run export) each strategy's origin, `@strategy` arguments, sample count and source (`pinned` badge), arguments, constraints and the rows the test ran with their outcomes; the current run's row is highlighted.
 - **Retries:** Original failure pinned at top (red), retry cards below (collapsible), final attempt expanded.
 
 ### Graph colors:

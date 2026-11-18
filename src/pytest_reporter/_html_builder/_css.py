@@ -1090,6 +1090,95 @@ button { font-family: inherit; }
   font-size: var(--fs-sm);
 }
 .params-table tr:last-child td { border-bottom: none; }
+/* Strategy tab: a test's pytest-strategies strategies and the rows it ran */
+.strategy-tab { display: flex; flex-direction: column; gap: 28px; }
+.strategy-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 14px; }
+.strategy-name { font-family: var(--font-mono); font-size: var(--fs-lg, 15px); font-weight: 600; color: var(--c-text); }
+.strategy-origin { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--c-text2); overflow-wrap: anywhere; }
+.strategy-mono { font-family: var(--font-mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.strategy-samples { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.strategy-samples-value { font-family: var(--font-mono); font-weight: 600; }
+.strategy-samples-source { color: var(--c-text2); font-size: var(--fs-sm); }
+.strategy-pin {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--c-accent-dim);
+  color: var(--c-accent-ink);
+}
+.strategy-subhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 8px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--c-text2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.strategy-count {
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--c-surface3);
+  color: var(--c-text2);
+  font-size: var(--fs-xs);
+}
+.strategy-rows-wrap { overflow-x: auto; }
+.strategy-rows-wrap .params-table { margin-bottom: 0; }
+.strategy-rows-wrap .show-more-btn { margin-top: 8px; }
+.strategy-rows td, .strategy-rows th { white-space: nowrap; }
+.strategy-rows td.enumerated { color: var(--c-accent-ink); }
+.strategy-rows tr.current td { background: var(--c-accent-dim); }
+.strategy-rows tr.current td:first-child { box-shadow: inset 3px 0 0 var(--c-accent); font-weight: 600; }
+.params-table td.strategy-prose { font-family: inherit; color: var(--c-text2); white-space: normal; }
+.strategy-kind {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-family: var(--font-sans, inherit);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--c-surface3);
+  color: var(--c-text2);
+}
+.strategy-kind.directed, .strategy-kind.test { background: var(--c-accent-dim); color: var(--c-accent-ink); }
+.strategy-outcomes { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.strategy-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans, inherit);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+}
+.strategy-item-link {
+  padding: 1px 6px;
+  margin: -1px -6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+.strategy-item-link:hover { background: var(--c-surface3); }
+.strategy-item-link:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.strategy-item-run { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text3); }
+.strategy-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.strategy-chip {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  background: var(--c-surface2);
+  color: var(--c-text);
+}
+.strategy-chip.off { color: var(--c-text3); text-decoration: line-through; }
+.strategy-idle { margin-top: 10px; font-size: var(--fs-sm); color: var(--c-text2); }
+.strategy-error { margin-bottom: 12px; font-size: var(--fs-sm); color: var(--c-error-ink); overflow-wrap: anywhere; }
 /* Phase tabs (horizontal Setup / Call / Teardown) */
 .phase-tabs-bar {
   display: flex;
@@ -1612,6 +1701,27 @@ button { font-family: inherit; }
   color: var(--c-text);
   font-size: var(--fs-xs);
 }
+/* The checked value's name (pytest-verifier's actual_name=) beside a check
+   that has a label of its own: code, as this run spells it. */
+.check-operand {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+.check-card-header .check-operand {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--c-well);
+}
+.check-card-detail .operand-name { overflow-wrap: anywhere; }
+.operand-symbolic { margin-left: 10px; font-family: var(--font-sans, inherit); color: var(--c-text3); }
+.operand-symbolic-text { color: var(--c-text2); }
 /* Guard check (if/elif/else chain) rendering */
 .guard-body {
   display: flex;

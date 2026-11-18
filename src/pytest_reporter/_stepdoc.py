@@ -23,6 +23,7 @@ from __future__ import annotations
 import difflib
 import re
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -312,7 +313,13 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     passed = getattr(check, "passed", None)
     text = str(getattr(check, "text", ""))
     symbolic = getattr(check, "symbolic_text", None)
-    if isinstance(symbolic, str) and symbolic and symbolic != text:
+    if not isinstance(symbolic, str) or not symbolic or symbolic == text:
+        symbolic = None
+    names = _operand_names(check)
+    named = _named_text(names, text, symbolic) if names else None
+    if named is not None:
+        text = named
+    elif symbolic is not None:
         text = with_values(symbolic, text)
     selected = getattr(check, "selected", None)
     if selected:
@@ -324,7 +331,15 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         "outcome": "unknown" if passed is None else ("passed" if passed else "failed"),
         "exc": None,
     }
-    result = _check_result(check)
+    # The checked value's name as this run has it, when the text shows another
+    # form of it (the symbolic one): "got tb.dev.map.block.reg3.F = 240".
+    actual_name = names.get("actual_name") if named is not None else None
+    for key in ("actual_name", "expected_name"):
+        if names.get(key):
+            node[key] = names[key]
+    result = _check_result(
+        check, actual_name if actual_name and names.get("actual_name_symbolic") else None
+    )
     if result is not None:
         node["result"] = result
     _add_note(node, check)
@@ -338,6 +353,90 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     if children:
         node["substeps"] = children
     return node
+
+
+_NAME_KEYS = ("actual_name", "actual_name_symbolic", "expected_name", "expected_name_symbolic")
+_REST_OPERATOR = re.compile(r"(?:==|!=|>=|<=|>|<|∈|∉|is not|is) ")
+
+
+def _operand_names(check: Any) -> dict[str, str]:  # noqa: ANN401
+    """The operand names of a pytest-verifier check (``actual_name=``, ``expected_name=``).
+
+    stepdoc keeps the record it built a check from as ``Check.source``. The
+    record has each name as this run spells it (``tb.dev.map.block.reg3.F``)
+    and, when pytest-verifier knows it, with every interpolation as
+    ``<expression>`` (``tb.dev.map.block.reg<channel>.F``, the ``_symbolic``
+    key). Its ``name``, ``auto_name`` and ``description`` come along, for
+    :func:`_named_text`. Empty when the check has no operand name.
+    """
+    source = getattr(check, "source", None)
+    if not isinstance(source, Mapping):
+        return {}
+    names = {
+        key: source[key].strip()
+        for key in _NAME_KEYS
+        if isinstance(source.get(key), str) and source[key].strip()
+    }
+    if "actual_name" not in names and "expected_name" not in names:
+        return {}
+    for key in ("name", "description"):
+        if isinstance(source.get(key), str):
+            names[key] = source[key]
+    if source.get("auto_name") is True:
+        names["auto_name"] = "true"
+    return names
+
+
+def _named_text(names: dict[str, str], text: str, symbolic: str | None) -> str | None:
+    """A check's procedure text, worded with its operand names.
+
+    The procedure reads as the test is written, so each name shows its symbolic
+    form when there is one: ``tb.dev.map.block.reg<channel>.F == wdata (243)``,
+    or ``'Stored word': tb.dev.map.block.reg<channel>.F == wdata (243)`` for a
+    check that also has a ``name=``. The expected side is pytest-verifier's own
+    (the name, then this run's value); without an ``expected_name`` it is
+    stepdoc's, as :func:`with_values` shows it (``== <wdata> (243)``). Without
+    an ``actual_name`` the checked value keeps stepdoc's wording.
+
+    Returns:
+        The text, or ``None`` when the record's description has another shape
+        (the check then reads as stepdoc worded it).
+    """
+    name = names.get("name")
+    description = names.get("description", "")
+    prefix = f"Verify '{name}' "
+    if name is None or not description.startswith(prefix):
+        return None
+    rest = description[len(prefix) :]
+    if not rest or not text.endswith(rest):
+        return None
+
+    actual = names.get("actual_name")
+    if actual is not None:
+        label = "" if names.get("auto_name") else f"'{name}': "
+        left = f"{label}{names.get('actual_name_symbolic', actual)} "
+    else:
+        left = text[: len(text) - len(rest)]
+
+    expected = names.get("expected_name")
+    if expected is not None:
+        right = rest.replace(expected, names.get("expected_name_symbolic", expected), 1)
+    else:
+        right = _symbolic_rest(rest, symbolic)
+    return left + right
+
+
+def _symbolic_rest(rest: str, symbolic: str | None) -> str:
+    """``rest`` (``== 243``) with the names stepdoc found for it: ``== <wdata> (243)``."""
+    operator = _REST_OPERATOR.match(rest)
+    if symbolic is None or operator is None:
+        return rest
+    head = symbolic.find("': ") + 3 if symbolic.startswith("'") and "': " in symbolic else 0
+    found = symbolic.find(f" {operator.group()}", head)
+    if found < 0:
+        return rest
+    sym_right = symbolic[found + 1 + operator.end() :]
+    return operator.group() + _annotate(sym_right, rest[operator.end() :])
 
 
 def with_values(symbolic: str, concrete: str) -> str:
@@ -397,10 +496,10 @@ def _annotate(symbolic: str, concrete: str) -> str:
     return "".join(out)
 
 
-def _check_result(check: Any) -> str | None:  # noqa: ANN401
+def _check_result(check: Any, actual_name: str | None = None) -> str | None:  # noqa: ANN401
     actual = getattr(check, "actual", None)
     if actual is not None:
-        return f"got {_show(actual)}"
+        return f"got {actual_name} = {_show(actual)}" if actual_name else f"got {_show(actual)}"
     reads = getattr(check, "reads", None) or []
     if len(reads) == 1:
         return f"got {_show(getattr(reads[0], 'value', None))}"

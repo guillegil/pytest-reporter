@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from ._dashboard_config import normalize_dashboard
+from ._strategies import html_data as strategies_html_data
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -177,6 +178,9 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
     Returns:
         A dict ready to be passed to ``build_html_report()``.
     """
+    # pytest-strategies' run export: the session's part, and each test's strategies
+    strategies_session, strategies_by_test = strategies_html_data(reporter.strategy_export)
+
     # Collect all test data
     tests: list[dict] = []  # type: ignore[type-arg]
     for base_nodeid in reporter.collector.get_all_base_nodeids():
@@ -299,6 +303,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                 "base_nodeid": base_nodeid,
                 "aggregate": dict(aggregate),
                 "runs": runs,
+                "strategies": strategies_by_test.get(base_nodeid, []),
             }
         )
 
@@ -417,4 +422,5 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         "system_metadata": system_metadata,
         "dashboard": dashboard_config,
         "seed": seed,
+        "strategies": strategies_session,
     }

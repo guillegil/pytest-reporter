@@ -44,6 +44,15 @@ def pytest_addoption(parser: Parser) -> None:
         "procedures (and save its run record as stepdoc.json in the run folder) "
         "when no stepdoc option is given (default: true)",
     )
+    parser.addini(
+        "report_strategies",
+        type="bool",
+        default=True,
+        help="With --report-dir and pytest-strategies 4.3+, save its run export "
+        "(strategies.json and strategies.vectors.json) in the run folder when no "
+        "export folder is chosen, and show each test's strategies and rows in the "
+        "HTML report (default: true)",
+    )
 
 
 @pytest.hookimpl(tryfirst=True)
