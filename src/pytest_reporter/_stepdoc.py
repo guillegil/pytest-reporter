@@ -316,18 +316,32 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     if not isinstance(symbolic, str) or not symbolic or symbolic == text:
         symbolic = None
     names = _operand_names(check)
-    named = _named_text(names, text, symbolic) if names else None
-    if named is not None:
-        text = named
-    elif symbolic is not None:
-        text = with_values(symbolic, text)
+    # The check without this run's values: the Procedure tab's Generic view
+    generic = symbolic if symbolic is not None else text
+    operands = getattr(check, "operands", None)
+    if isinstance(operands, dict) and operands:
+        # stepdoc worded both texts with the operand names itself: this run's
+        # (reg3.F == wdata (243)) and the generic one (reg<channel>.F == <wdata>)
+        named = None
+    else:
+        named = _named_text(names, text, symbolic) if names else None
+        if named is not None:
+            generic = _named_generic(names, text, symbolic) or generic
+            text = named
+        elif symbolic is not None:
+            text = with_values(symbolic, text)
     selected = getattr(check, "selected", None)
     if selected:
         text += f" [→ {selected}]"
+        generic += f" [→ {selected}]"
+    label = getattr(check, "label", None)
     node: dict[str, Any] = {
         "kind": "check",
         "number": number,
         "description": f"Verify {text}",
+        "description_segments": _check_segments(text, label),
+        "generic": f"Verify {generic}",
+        "generic_segments": _check_segments(generic, label),
         "outcome": "unknown" if passed is None else ("passed" if passed else "failed"),
         "exc": None,
     }
@@ -353,6 +367,30 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     if children:
         node["substeps"] = children
     return node
+
+
+def _check_segments(text: str, label: Any) -> list[dict[str, Any]]:  # noqa: ANN401
+    """A check's line as segments: the words plain, the code in monospace.
+
+    ``Verify`` and the check's name (``'Stored word':``) are words; the checked
+    expression, the comparison and the operand names are code. The name is
+    stepdoc's ``Check.label`` when the text starts with it in quotes, else what
+    stands before the first ``': `` of a text that opens with a quote.
+    """
+    head = ""
+    if isinstance(label, str) and label:
+        for quoted in (f"'{label}': ", f"'{label}' "):
+            if text.startswith(quoted) and len(text) > len(quoted):
+                head = quoted
+                break
+    elif text.startswith("'"):
+        end = text.find("': ", 1)
+        if 0 < end < len(text) - 3:
+            head = text[: end + 3]
+    return [
+        {"text": f"Verify {head}", "style": None},
+        {"text": text[len(head) :], "style": "mono"},
+    ]
 
 
 _NAME_KEYS = ("actual_name", "actual_name_symbolic", "expected_name", "expected_name_symbolic")
@@ -426,6 +464,34 @@ def _named_text(names: dict[str, str], text: str, symbolic: str | None) -> str |
     return left + right
 
 
+def _named_generic(names: dict[str, str], text: str, symbolic: str | None) -> str | None:
+    """A check :func:`_named_text` worded, without this run's values.
+
+    For a stepdoc that does not word checks with operand names itself: the
+    symbolic ``actual_name``, then the expected side as stepdoc's symbolic text
+    has it (``tb.dev.map.block.reg<channel>.F == <wdata>``). ``None`` when
+    there is no ``actual_name`` or the expected side cannot be told apart.
+    """
+    actual = names.get("actual_name")
+    name = names.get("name")
+    rest = names.get("description", "")[len(f"Verify '{name}' ") :]
+    if actual is None or not rest:
+        return None
+    operator = _REST_OPERATOR.match(rest)
+    if operator is None:
+        return None
+    right = rest[operator.end() :]
+    if symbolic is not None:
+        found = _symbolic_right(rest, symbolic, text[: len(text) - len(rest)])
+        if found is None:
+            return None
+        right = found
+    elif "expected_name" in names:
+        return None  # the description's value cannot be told from the name
+    label = "" if names.get("auto_name") else f"'{name}': "
+    return f"{label}{names.get('actual_name_symbolic', actual)} {operator.group()}{right}"
+
+
 def _expected_symbolic(rest: str, expected: str, symbolic: str) -> str:
     """``rest`` (``== wdata (243)``) with the expected name in its symbolic form.
 
@@ -454,18 +520,26 @@ def _symbolic_rest(rest: str, symbolic: str | None, left: str = "") -> str:
     the symbolic text is the one after as many operators as ``left`` has.
     """
     operator = _REST_OPERATOR.match(rest)
-    if symbolic is None or operator is None:
+    sym_right = _symbolic_right(rest, symbolic, left)
+    if operator is None or sym_right is None:
         return rest
+    return operator.group() + _annotate(sym_right, rest[operator.end() :])
+
+
+def _symbolic_right(rest: str, symbolic: str | None, left: str) -> str | None:
+    """What follows the operator of ``rest`` in stepdoc's symbolic text, or ``None``."""
+    operator = _REST_OPERATOR.match(rest)
+    if symbolic is None or operator is None:
+        return None
     needle = f" {operator.group()}"
     found = -1
     for _ in range((left + operator.group()).count(needle)):
         found = symbolic.find(needle, found + 1)
         if found < 0:
-            return rest
+            return None
     if found < 0:
-        return rest
-    sym_right = symbolic[found + len(needle) :]
-    return operator.group() + _annotate(sym_right, rest[operator.end() :])
+        return None
+    return symbolic[found + len(needle) :]
 
 
 def with_values(symbolic: str, concrete: str) -> str:
@@ -582,7 +656,49 @@ def _action(action: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     }
     if result is not None:
         node["result"] = result
+    generic, bound = _action_generic(action)
+    if generic != text:
+        node["generic"] = generic
+    if bound is not None:
+        node["generic_result"] = bound
     return node
+
+
+def _action_generic(action: Any) -> tuple[str, str | None]:  # noqa: ANN401
+    """An action without this run's values, as stepdoc's procedure words it.
+
+    The target and the value are the symbolic ones stepdoc found
+    (``dev.reg<channel> = <wdata>``); a value it found no name for stays this
+    run's. A read shows the name its value was bound to (``<rdata>``).
+    """
+    op = str(getattr(action, "op", ""))
+    direction = str(getattr(action, "direction", "in"))
+    target = getattr(action, "symbolic_target", None)
+    if not isinstance(target, str) or not target:
+        target = str(getattr(action, "target", ""))
+    value = ""
+    if direction != "out":
+        symbolic = getattr(action, "symbolic_value", None)
+        raw = getattr(action, "value", None)
+        if isinstance(symbolic, str) and symbolic:
+            value = symbolic
+        elif raw is not None:
+            value = _show(raw)
+    bound = getattr(action, "bound_to", None)
+    result = f"<{bound}>" if direction == "out" and isinstance(bound, str) and bound else None
+    count = int(getattr(action, "count", 1) or 1)
+    if count > 1 and direction != "in":
+        return f"Poll {target} {value}".rstrip(), result
+    if direction == "in" and op in _ASSIGN_OPS:
+        text = f"{target} = {value}" if value else target
+    elif op in _BARE_OPS:
+        text = f"{target}  {value}".rstrip()
+    else:
+        text = f"{op.capitalize()} {target} {value}".rstrip()
+    if count > 1:
+        plain = op in _ASSIGN_OPS or op in _BARE_OPS
+        text = "Repeat " + (text if plain else f"{op} {target} {value}".rstrip())
+    return text, result
 
 
 def _show(value: Any) -> str:  # noqa: ANN401

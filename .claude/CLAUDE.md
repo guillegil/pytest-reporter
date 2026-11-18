@@ -309,6 +309,16 @@ node may hold `substeps` of the same shape.
 - A step title with Markdown code spans (stepdoc's backticks / `fmt.mono`) also gets
   `description_segments` (`[{"text", "style": "mono"|null}]`, `_stepdoc.title_segments`);
   the HTML renders them as `.proc-mono`. `description` keeps the backticks.
+- Checks and actions carry `generic`: the line without this run's values (stepdoc's
+  `symbolic_text`; an action's `symbolic_target` / `symbolic_value`, and `generic_result`
+  `<rdata>` for a read bound to a name). Checks also carry `description_segments` and
+  `generic_segments` (`_stepdoc._check_segments`): `Verify` and the check's name plain, the
+  code `mono`. The Procedure tab's **This run / Generic** switch (`procedureView`,
+  `renderProcedure` → `renderProcedurePhases`, `renderGenericNode`) shows the generic lines
+  without outcomes, results, durations or failure text.
+- A stepdoc that words checks with operand names itself (`Check.operands`, `Check.label`)
+  has its `text` and `symbolic_text` shown as they are; `_named_text` / `_named_generic`
+  serve earlier stepdocs.
 - 0.2 files (no `kind`, optional `description_segments`, `check`) still render.
 - stepdoc records only with one of its options: `_stepdoc.activate()` (from the
   `tryfirst` `pytest_configure`) sets `--stepdoc-record=<run>/stepdoc.json` when the user

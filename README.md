@@ -228,6 +228,7 @@ def test_voltage_sweep(log, verify, psu):
 ```
 
 - Nesting `with step(...)` blocks decides the numbering (`1`, `1.1`, `1.1.1`, …). Each step has its timing, its outcome and the exception that ended it.
+- A switch above the steps chooses the view: **This run** (values, results and outcomes) or **Generic**, the procedure as the test is written, with names where this run's values were (`Verify tb.dev.map.block.reg<channel>.F == <wdata>`) and no results or outcomes. The choice is kept while you move between runs and tests. Checked expressions and operand names are set in monospace in both views; a check's `name=` stays in plain text.
 - Steps run by fixtures go into a **Setup** (`S1`, `S2`, …) or **Teardown** (`T1`, …) section of their own. The Procedure sub-tab shows **Setup**, **Call** and **Teardown** as tabs, each with its worst outcome and step count, and opens on the phase that failed (else on Call).
 - Checks appear in the step that made them: `assert` statements (passing ones need `enable_assertion_pass_hook = true`), `step("…", check=...)`, and every `verify.*` check of pytest-verifier, with its result (`→ got 3.31`). When the expected value is a variable, the line names it and gives this run's value: `Verify 'Readback' == <wdata> (243)`. A check made with pytest-verifier's `actual_name=` / `expected_name=` reads with those names as the test writes them, and its result names the value as this run has it: `Verify tb.dev.map.block.reg<channel>.F == wdata (243) → got tb.dev.map.block.reg3.F = 240` (see [pytest-verifier](#optional-integration-pytest-verifier)).
 - Text between backticks in a step title is shown in monospace, as in Markdown: `` step("Write into `dut.reg1 = 1`") ``, or `step(f"Write into {fmt.mono(reg.path)}")` with stepdoc's `fmt.mono`.
@@ -367,7 +368,7 @@ The report shows each name where it helps most:
 |---|---|
 | Verification card, failure strip, Failures list | This run's text: `tb.dev.map.block.reg3.F — expected wdata (243), got 240`. A check that also has a `name=` shows the name as its label and this text beside it. |
 | Card body | **Actual name** and **Expected name**, each followed by `written as tb.dev.map.block.reg<channel>.F` when pytest-verifier knows the form with the variable parts. |
-| Procedure tab (with stepdoc) | The names as the test writes them, and this run's name in the result: `Verify tb.dev.map.block.reg<channel>.F == wdata (243) → got tb.dev.map.block.reg3.F = 240`. With `name=`: `Verify 'Stored word': tb.dev.map.block.reg<channel>.F == wdata (243)`. |
+| Procedure tab (with stepdoc) | **Generic** view: the names as the test writes them, `Verify tb.dev.map.block.reg<channel>.F == <wdata>`. **This run** view: with a stepdoc that words checks with operand names, this run's names and values, `Verify tb.dev.map.block.reg3.F == wdata (243) → got 240`; with an earlier stepdoc, `Verify tb.dev.map.block.reg<channel>.F == wdata (243) → got tb.dev.map.block.reg3.F = 240`. A `name=` leads either: `Verify 'Stored word': …`. |
 
 A plain string has no symbolic form, so every view shows the text you gave.
 This needs a pytest-verifier version with `actual_name=` / `expected_name=`;

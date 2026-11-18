@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was chosen; a folder chosen with `--strategy-export`, another implementation of the hook
   or the `strategies_export_dir` ini option is kept, and the two files are copied into the
   run folder.
+- The Procedure sub-tab has a **This run / Generic** switch. Generic shows the procedure as
+  the test is written, with names in place of this run's values
+  (`Verify tb.dev.map.block.reg<channel>.F == <wdata>`, `dev.reg<channel> = <wdata>`) and
+  without results, outcomes or durations. `procedure.json` nodes carry the line as `generic`.
+- Checked expressions and operand names on the Procedure tab are set in monospace (a
+  check's `name=` stays plain text), and the report's monospace font stack starts with the
+  system's own (`ui-monospace`, SF Mono, Menlo, Cascadia Mono, …).
 - A test that uses a strategy has a **Strategy** sub-tab: where each strategy is defined,
   the `@strategy` arguments, the context fingerprint, the sample count and where it came
   from (a strategy with `pin_nsamples=True` is marked **pinned**), its arguments and

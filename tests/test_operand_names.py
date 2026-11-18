@@ -207,6 +207,99 @@ def test_procedure_check_expected_name_that_occurs_in_the_operator() -> None:
     assert _check(check, "1.2")["description"] == f"Verify {ACTUAL_SYMBOLIC} == <eq> (243)"
 
 
+def test_procedure_check_generic_text() -> None:
+    """``generic`` is the check without this run's values; the segments put
+    the words in plain text and the code in monospace."""
+    record = _record(expected_name=None, description=f"Verify '{ACTUAL}' == 243")
+    check = _stepdoc_check(
+        record, text="block_reg_f == 243", symbolic_text="block_reg_f == <wdata>"
+    )
+    node = _check(check, "1.1")
+    assert node["generic"] == f"Verify {ACTUAL_SYMBOLIC} == <wdata>"
+    assert node["generic_segments"] == [
+        {"text": "Verify ", "style": None},
+        {"text": f"{ACTUAL_SYMBOLIC} == <wdata>", "style": "mono"},
+    ]
+    assert node["description_segments"] == [
+        {"text": "Verify ", "style": None},
+        {"text": f"{ACTUAL_SYMBOLIC} == <wdata> (243)", "style": "mono"},
+    ]
+    # A name= is words, not code
+    named = _record(
+        name="Stored word",
+        auto_name=None,
+        expected_name=None,
+        description="Verify 'Stored word' == 243",
+    )
+    check = _stepdoc_check(
+        named,
+        text="'Stored word': block_reg_f == 243",
+        symbolic_text="'Stored word': block_reg_f == <wdata>",
+    )
+    assert _check(check, "1.2")["generic_segments"] == [
+        {"text": "Verify 'Stored word': ", "style": None},
+        {"text": f"{ACTUAL_SYMBOLIC} == <wdata>", "style": "mono"},
+    ]
+    # An expected_name without a symbolic text from stepdoc: stepdoc's wording
+    check = _stepdoc_check(_record(), text="block_reg_f == wdata (243)")
+    assert _check(check, "1.3")["generic"] == "Verify block_reg_f == wdata (243)"
+
+
+def test_procedure_check_worded_by_stepdoc() -> None:
+    """A stepdoc that words checks with the operand names (``Check.operands``)
+    gives both texts: they are shown as they are."""
+    record = _record(name="Stored word", auto_name=None)
+    check = _stepdoc_check(
+        record,
+        text=f"'Stored word': {ACTUAL} == wdata (243)",
+        symbolic_text=f"'Stored word': {ACTUAL_SYMBOLIC} == <wdata>",
+        label="Stored word",
+        operands={"actual": {"concrete": ACTUAL, "symbolic": ACTUAL_SYMBOLIC}},
+    )
+    node = _check(check, "1.1")
+    assert node["description"] == f"Verify 'Stored word': {ACTUAL} == wdata (243)"
+    assert node["result"] == "got 240"
+    assert node["generic"] == f"Verify 'Stored word': {ACTUAL_SYMBOLIC} == <wdata>"
+    assert node["generic_segments"] == [
+        {"text": "Verify 'Stored word': ", "style": None},
+        {"text": f"{ACTUAL_SYMBOLIC} == <wdata>", "style": "mono"},
+    ]
+    assert node["actual_name"] == ACTUAL
+
+
+def test_action_generic_text() -> None:
+    from pytest_reporter._stepdoc import _action
+
+    write = NS(
+        op="write",
+        target="dev.reg3",
+        direction="in",
+        value=243,
+        meta={},
+        count=1,
+        symbolic_target="dev.reg<channel>",
+        symbolic_value="<wdata>",
+    )
+    node = _action(write, "1.1")
+    assert node["description"] == "dev.reg3 = 243"
+    assert node["generic"] == "dev.reg<channel> = <wdata>"
+    read = NS(
+        op="read",
+        target="dev.reg3",
+        direction="out",
+        value=240,
+        meta={},
+        count=1,
+        symbolic_target="dev.reg<channel>",
+        bound_to="rdata",
+    )
+    node = _action(read, "1.2")
+    assert node["result"] == "240"
+    assert node["generic_result"] == "<rdata>"
+    # Nothing symbolic: the same text, so no separate generic one
+    assert "generic" not in _action(NS(op="write", target="a", direction="in", value=1), "1.3")
+
+
 def test_procedure_check_expected_name_only() -> None:
     """Without ``actual_name`` the checked value keeps stepdoc's wording, and
     the expected side is not annotated twice."""
@@ -499,9 +592,22 @@ def test_operand_names_from_pytest_verifier(pytester: Pytester) -> None:
 
     path = _run_dir(pytester) / "tests" / "test_rw.py" / "test_a" / "default" / "procedure.json"
     substeps = json.loads(path.read_text(encoding="utf-8"))["steps"][0]["substeps"]
-    assert [(s["description"], s["result"]) for s in substeps] == [
-        (f"Verify {ACTUAL_SYMBOLIC} == wdata (243)", f"got {ACTUAL} = 240"),
-        (f"Verify 'In range': {ACTUAL_SYMBOLIC} <= 255", f"got {ACTUAL} = 240"),
+    # The generic line reads the same whichever stepdoc worded the check
+    assert [s["generic"] for s in substeps] == [
+        f"Verify {ACTUAL_SYMBOLIC} == <wdata>",
+        f"Verify 'In range': {ACTUAL_SYMBOLIC} <= 255",
     ]
+    assert [(s["description"], s["result"]) for s in substeps] in (
+        # stepdoc words checks with the operand names itself (Check.operands)
+        [
+            (f"Verify {ACTUAL} == wdata (243)", "got 240"),
+            (f"Verify 'In range': {ACTUAL} <= 255", "got 240"),
+        ],
+        # an earlier stepdoc: the reporter does
+        [
+            (f"Verify {ACTUAL_SYMBOLIC} == wdata (243)", f"got {ACTUAL} = 240"),
+            (f"Verify 'In range': {ACTUAL_SYMBOLIC} <= 255", f"got {ACTUAL} = 240"),
+        ],
+    )
     assert substeps[0]["outcome"] == "failed"
     assert substeps[0]["actual_name"] == ACTUAL

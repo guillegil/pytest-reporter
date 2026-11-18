@@ -174,6 +174,9 @@ class ProcedureNodeJson(TypedDict, total=False):
     result: str
     detail: str
     note: str
+    generic: str
+    generic_segments: list[dict[str, Any]]
+    generic_result: str
     actual_name: str
     expected_name: str
     substeps: list[ProcedureNodeJson]  # recursive; absent / [] => leaf node

@@ -127,7 +127,8 @@ CSS: str = (
   --fs-3xl: 36px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Cascadia Mono', 'JetBrains Mono',
+    Consolas, 'Roboto Mono', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   /* Controls fade only the properties that change; "all" would also animate
@@ -1576,8 +1577,37 @@ button { font-family: inherit; }
   color: var(--c-text3);
   font-size: var(--fs-md);
 }
+.procedure-view-switch {
+  display: inline-flex;
+  margin-bottom: 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--c-surface2);
+}
+.procedure-view-btn {
+  min-height: 28px;
+  padding: 4px 14px;
+  border: none;
+  background: none;
+  color: var(--c-text2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.procedure-view-btn + .procedure-view-btn { border-left: 1px solid var(--c-border); }
+.procedure-view-btn:hover { color: var(--c-text); }
+.procedure-view-btn.active { background: var(--c-accent-dim); color: var(--c-text); font-weight: 600; }
+.procedure-view-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+.procedure-view-hint { margin: 0 0 10px; color: var(--c-text2); font-size: var(--fs-sm); }
+.proc-generic .procedure-step-number { margin-left: 2px; }
+.proc-kind-check .proc-mono { overflow-wrap: anywhere; }
 .proc-mono {
   font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
   /* Steps sit on surface2, so the span takes the next surface and a hairline. */
   background: var(--c-surface3);
   border: 1px solid var(--c-border);
@@ -2502,7 +2532,7 @@ h1, h2, h3, h4 { text-wrap: balance; }
 @media (pointer: coarse) {
   .tab-btn, .sub-tab-btn, .phase-tab-btn, .run-pill, .filter-btn, .filter-chip,
   .strip-btn, .failures-more, .session-log-level-btn, .session-log-action-btn,
-  .detail-back, .search-input, .session-log-search, .detail-cmd,
+  .detail-back, .search-input, .session-log-search, .detail-cmd, .procedure-view-btn,
   .strategy-item-link, .strategy-rows-wrap .show-more-btn {
     min-height: 44px;
   }
@@ -2553,6 +2583,7 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .counter-card, .chart-card, .check-card, .failure-strip, .failures-panel, .procedure-step,
   .retry-card, .log-entry { break-inside: avoid; }
   .procedure-tabs .phase-tabs-bar { display: none; }
+  .procedure-view-switch { display: none; }
   .procedure-tab-panel { display: block; border: none; }
   .procedure-tab-panel::before {
     content: attr(data-phase); display: block; margin-top: 8px;

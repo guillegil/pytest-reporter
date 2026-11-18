@@ -2028,10 +2028,13 @@ function _appendCheckInline(row, check) {
 // renderFormattedDesc \u2014 returns a DocumentFragment (segments present) or a
 // plain TextNode (fallback for no-markup descriptions). Uses textContent only;
 // NEVER innerHTML. XSS-safe: segment text is always assigned via textContent.
-function renderFormattedDesc(node) {
-  const segs = node.description_segments;
+function renderFormattedDesc(node, generic) {
+  // The Generic view reads a node's text without this run's values, when
+  // stepdoc gave one; other nodes (steps, loops) read the same in both views.
+  const useGeneric = generic && typeof node.generic === 'string';
+  const segs = useGeneric ? node.generic_segments : node.description_segments;
   if (!segs || segs.length === 0) {
-    return document.createTextNode(node.description || '');
+    return document.createTextNode((useGeneric ? node.generic : node.description) || '');
   }
   const frag = document.createDocumentFragment();
   segs.forEach(function(seg) {
@@ -2052,7 +2055,8 @@ function renderFormattedDesc(node) {
 // nodes render at depth 3). Nodes come from stepdoc: kind 'step', 'action'
 // (a line of the executed report) or 'check' (a Verify line). Files without a
 // kind (pytest-reporter 0.2) are steps. Text is set via textContent only.
-function renderNode(node, depth) {
+function renderNode(node, depth, generic) {
+  if (generic) return renderGenericNode(node, depth);
   const kind = node.kind || 'step';
   const cls = (depth === 1 ? 'procedure-step'
             : depth === 2 ? 'procedure-substep'
@@ -2106,6 +2110,45 @@ function renderNode(node, depth) {
   return row;
 }
 
+// A node of the Generic view: the procedure as the test is written, for any
+// run of it. No outcome, result, duration or failure text: the names stand
+// where this run's values were (reg<channel>.F == <wdata>).
+function renderGenericNode(node, depth) {
+  const kind = node.kind || 'step';
+  const cls = (depth === 1 ? 'procedure-step'
+            : depth === 2 ? 'procedure-substep'
+            : 'procedure-substep procedure-subsubstep') + ' proc-kind-' + kind + ' proc-generic';
+  const row = el('div', {className: cls});
+  const descSpan = el('span', {className: 'procedure-step-desc'});
+  descSpan.appendChild(renderFormattedDesc(node, true));
+  const inlineNote = kind === 'check' && node.note;
+  if (inlineNote) {
+    descSpan.appendChild(el('span', {className: 'procedure-check-note'}, ' (' + node.note + ')'));
+  }
+  const hasKids = node.substeps && node.substeps.length > 0;
+  const numText = (depth === 1 || hasKids) ? node.number + '.' : node.number;
+  const header = el('div', {className: 'procedure-step-header'},
+    el('span', {className: 'procedure-step-number'}, numText), descSpan);
+  if (node.generic_result) {
+    header.appendChild(el('span', {className: 'procedure-result'}, '\u2192 ' + node.generic_result));
+  }
+  row.appendChild(header);
+  if (node.note && !inlineNote) row.appendChild(el('div', {className: 'procedure-note'}, node.note));
+  if (hasKids) {
+    const kids = el('div', {className: 'procedure-substeps'});
+    node.substeps.forEach(function(child) {
+      kids.appendChild(renderGenericNode(child, depth < 3 ? depth + 1 : 3));
+    });
+    row.appendChild(kids);
+  }
+  return row;
+}
+
+// Which view the Procedure tab shows: 'run' (this run's values and results)
+// or 'generic'. Kept while the report is open, across runs and tests.
+let procedureView = 'run';
+const PROC_VIEWS = [['run', 'This run'], ['generic', 'Generic']];
+
 // The procedure in Setup / Call / Teardown tabs, like the phase logs: Setup
 // (S1…) and Teardown (T1…) hold the steps fixtures ran, Call the test's own.
 // Each tab shows the worst outcome and the number of its top-level steps; the
@@ -2123,6 +2166,34 @@ function procOutcome(steps) {
 }
 
 function renderProcedure(proc, run) {
+  const holder = el('div', {className:'procedure-views'});
+  const draw = function(focusView) {
+    holder.textContent = '';
+    const switcher = el('div', {className:'procedure-view-switch', role:'group', 'aria-label':'Procedure view'});
+    PROC_VIEWS.forEach(function(view) {
+      const on = procedureView === view[0];
+      const btn = el('button', {className:'procedure-view-btn' + (on ? ' active' : ''), type:'button',
+        'aria-pressed': on ? 'true' : 'false'}, view[1]);
+      btn.addEventListener('click', function() {
+        if (procedureView === view[0]) return;
+        procedureView = view[0];
+        draw(true);
+      });
+      switcher.appendChild(btn);
+      if (on && focusView) setTimeout(function() { btn.focus(); }, 0);
+    });
+    holder.appendChild(switcher);
+    if (procedureView === 'generic') {
+      holder.appendChild(el('p', {className:'procedure-view-hint'},
+        'The procedure as the test is written, without this run\u2019s values or results.'));
+    }
+    holder.appendChild(renderProcedurePhases(proc, run, procedureView === 'generic'));
+  };
+  draw(false);
+  return holder;
+}
+
+function renderProcedurePhases(proc, run, generic) {
   const steps = proc.steps || [];
   const sectionOf = s => s.section || 'procedure';
   const bySection = {};
@@ -2142,14 +2213,14 @@ function renderProcedure(proc, run) {
     const on = idx === active;
     const tabId = uid('proctab'), panelId = uid('procpanel');
     const label = el('span', {className:'phase-tab-label'});
-    if (outcome) label.appendChild(el('span', {className:'status-dot ' + outcome, 'aria-hidden':'true'}));
+    if (outcome && !generic) label.appendChild(el('span', {className:'status-dot ' + outcome, 'aria-hidden':'true'}));
     label.appendChild(document.createTextNode(pair[1]));
     const count = inSection.length;
     const btn = el('button', {className:'phase-tab-btn' + (on ? ' active' : ''), type:'button',
       role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': on ? 'true' : 'false',
       tabindex: on ? '0' : '-1'},
       label,
-      outcome ? srText(', ' + (LABELS[outcome] || outcome)) : null,
+      outcome && !generic ? srText(', ' + (LABELS[outcome] || outcome)) : null,
       el('span', {className:'phase-meta'}, count + (count === 1 ? ' step' : ' steps'))
     );
     const panel = el('div', {className:'phase-tab-panel procedure-tab-panel' + (on ? ' active' : ''),
@@ -2158,7 +2229,7 @@ function renderProcedure(proc, run) {
       panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No steps in ' + pair[1].toLowerCase()));
     } else {
       const list = el('div', {className:'procedure-list'});
-      inSection.forEach(function(s) { list.appendChild(renderNode(s, 1)); });
+      inSection.forEach(function(s) { list.appendChild(renderNode(s, 1, generic)); });
       panel.appendChild(list);
     }
     btn.addEventListener('click', function() {
