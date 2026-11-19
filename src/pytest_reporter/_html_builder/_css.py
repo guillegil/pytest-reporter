@@ -1360,6 +1360,17 @@ button { font-family: inherit; }
 }
 .artifact-file-card:hover { border-color: var(--c-border2); }
 .artifact-file-icon { color: var(--c-text3); flex-shrink: 0; }
+.custom-tab-frame {
+  width: 100%;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-surface);
+  min-height: 60px;
+  display: block;
+}
+.custom-tab-frame:not(.whole) { border: none; border-radius: 0; }
+.custom-tab-frame.whole { background: #fff; }
+.custom-tab-note { color: var(--c-text3); font-size: var(--fs-md); padding: 8px 0; }
 .artifact-html-frame {
   width: 100%;
   border: 1px solid var(--c-border);

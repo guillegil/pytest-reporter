@@ -1529,8 +1529,154 @@ function subTabNames(run) {
   if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
     tabNames.push('Retries');
   }
+  // Custom tabs always come last, to the right of the report's own
+  customTabs(run).forEach(t => tabNames.push(t.title));
   return tabNames;
 }
+
+// ─── Custom tabs: HTML a test or conftest added (report_tabs) ────────
+// Each one is shown in a sandboxed frame, never in the report's own DOM.
+// Without scripts the frame is same-origin but inert, so the report reads
+// its height; with scripts it has an origin of its own and reports its
+// height in a message.
+const CUSTOM_TAB_DEFAULT_PX = 480;
+const CUSTOM_TAB_MAX_PX = 20000;
+
+function customTabs(run) {
+  // A tab cannot take the name of one of the report's own
+  const seen = new Set(['summary','procedure','checks','strategy','artifacts','retries']);
+  return (run && Array.isArray(run.tabs) ? run.tabs : []).filter(t => {
+    if (!t || typeof t.title !== 'string' || !t.title) return false;
+    const key = t.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// Fit a frame to its content's height. A document sized from the frame's
+// own viewport (100vh) changes at every fit: after a run of such changes
+// the frame keeps the default height and scrolls.
+function customTabHeight(frame, px) {
+  if (!(px > 0) || frame._fitFixed) return;
+  // style.height includes the frame's own border
+  px = Math.ceil(px + frame.offsetHeight - frame.clientHeight);
+  px = Math.min(Math.max(px, 60), CUSTOM_TAB_MAX_PX);
+  const cur = parseFloat(frame.style.height) || 0;
+  if (px === cur) return;
+  const now = performance.now(), dir = px > cur ? 1 : -1;
+  frame._fitRuns = (now - (frame._fitAt || 0) < 300 && dir === frame._fitDir) ? (frame._fitRuns || 0) + 1 : 0;
+  frame._fitAt = now; frame._fitDir = dir;
+  if (frame._fitRuns >= 8) { frame._fitFixed = true; px = CUSTOM_TAB_DEFAULT_PX; }
+  frame.style.height = px + 'px';
+}
+
+// The styles of the page a fragment is shown in: the report's font and
+// colors as they are now, and the light ones on paper.
+function customTabCss() {
+  const css = getComputedStyle(document.documentElement);
+  const v = name => css.getPropertyValue(name).trim();
+  return 'html{color-scheme:' + (document.documentElement.getAttribute('data-theme-shown') === 'light' ? 'light' : 'dark') + '}' +
+    'body{margin:0;padding:1px 0;font:14px/1.5 ' + v('--font-sans') + ';color:' + v('--c-text') +
+    ';background:' + v('--c-surface') + '}' +
+    'a{color:' + v('--c-accent-ink') + '}' +
+    'table{border-collapse:collapse}th,td{padding:4px 10px;border:1px solid ' + v('--c-border2') + ';text-align:left}' +
+    'pre,code{font-family:' + v('--font-mono') + '}img,svg,canvas,video{max-width:100%}' +
+    // on paper: the light system colors (the report's tokens cannot reach a frame)
+    '@media print{html{color-scheme:light}body{color:CanvasText;background:Canvas}a{color:LinkText}th,td{border-color:GrayText}}';
+}
+
+// A whole document starts with a doctype or <html> (after comments); the
+// words inside a fragment's script or text do not make it one.
+function customTabIsWhole(html) {
+  return /^[\s\uFEFF]*(?:<\!--[\s\S]*?-->\s*)*<(?:!doctype|html[\s>])/i.test(html);
+}
+
+// The document a tab's frame shows. A fragment gets a page in the report's
+// font and colors; a whole document is shown as written, on white.
+function customTabDoc(tab) {
+  let html = typeof tab.html === 'string' ? tab.html : '';
+  const whole = customTabIsWhole(html);
+  // In a scripted frame the report cannot reach the document: a script of
+  // ours reports its height and takes the styles of a theme change. It goes
+  // first, in the head, where the tab's own markup cannot swallow it.
+  let script = '';
+  if (tab.scripts) {
+    script = '<script>(function(){' +
+      (tab.height ? '' :
+        'function h(){parent.postMessage({pytestReporterTabHeight:' +
+        'document.documentElement.getBoundingClientRect().height},"*")}' +
+        'addEventListener("load",h);addEventListener("DOMContentLoaded",h);' +
+        'try{new ResizeObserver(h).observe(document.documentElement)}catch(e){}') +
+      'addEventListener("message",function(e){var s=document.getElementById("pytest-reporter-tab-style");' +
+      'if(e.source===parent&&s&&e.data&&typeof e.data.pytestReporterTabCss==="string")s.textContent=e.data.pytestReporterTabCss})' +
+      '})()<\/script>';
+  }
+  if (!whole) {
+    html = '<!doctype html><html><head><meta charset="utf-8"><style id="pytest-reporter-tab-style">' +
+      customTabCss() + '</style>' + script + '</head><body>' + html + '</body></html>';
+  } else if (script) {
+    // after <head>, else <html>, else the doctype: never before the doctype
+    const at = [/<head(?:\s[^>]*)?>/i, /<html(?:\s[^>]*)?>/i, /<!doctype[^>]*>/i]
+      .map(re => re.exec(html)).find(Boolean);
+    const cut = at ? at.index + at[0].length : 0;
+    html = html.slice(0, cut) + script + html.slice(cut);
+  }
+  return {html, whole};
+}
+
+function renderCustomTab(tab) {
+  const wrap = el('div', {className:'custom-tab'});
+  if (tab.too_large || typeof tab.html !== 'string') {
+    wrap.appendChild(el('div', {className:'custom-tab-note'},
+      'This tab is too large to embed in the report. Its HTML file is in the run folder, under tabs/.'));
+    return wrap;
+  }
+  const doc = customTabDoc(tab);
+  const frame = el('iframe', {className:'custom-tab-frame' + (doc.whole ? ' whole' : ''),
+    title: tab.title, sandbox: tab.scripts ? 'allow-scripts' : 'allow-same-origin'});
+  frame.style.height = (tab.height || CUSTOM_TAB_DEFAULT_PX) + 'px';
+  if (!tab.height && !tab.scripts) {
+    frame.addEventListener('load', () => {
+      try {
+        const root = frame.contentDocument.documentElement;
+        const fit = () => customTabHeight(frame, root.getBoundingClientRect().height);
+        fit();
+        // Images and fonts change the height after load
+        if (window.ResizeObserver) new ResizeObserver(fit).observe(root);
+      } catch (e) { /* the frame's document cannot be read: keep the default height */ }
+    });
+  }
+  frame.srcdoc = doc.html;
+  wrap.appendChild(frame);
+  return wrap;
+}
+
+// A theme change reaches the fragments on screen: their page was written
+// with the colors of the theme they were opened in.
+function restyleCustomTabs() {
+  const css = customTabCss();
+  document.querySelectorAll('iframe.custom-tab-frame:not(.whole)').forEach(frame => {
+    try {
+      if (frame.getAttribute('sandbox') === 'allow-scripts') {
+        frame.contentWindow.postMessage({pytestReporterTabCss: css}, '*');
+      } else {
+        const style = frame.contentDocument.getElementById('pytest-reporter-tab-style');
+        if (style) style.textContent = css;
+      }
+    } catch (e) { /* a frame that cannot be reached keeps its colors */ }
+  });
+}
+
+window.addEventListener('message', e => {
+  const px = e.data && e.data.pytestReporterTabHeight;
+  if (typeof px !== 'number') return;
+  document.querySelectorAll('iframe.custom-tab-frame').forEach(frame => {
+    if (frame.contentWindow === e.source && frame.getAttribute('sandbox') === 'allow-scripts') {
+      customTabHeight(frame, px);
+    }
+  });
+});
 
 // `openTab` (a sub-tab's name) opens the run on that sub-tab and moves the
 // focus to it: for a control inside the detail, which this call replaces.
@@ -1562,7 +1708,13 @@ function showRunDetail(run, openTab) {
     setSelectedTab(tabs, tab);
     const content = document.getElementById('sub-tab-content');
     if (content) content.setAttribute('aria-labelledby', tab.id);
-    showSubTab(name.toLowerCase(), run);
+    const custom = customTabs(run).find(t => t.title === name);
+    if (custom && content) {
+      content.innerHTML = '';
+      content.appendChild(renderCustomTab(custom));
+    } else {
+      showSubTab(name.toLowerCase(), run);
+    }
   };
   tabNames.forEach((name, i) => {
     const btn = el('button', {className:`sub-tab-btn${i===0?' active':''}`, type:'button', role:'tab',
@@ -1872,6 +2024,19 @@ function showSubTab(tab, run) {
           body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Checks'));
           body.appendChild(renderCheckResults(attempt.check_results));
         }
+        // Custom tabs of this attempt, once its card is open: a frame that
+        // loads while hidden has no size to report
+        let tabsShown = false;
+        const showTabs = () => {
+          if (tabsShown || !card.classList.contains('expanded')) return;
+          tabsShown = true;
+          customTabs(attempt).forEach(t => {
+            body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, t.title));
+            body.appendChild(renderCustomTab(t));
+          });
+        };
+        header.addEventListener('click', showTabs);
+        showTabs();
         card.appendChild(body);
         section.appendChild(card);
       });
@@ -3302,6 +3467,7 @@ wireTablist(document.querySelector('.tabs'), '.tab-btn', btn => switchTab(btn.da
     const label = now === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
     btn.setAttribute('aria-label', label);
     btn.title = label;
+    restyleCustomTabs();
   }
   btn.addEventListener('click', () => {
     const next = shown() === 'dark' ? 'light' : 'dark';

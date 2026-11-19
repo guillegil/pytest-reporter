@@ -83,6 +83,10 @@ def test_status_has_text_and_icons_are_hidden(pytester: Pytester) -> None:
 
 def test_html_artifacts_are_sized_from_their_rows(pytester: Pytester) -> None:
     js = _js(_report_html(pytester))
-    assert "contentDocument" not in js, "a data: frame is cross-origin; its height can't be read"
+    # (custom tabs are srcdoc frames, which the report can measure: see test_custom_tabs)
+    artifacts = js[js.index("tab === 'artifacts'") : js.index("tab === 'retries'")]
+    assert "contentDocument" not in artifacts, (
+        "a data: frame is cross-origin; its height can't be read"
+    )
     assert "function artifactRowCount(" in js
     assert "title:a.name" in js
