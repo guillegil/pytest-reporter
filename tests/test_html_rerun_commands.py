@@ -358,10 +358,12 @@ def test_quoted_arguments_come_back_from_a_posix_shell() -> None:
     text = _node(
         f"console.log(JSON.stringify(quoteArgs({json.dumps(args)})));", "shellQuote", "quoteArgs"
     )
-    out = subprocess.run(
-        ["sh", "-c", f"printf '%s\\n' {text}"], capture_output=True, text=True, check=True
-    )
-    assert out.stdout.split("\n")[:-1] == args
+    # The script goes in on stdin, as bytes: on Windows a command-line argument
+    # is re-parsed (its doubled backslashes halved) before sh sees it, and text
+    # mode would end the line with a carriage return
+    script = f"printf '%s\\n' {text}\n".encode()
+    out = subprocess.run(["sh"], input=script, capture_output=True, check=True)
+    assert out.stdout.decode("utf-8").replace("\r\n", "\n").split("\n")[:-1] == args
 
 
 @requires_node
