@@ -629,6 +629,8 @@ button { font-family: inherit; }
   overflow-y: auto;
   background: var(--c-bg);
   padding: 28px 32px;
+  /* Focus and jumps land below the sticky sub-tabs */
+  scroll-padding-top: 52px;
 }
 
 /* Search & Filters */
@@ -922,7 +924,7 @@ kbd {
   overflow-wrap: anywhere;
 }
 .detail-xfail strong { color: var(--c-text); font-weight: 600; }
-.session-log-nomatch { padding-left: 0; }
+.tree-empty.session-log-nomatch { padding-left: 0; }
 .session-log-nomatch[hidden] { display: none; }
 .detail-header h2 {
   font-size: var(--fs-xl);
@@ -1056,7 +1058,7 @@ kbd {
   margin-bottom: 20px;
   /* Stays in reach while a long log or procedure scrolls under it */
   position: sticky;
-  top: 0;
+  top: -28px;  /* the pane's top padding: flush with its edge, nothing shows above */
   z-index: 5;
   background: var(--c-surface);
   border-radius: var(--radius-md);
@@ -1393,7 +1395,12 @@ kbd {
 /* ================================================================
    Log Entries (structured logger)
    ================================================================ */
-.log-entries { display: flex; flex-direction: column; gap: 2px; }
+.log-entries { display: flex; flex-direction: column; gap: 2px; container-type: inline-size; }
+/* A narrow log (tablet, retry card) gives the message a line of its own */
+@container (max-width: 520px) {
+  .log-entry { grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 8px; }
+  .log-entry-msg { grid-column: 1 / -1; }
+}
 .log-entry {
   display: grid;
   grid-template-columns: auto auto auto 1fr;
@@ -2244,7 +2251,7 @@ kbd {
   padding: 1px 5px;
   background: var(--c-surface3, var(--c-surface));
   border-radius: 8px;
-  font-size: 0.85em;
+  font-size: inherit;
   color: var(--c-text2);
 }
 /* Empty-state for no distributed plugins (Slice E) */
@@ -2572,6 +2579,13 @@ main:focus { outline: none; }
 .tree-panel.is-empty .tree-content { display: none; }
 .tree-panel.is-empty .tree-keys { margin-top: auto; }
 
+/* A narrow phase bar (a retry card on a tablet) keeps its three labels whole */
+.phase-tabs-bar { container-type: inline-size; }
+@container (max-width: 330px) {
+  .phase-tab-btn { padding-left: 6px; padding-right: 6px; text-transform: none; letter-spacing: 0; }
+  .phase-tab-label { gap: 6px; }
+}
+
 @media (forced-colors: active) {
   .status-dot { forced-color-adjust: none; }
   .tree-row.selected, .run-pill.selected, .sub-tab-btn.active, .phase-tab-btn.active,
@@ -2727,6 +2741,7 @@ h1, h2, h3, h4 { text-wrap: balance; }
   /* Paper has no "show more": every failure row, and the three phase logs */
   .failures-group[hidden] { display: block; }
   .failures-list li[hidden] { display: list-item; }
+  .failure-row-reason { display: block; -webkit-line-clamp: none; overflow: visible; }
   .phase-tabs-bar { display: none; }
   .phase-tab-panel { display: block; border: none; }
   .phase-tab-panel::before {

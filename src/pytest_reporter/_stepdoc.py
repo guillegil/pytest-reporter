@@ -608,7 +608,7 @@ def _units(check: Any, actual: Any) -> str:  # noqa: ANN401
     source = getattr(check, "source", None)
     units = source.get("units") if isinstance(source, dict) else None
     is_number = isinstance(actual, (int, float)) and not isinstance(actual, bool)
-    return units.strip() if is_number and isinstance(units, str) else ""
+    return units if is_number and isinstance(units, str) and units.strip() else ""
 
 
 def _check_result(check: Any, actual_name: str | None = None) -> str | None:  # noqa: ANN401

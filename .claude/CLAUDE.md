@@ -270,7 +270,7 @@ node may hold `substeps` of the same shape.
         { "kind": "action", "number": "1.1", "description": "Measure dmm.voltage",
           "result": "1.65 V", "outcome": "info", "exc": null },
         { "kind": "check", "number": "1.2", "description": "Verify 'Vout' == 3.3V ± 0.05V",
-          "result": "got 1.65", "detail": "expected ...", "outcome": "failed", "exc": null }
+          "result": "got 1.65V", "detail": "expected ...", "outcome": "failed", "exc": null }
       ] }
   ]
 }
@@ -428,7 +428,8 @@ never better than `run.phases[when].outcome` (`.procedure-outside` when steps al
 - Say a fact once: the hero holds pass rate, time in tests, ratio bar and counters; a
   single-run test has outcome, retry chip and duration in its header only; `subTabNames`
   offers Procedure / Checks / Artifacts only with content.
-- Durations go through `formatSeconds` (`0.3ms`, `20ms`, `1.25s`, then `formatDuration`).
+- Run, phase, step and retry durations go through `formatSeconds` (`0.3ms`, `20ms`, `1.25s`,
+  then `formatDuration`); suite and group totals use `formatDuration` (`4s`, `<1s`).
 - Check cards: units appended to the numbers (`CHECK_QUANTITIES`), `checkDistance` gives the
   Margin / Deviation row (arithmetic on the record, never a verdict), no side stripes.
 - `_js_safe` writes integers past 2**53 as strings. `skipParts` reads pytest's skip tuple.

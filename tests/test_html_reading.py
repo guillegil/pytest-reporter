@@ -123,6 +123,8 @@ def test_procedure_result_has_the_units_of_the_record() -> None:
     # Units belong to a measured number, not to text or a flag
     assert _check_result(NS(actual="OK", source={"units": "V"}, reads=[])) == "got 'OK'"
     assert _check_result(NS(actual=True, source={"units": "V"}, reads=[])) == "got True"
+    # As recorded: the judge's own line keeps a space the test wrote
+    assert _check_result(NS(actual=-12.5, source={"units": " dB"}, reads=[])) == "got -12.5 dB"
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +153,51 @@ def test_skip_reason_is_read_from_pytests_tuple() -> None:
         {"file": "/repo/tests/test_psu.py", "line": "225", "reason": "needs the interlock"},
         None,
     ]
+
+
+@requires_node
+def test_skip_tuple_is_a_python_repr() -> None:
+    longrepr = repr(("C:\\proj\\test_x.py", 12, 'Skipped: it\'s "quoted"\nsecond line'))
+    got = _node(f"console.log(JSON.stringify(skipParts({json.dumps(longrepr)})));", "skipParts")
+    assert got == {
+        "file": "C:\\proj\\test_x.py",
+        "line": "12",
+        "reason": 'it\'s "quoted"\nsecond line',
+    }
+
+
+@requires_node
+def test_durations_do_not_round_into_the_next_unit() -> None:
+    got = _node(
+        "console.log(JSON.stringify([0.00996, 0.9996, 59.999].map(formatSeconds)));",
+        "formatSeconds",
+        "formatDuration",
+    )
+    assert got[:2] == ["10ms", "1.00s"]
+    assert got[2] == "1m"
+
+
+@requires_node
+def test_distance_ignores_float_noise_and_keeps_units_as_recorded() -> None:
+    noise = {"check_type": "approx", "actual": 0.1 + 0.2, "expected": 0.3, "units": "V"}
+    spaced = {"check_type": "less", "actual": -12.5, "threshold": -10, "units": " dB"}
+    got = _node(
+        f"const checks = [{json.dumps(noise)}, {json.dumps(spaced)}];\n"
+        "console.log(JSON.stringify(checks.map(checkDistance)));",
+        *_CHECK_FUNCTIONS,
+    )
+    assert got == ["at the expected value", "2.5 dB below the limit"]
+
+
+@requires_node
+def test_digits_of_a_large_integer_take_units_too() -> None:
+    got = _node(
+        "const values = ['1180591620717411303424', '12', 'abc', 5];\n"
+        "console.log(JSON.stringify(values.map(isCheckQuantity)));",
+        "isCheckNumber",
+        "isCheckQuantity",
+    )
+    assert got == [True, False, False, True]
 
 
 # ---------------------------------------------------------------------------

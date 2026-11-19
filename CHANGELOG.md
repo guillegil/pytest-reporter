@@ -139,7 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Verification cards put the units on each number (`86.59%`, `90%`) instead of in a row of
   their own, show the result in their header, and no longer use a coloured side stripe. The
   Procedure tab's results carry the units too (`got 86.59%`).
-- Durations read one way everywhere: `0.3ms`, `20ms`, `1.25s`, `1m 15s`.
+- Durations of runs, phases, steps and retries read one way: `0.3ms`, `20ms`, `1.25s`,
+  `1m 15s`. Totals of the suite and of a group keep whole seconds (`4s`, `<1s`).
 - The tree's outcome filters list only the outcomes the run has.
 
 - Status colours mean one thing each. The ↻ retried pill is blue like the Retried counter,

@@ -400,6 +400,7 @@ _FUNCTIONS = (
     "checkDistanceLabel",
     "checkDistance",
     "isLeafCheck",
+    "isCheckQuantity",
     "retryVerdict",
     "renderCheckBody",
     "renderGuardCheck",
@@ -624,3 +625,22 @@ def test_operand_names_from_pytest_verifier(pytester: Pytester) -> None:
     )
     assert substeps[0]["outcome"] == "failed"
     assert substeps[0]["actual_name"] == ACTUAL
+
+
+@requires_node
+def test_card_numbers_carry_the_units() -> None:
+    """Units go on each number; a row of their own only when no number took them."""
+    measured = {"check_type": "greater", "actual": 86.59, "threshold": 90, "units": "%"}
+    text = {"check_type": "equal", "actual": "OK", "expected": "OK", "units": "V"}
+    got = _node(
+        "const rows = c => { const d = renderCheckDetail(c);\n"
+        "  return [texts(d, 'label'), texts(d, 'value')]; };\n"
+        f"console.log(JSON.stringify([rows({json.dumps(measured)}), rows({json.dumps(text)})]));"
+    )
+    (labels, values), (text_labels, text_values) = got
+    assert "Units" not in labels
+    assert values[labels.index("Actual")] == "86.59%"
+    assert values[labels.index("Threshold")] == "90%"
+    assert values[labels.index("Margin")] == "3.41% below the limit"
+    assert text_values[text_labels.index("Units")] == "V"
+    assert text_values[text_labels.index("Actual")] == "OK"

@@ -805,6 +805,7 @@ function renderTests() {
   searchInput.addEventListener('keydown', e => {
     // Escape hands the keyboard back to the list, with the search kept.
     if (e.key !== 'Escape') return;
+    e.preventDefault();  // a search field would clear itself, and the list would not follow
     const row = document.querySelector('.tree-row[tabindex="0"]');
     if (row) row.focus();
   });
@@ -1199,7 +1200,10 @@ function prefersReducedMotion() {
 
 function skipParts(longrepr) {
   const m = /^\((['"])(.*)\1, (\d+), (['"])([\s\S]*)\4\)$/.exec(String(longrepr || '').trim());
-  return m ? {file: m[2], line: m[3], reason: m[5].replace(/^Skipped: /, '').trim()} : null;
+  if (!m) return null;
+  // The tuple is a Python repr: undo its escapes
+  const unrepr = s => s.replace(/\\(n|t|r|\\|'|")/g, (all, c) => ({n:'\n', t:'\t', r:'\r'}[c] || c));
+  return {file: unrepr(m[2]), line: m[3], reason: unrepr(m[5]).replace(/^Skipped: /, '').trim()};
 }
 // The reason of a skipped run ("Batch endpoint not yet implemented"), or ''.
 function skipReason(run) {
@@ -1293,7 +1297,8 @@ function renderFailureStrip(run, selectSubTab) {
       selectSubTab('Summary');
       const phaseBtn = document.querySelector('#sub-tab-content .phase-tab-btn.active');
       const panel = document.querySelector('#sub-tab-content .phase-tab-panel.active');
-      if (panel) panel.scrollIntoView({block:'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth'});
+      const target = (phaseBtn && phaseBtn.parentElement) || panel;
+      if (target) target.scrollIntoView({block:'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth'});
       if (phaseBtn) phaseBtn.focus({preventScroll:true});
     });
     actions.appendChild(tbBtn);
@@ -1362,7 +1367,8 @@ function showTestDetail(test, initialRun) {
       el('strong', null, words), x.reason ? ': ' + x.reason : ''));
   }
   // Why it was skipped, in words: pytest keeps it as "(file, line, reason)".
-  const skip = skipReason(test.runs.find(r => shownOutcome(r) === 'skipped'));
+  const skip = shownTestOutcome(test) === 'skipped'
+    ? skipReason(test.runs.find(r => shownOutcome(r) === 'skipped')) : '';
   if (skip && !xfails.length) {
     header.appendChild(el('div', {className:'detail-xfail skipped'},
       el('strong', null, 'Skipped'), ': ' + skip));
@@ -2726,7 +2732,7 @@ function renderCheckDetail(check) {
       return;
     }
     let v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
-    if (units && CHECK_QUANTITIES.includes(key) && isCheckNumber(check[key])) {
+    if (units && CHECK_QUANTITIES.includes(key) && isCheckQuantity(check[key])) {
       v += units;
       unitsShown = true;
     }
@@ -2738,8 +2744,10 @@ function renderCheckDetail(check) {
 // The fields of a check that are in its units (rel_tol is a ratio).
 const CHECK_QUANTITIES = ['actual', 'expected', 'threshold', 'low', 'high', 'abs_tol'];
 function isCheckNumber(v) { return typeof v === 'number' && isFinite(v); }
+// ...or an integer too large for a JS number, which the page data holds as its digits
+function isCheckQuantity(v) { return isCheckNumber(v) || (typeof v === 'string' && /^-?\d{16,}$/.test(v)); }
 function checkUnits(check) {
-  return typeof check.units === 'string' ? check.units.trim() : '';
+  return typeof check.units === 'string' && check.units.trim() ? check.units : '';
 }
 
 // How far the measured value is from the limit it was checked against, for the
@@ -2753,7 +2761,8 @@ function checkDistance(check) {
   const actual = num('actual');
   if (actual === null) return '';
   const amount = d => String(parseFloat(Math.abs(d).toPrecision(4))) + checkUnits(check);
-  const side = (d, what) => d === 0 ? 'at ' + what : amount(d) + (d > 0 ? ' above ' : ' below ') + what;
+  const same = d => Math.abs(d) <= 1e-9 * Math.max(Math.abs(actual), 1);  // float noise
+  const side = (d, what) => same(d) ? 'at ' + what : amount(d) + (d > 0 ? ' above ' : ' below ') + what;
   switch (check.check_type) {
     case 'approx': {
       const expected = num('expected');
@@ -2953,10 +2962,11 @@ function formatSeconds(sec) {
   if (sec == null || isNaN(sec)) return '\u2014';
   if (sec <= 0) return '0s';
   if (sec < 0.00005) return '<0.1ms';
-  if (sec < 0.01) return (sec * 1000).toFixed(1) + 'ms';
-  if (sec < 1) return Math.round(sec * 1000) + 'ms';
-  if (sec < 60) return sec.toFixed(2) + 's';
-  return formatDuration(sec);
+  // Each limit is where the rounded text would change unit ("1000ms")
+  if (sec < 0.00995) return (sec * 1000).toFixed(1) + 'ms';
+  if (sec < 0.9995) return Math.round(sec * 1000) + 'ms';
+  if (sec < 59.995) return sec.toFixed(2) + 's';
+  return formatDuration(Math.round(sec * 100) / 100);
 }
 
 function formatDuration(sec) {
@@ -3526,7 +3536,7 @@ function readLocation() {
   const m = /^#(test|tab)=(.*)$/.exec(location.hash || '');
   if (!m) return;
   let value = m[2];
-  try { value = decodeURIComponent(value); } catch (e) { return; }
+  try { value = decodeURIComponent(value); } catch (e) { /* a pasted node ID with a bare % */ }
   if (m[1] === 'tab') {
     if (document.getElementById('tab-' + value)) switchTab(value);
     return;
@@ -3548,6 +3558,9 @@ function stepTest(delta) {
   selectTreeRow(next._test);
   showTestDetail(next._test);
   showDetailPane(true);
+  // Focus follows the selection, so the arrow keys go on from here
+  const row = next.querySelector(':scope > .tree-row');
+  if (row && row.offsetParent) row.focus({preventScroll: true});
   announce(testDisplayName(next._test.aggregate) + ', ' + LABELS[shownTestOutcome(next._test)]);
 }
 document.addEventListener('keydown', e => {
