@@ -665,8 +665,10 @@ def test_strategy_tab_text() -> None:
 def test_strategy_sub_tab_is_offered_to_tests_with_strategies() -> None:
     got = _node(
         "let selectedTest = {strategies: [{name: 'rw', rows: []}]};\n"
-        "const out = [subTabNames({}), subTabNames({check_results: [{}]})];\n"
+        "const full = {procedure: {steps: [{}]}, artifacts: [{}]};\n"
+        "const out = [subTabNames(full), subTabNames({...full, check_results: [{}]})];\n"
         "selectedTest = {strategies: []};\n"
+        "out.push(subTabNames(full));\n"
         "out.push(subTabNames({}));\n"
         "console.log(JSON.stringify(out));",
         "testStrategies",
@@ -677,6 +679,7 @@ def test_strategy_sub_tab_is_offered_to_tests_with_strategies() -> None:
         ["Summary", "Procedure", "Strategy", "Artifacts"],
         ["Summary", "Procedure", "Checks", "Strategy", "Artifacts"],
         ["Summary", "Procedure", "Artifacts"],
+        ["Summary"],  # a tab is offered when it has something in it
     ]
 
 

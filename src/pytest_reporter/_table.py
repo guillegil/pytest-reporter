@@ -143,7 +143,7 @@ h2 {{
   margin-bottom: 12px;
 }}
 .meta {{
-  font-size: 11px;
+  font-size: 12px;
   color: #5A6B84;
   margin-bottom: 16px;
 }}
@@ -167,7 +167,7 @@ th {{
   position: sticky;
   top: 0;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }}
@@ -184,7 +184,7 @@ tr:nth-child(even) td {{ background: rgba(27, 39, 64, 0.4); }}
 tr:nth-child(even):hover td {{ background: #243352; }}
 .footer {{
   padding: 10px 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: #5A6B84;
   border-top: 1px solid #1E2D45;
 }}

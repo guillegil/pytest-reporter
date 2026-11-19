@@ -260,6 +260,8 @@ class PhaseData:
     start_time: str = ""
     end_time: str = ""
     entries: list[dict[str, Any]] = field(default_factory=list)
+    #: ``report.wasxfail`` of an xfail-marked phase: the mark's reason ("" for none)
+    wasxfail: str | None = None
 
 
 @dataclass

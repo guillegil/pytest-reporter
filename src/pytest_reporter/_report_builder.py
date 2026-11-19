@@ -295,6 +295,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                         for k, v in run_info.params.items()
                     },
                     "outcome": reporter.collector.get_outcome(nodeid),
+                    "xfail": reporter.collector.get_xfail(nodeid),
                     "duration": round(reporter.collector.get_duration(nodeid), 4),
                     "phases": phases,
                     "procedure": procedure,

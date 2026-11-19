@@ -30,7 +30,7 @@ function el(tag, attrs, ...children) {
 
 // Status fills come from the CSS tokens, so charts follow the theme.
 const COLORS = {passed:'var(--c-passed)',failed:'var(--c-failed)',skipped:'var(--c-skipped)',error:'var(--c-error)'};
-const LABELS = {passed:'Passed',failed:'Failed',skipped:'Skipped',error:'Error'};
+const LABELS = {passed:'Passed',failed:'Failed',skipped:'Skipped',error:'Error',xfailed:'Expected fail'};
 const STATUSES = ['passed','failed','skipped','error'];
 
 // SVG helper
@@ -429,8 +429,14 @@ function renderBarsGroup(entries, sectionLabel) {
     const bar = el('div', {className:'pass-rate-bar', onClick:()=>navigateToGroup(path), role:'button', tabindex:'0',
       'aria-label': groupSummary(label, a)},
       el('span', {className:'pass-rate-bar-name', title:label}, label),
+      // Every outcome has its share of the bar, so a group with more
+      // failures looks different from one with more skips.
       el('div', {className:'pass-rate-bar-track'},
-        el('div', {className:'pass-rate-bar-fill', style:'width:' + fillPct})
+        el('div', {className:'pass-rate-bar-fill', style:'width:' + fillPct}),
+        ['failed', 'error', 'skipped'].map(k => a[k]
+          ? el('div', {className:'pass-rate-bar-part ' + k,
+              style:'width:' + ((a[k] / total) * 100).toFixed(1) + '%'})
+          : null)
       ),
       el('div', {className:'pass-rate-bar-stats'},
         el('span', {className:'prs-rate'}, rate + '%'),
@@ -535,58 +541,48 @@ function renderSummary() {
   const total = agg.total || 1;
   const passRate = Math.round((agg.passed / total) * 100);
 
-  // Count retried tests
-  let retriedCount = 0;
-  DATA.tests.forEach(t => t.runs.forEach(r => { if (r.retries && r.retries.attempts > 0) retriedCount++; }));
+  // Count retried runs, those that passed on a retry, and expected fails
+  let retriedCount = 0, flakyCount = 0, xfailCount = 0;
+  DATA.tests.forEach(t => t.runs.forEach(r => {
+    const v = retryVerdict(r);
+    if (v) { retriedCount++; if (v.flaky) flakyCount++; }
+    if (shownOutcome(r) === 'xfailed') xfailCount++;
+  }));
 
   // ── Hero: pass rate + duration + ratio bar ──
   const suiteDuration = DATA.tests.reduce((a, t) => a + (t.aggregate.total_duration_seconds || 0), 0);
   const hero = el('div', {className:'summary-hero'});
   const rateSection = el('div', {className:'summary-hero-rate'});
-  const rateClass = passRate >= 90 ? 'good' : passRate >= 70 ? 'warn' : 'bad';
+  // Green only when nothing failed: a pass rate has no threshold to be amber at.
+  const rateClass = agg.failed + agg.error === 0 ? 'good' : 'neutral';
   rateSection.appendChild(el('div', {className:'summary-hero-pct ' + rateClass}, passRate + '%'));
   rateSection.appendChild(el('div', {className:'summary-hero-pct-label'}, 'Pass rate'));
   hero.appendChild(rateSection);
 
   hero.appendChild(el('div', {className:'summary-hero-divider'}));
 
-  const durSection = el('div', {className:'summary-hero-dur'});
+  // Time spent inside tests; the header and the Report tab give the session's.
+  const durSection = el('div', {className:'summary-hero-dur',
+    title:'Setup, call and teardown of every test added up. The whole session took '
+      + formatDuration(DATA.duration) + '.'});
   durSection.appendChild(el('div', {className:'summary-hero-dur-value'}, formatDuration(suiteDuration)));
-  durSection.appendChild(el('div', {className:'summary-hero-dur-label'}, 'Total time'));
+  durSection.appendChild(el('div', {className:'summary-hero-dur-label'}, 'In tests'));
   hero.appendChild(durSection);
 
   const heroBody = el('div', {className:'summary-hero-body'});
-  heroBody.appendChild(el('h2', null, 'Test Results Distribution'));
-  const barWrap = el('div', {className:'ratio-bar-wrap'});
-  const bar = el('div', {className:'ratio-bar'});
+  heroBody.appendChild(el('h2', {className:'sr-only'}, 'Results'));
+  const shares = STATUSES.filter(s => agg[s])
+    .map(s => agg[s] + ' ' + LABELS[s].toLowerCase()).join(', ');
+  const bar = el('div', {className:'ratio-bar', role:'img', 'aria-label':'Share of runs: ' + shares});
   STATUSES.forEach(s => {
     if (!agg[s]) return;
     const pct = (agg[s] / total) * 100;
     const seg = el('div', {className:'ratio-bar-seg ' + s, style:'width:' + pct.toFixed(2) + '%'});
     bar.appendChild(seg);
   });
-  barWrap.appendChild(bar);
+  heroBody.appendChild(bar);
 
-  const barLegend = el('div', {className:'ratio-bar-legend'});
-  STATUSES.forEach(s => {
-    if (!agg[s]) return;
-    const pct = Math.round((agg[s] / total) * 100);
-    const item = el('span', {className:'ratio-bar-legend-item'},
-      el('span', {className:'legend-dot', style:'background:' + COLORS[s]}),
-      el('strong', null, String(agg[s])),
-      LABELS[s] + ' (' + pct + '%)'
-    );
-    barLegend.appendChild(item);
-  });
-  barWrap.appendChild(barLegend);
-  heroBody.appendChild(barWrap);
-  hero.appendChild(heroBody);
-  container.appendChild(hero);
-
-  const failures = renderFailuresPanel();
-  if (failures) container.appendChild(failures);
-
-  // ── Counter cards ──
+  // ── Counters: the bar's legend, and the way into the Tests tab ──
   const counterDefs = [{k:'passed',l:'Passed'},{k:'failed',l:'Failed'},{k:'skipped',l:'Skipped'},{k:'error',l:'Errors'}];
   if (DATA.retries_enabled) counterDefs.push({k:'retried',l:'Retried'});
   counterDefs.push({k:'total',l:'Total'});
@@ -596,9 +592,11 @@ function renderSummary() {
       const val = counterData[c.k];
       // Cards with something behind them open the Tests tab filtered to it.
       const clickable = val > 0;
-      const card = el(clickable ? 'button' : 'div', {className:'counter-card ' + c.k},
-        el('div', {className:'value'}, String(val)),
-        el('div', {className:'label'}, c.l)
+      const card = el(clickable ? 'button' : 'div', {className:'counter-card ' + c.k + (val ? '' : ' none')},
+        el('div', {className:'label'},
+          STATUSES.includes(c.k) ? el('span', {className:'status-dot ' + c.k, 'aria-hidden':'true'}) : null,
+          c.l),
+        el('div', {className:'value'}, String(val))
       );
       if (clickable) {
         card.type = 'button';
@@ -613,6 +611,11 @@ function renderSummary() {
       // Every card has a second line, so the figures line up across the row.
       if (c.k === 'total') {
         card.appendChild(el('div', {className:'counter-pct'}, val === 1 ? 'run' : 'runs'));
+      } else if (c.k === 'retried') {
+        card.appendChild(el('div', {className:'counter-pct'}, flakyCount + ' passed on retry'));
+      } else if (c.k === 'skipped' && xfailCount > 0) {
+        card.appendChild(el('div', {className:'counter-pct'},
+          'incl. ' + xfailCount + ' expected fail' + (xfailCount === 1 ? '' : 's')));
       } else if (total > 0) {
         const pct = Math.round((val / total) * 100);
         card.appendChild(el('div', {className:'counter-pct'}, pct + '%'));
@@ -620,7 +623,12 @@ function renderSummary() {
       return card;
     })
   );
-  container.appendChild(counters);
+  heroBody.appendChild(counters);
+  hero.appendChild(heroBody);
+  container.appendChild(hero);
+
+  const failures = renderFailuresPanel();
+  if (failures) container.appendChild(failures);
 
   // ── Config-driven dashboard groups (donuts or pass-rate bars per group) ──
   // NOTE: "All Tests" whole-suite donut REMOVED (configurable-dashboard change).
@@ -660,37 +668,89 @@ function renderFailuresPanel() {
   head.appendChild(copyBtn);
   section.appendChild(head);
 
-  const list = el('ul', {className:'failures-list'});
-  items.forEach((item, idx) => {
-    const when = failedPhase(item.run);
+  // Grouped by file, most failures first. Runs of one test that failed for
+  // the same reason (parametrized runs, usually) are one row.
+  const files = new Map();
+  items.forEach(item => {
+    const file = item.test.aggregate.file || '';
+    if (!files.has(file)) files.set(file, new Map());
     const reason = failureReason(item.run);
-    const where = item.test.aggregate.file + (when && when !== 'call' ? ' · failed in ' + when : '');
-    const btn = el('button', {className:'failure-row', type:'button'},
-      el('span', {className:'status-dot ' + item.run.outcome, 'aria-hidden':'true'}),
-      el('span', {className:'failure-row-main'},
-        el('span', {className:'failure-row-name'}, runLabel(item.test, item.run)),
-        el('span', {className:'failure-row-file'}, where)
-      ),
-      el('span', {className:'failure-row-reason', title: reason}, reason || 'No failure message')
-    );
-    btn.addEventListener('click', () => openRunInTests(item.test, item.run));
-    const li = el('li', null, btn);
-    if (idx >= FAILURES_SHOWN) li.hidden = true;
-    list.appendChild(li);
+    const key = item.test.base_nodeid + '\u0000' + failedPhase(item.run) + '\u0000' + reason;
+    const rows = files.get(file);
+    if (!rows.has(key)) rows.set(key, {test: item.test, reason: reason, runs: []});
+    rows.get(key).runs.push(item.run);
   });
-  section.appendChild(list);
+  const groups = [...files.entries()].map(([file, rows]) => ({
+    file: file,
+    rows: [...rows.values()].sort((x, y) => y.runs.length - x.runs.length),
+    count: [...rows.values()].reduce((n, r) => n + r.runs.length, 0),
+  })).sort((x, y) => y.count - x.count || x.file.localeCompare(y.file));
 
-  if (items.length > FAILURES_SHOWN) {
-    const more = el('button', {className:'failures-more', type:'button', 'aria-expanded':'false'},
-      'Show all ' + items.length);
+  const filesWord = groups.length === 1 ? 'file' : 'files';
+  head.querySelector('.failures-count').textContent += ' · ' + groups.length + ' ' + filesWord;
+
+  const body = el('div', {className:'failures-groups'});
+  let shown = 0, rowCount = 0;
+  const hideable = [];
+  groups.forEach(group => {
+    const groupEl = el('div', {className:'failures-group'});
+    groupEl.appendChild(el('h3', {className:'failures-group-head'},
+      el('span', {className:'failures-group-file'}, group.file),
+      el('span', {className:'failures-group-count'},
+        group.count + ' failed ' + (group.count === 1 ? 'run' : 'runs'))));
+    const list = el('ul', {className:'failures-list'});
+    let visible = 0;
+    group.rows.forEach(row => {
+      const first = row.runs[0];
+      const when = failedPhase(first);
+      const many = row.runs.length > 1;
+      const name = many ? testDisplayName(row.test.aggregate) : runLabel(row.test, first);
+      const sub = [];
+      if (many) sub.push(row.runs.length + ' runs: ' + row.runs.map(r => r.parametrize_id || r.run_id).join(', '));
+      if (when && when !== 'call') sub.push('failed in ' + when);
+      const btn = el('button', {className:'failure-row', type:'button'},
+        el('span', {className:'status-dot ' + first.outcome, 'aria-hidden':'true'}),
+        el('span', {className:'failure-row-main'},
+          el('span', {className:'failure-row-name'}, name, retryChip(first)),
+          sub.length ? el('span', {className:'failure-row-file'}, sub.join(' · ')) : null
+        ),
+        el('span', {className:'failure-row-reason', title: row.reason}, row.reason || 'No failure message')
+      );
+      btn.addEventListener('click', () => openRunInTests(row.test, first));
+      const li = el('li', null, btn);
+      rowCount++;
+      if (shown >= FAILURES_SHOWN) { li.hidden = true; hideable.push(li); }
+      else { shown++; visible++; }
+      list.appendChild(li);
+    });
+    groupEl.appendChild(list);
+    if (!visible) { groupEl.hidden = true; hideable.push(groupEl); }
+    body.appendChild(groupEl);
+  });
+  section.appendChild(body);
+
+  const flaky = [];
+  DATA.tests.forEach(t => t.runs.forEach(r => { const v = retryVerdict(r); if (v && v.flaky) flaky.push(r); }));
+
+  const foot = el('div', {className:'failures-foot'});
+  if (rowCount > FAILURES_SHOWN) {
+    const label = 'Show all ' + rowCount + ' rows';
+    const more = el('button', {className:'failures-more', type:'button', 'aria-expanded':'false'}, label);
     more.addEventListener('click', () => {
       const open = more.getAttribute('aria-expanded') !== 'true';
-      list.querySelectorAll('li').forEach((li, i) => { if (i >= FAILURES_SHOWN) li.hidden = !open; });
+      hideable.forEach(n => { n.hidden = !open; });
       more.setAttribute('aria-expanded', open ? 'true' : 'false');
-      more.textContent = open ? 'Show fewer' : 'Show all ' + items.length;
+      more.textContent = open ? 'Show fewer' : label;
     });
-    section.appendChild(more);
+    foot.appendChild(more);
   }
+  if (flaky.length) {
+    const fl = el('button', {className:'failures-more failures-flaky', type:'button'},
+      flaky.length + (flaky.length === 1 ? ' run' : ' runs') + ' passed only on a retry');
+    fl.addEventListener('click', () => showTreeSubset(['passed'], true));
+    foot.appendChild(fl);
+  }
+  if (foot.children.length) section.appendChild(foot);
   return section;
 }
 
@@ -740,14 +800,25 @@ function renderTests() {
   });
   searchBox.appendChild(searchIconSvg);
   searchBox.appendChild(searchInput);
+  searchBox.appendChild(el('kbd', {className:'search-key', 'aria-hidden':'true', title:'Press / to search'}, '/'));
+  searchInput.setAttribute('aria-keyshortcuts', '/');
+  searchInput.addEventListener('keydown', e => {
+    // Escape hands the keyboard back to the list, with the search kept.
+    if (e.key !== 'Escape') return;
+    e.preventDefault();  // a search field would clear itself, and the list would not follow
+    const row = document.querySelector('.tree-row[tabindex="0"]');
+    if (row) row.focus();
+  });
   controls.appendChild(searchBox);
 
   // Filters + expand/collapse row
   const controlsRow = el('div', {className:'tree-controls-row'});
   const filters = el('div', {className:'filter-toggles'});
-  STATUSES.forEach(status => {
+  // Only the outcomes this run has: a filter for nothing is one more thing to read.
+  const present = new Set(DATA.tests.map(getOverallOutcome));
+  STATUSES.filter(status => present.has(status)).forEach(status => {
     const btn = el('button', {className:`filter-btn ${status} active`, 'data-status':status,
-      'aria-pressed':'true'}, LABELS[status]);
+      type:'button', 'aria-pressed':'true'}, LABELS[status]);
     btn.addEventListener('click', () => toggleFilter(status, btn));
     filters.appendChild(btn);
   });
@@ -801,6 +872,9 @@ function renderTests() {
   treeEmpty.appendChild(resetBtn);
   treeEmpty.hidden = true;
   treePanel.appendChild(treeEmpty);
+  treePanel.appendChild(el('div', {className:'tree-keys', 'aria-hidden':'true'},
+    el('kbd', null, '/'), ' search', el('span', {className:'tree-keys-gap'}),
+    el('kbd', null, 'j'), el('kbd', null, 'k'), ' next and previous test'));
 
   // Right panel
   const detailPanel = el('div', {className:'detail-panel'});
@@ -965,10 +1039,10 @@ function renderTreeNode(name, node, depth) {
       title: 'Retried tests in this group: ' + agg.retried,
     }, '↻' + agg.retried));
   }
-  if (agg.passed) badges.appendChild(el('span', {className:'tree-badge passed'}, String(agg.passed)));
-  if (agg.failed) badges.appendChild(el('span', {className:'tree-badge failed'}, String(agg.failed)));
-  if (agg.skipped) badges.appendChild(el('span', {className:'tree-badge skipped'}, String(agg.skipped)));
-  if (agg.error) badges.appendChild(el('span', {className:'tree-badge error'}, String(agg.error)));
+  // Each count says what it counts on hover: the colours are not a legend.
+  [['passed', 'passed'], ['failed', 'failed'], ['skipped', 'skipped'], ['error', 'with errors']].forEach(([k, words]) => {
+    if (agg[k]) badges.appendChild(el('span', {className:'tree-badge ' + k, title: agg[k] + ' ' + words}, String(agg[k])));
+  });
   if (!agg.passed && !agg.failed && !agg.skipped && !agg.error) {
     badges.appendChild(el('span', {className:'tree-badge count'}, '0'));
   }
@@ -1009,7 +1083,7 @@ function testDisplayName(agg) {
 function renderTestLeaf(test, depth) {
   const container = el('div', {className:'tree-node', role:'none'});
   const agg = test.aggregate;
-  const outcome = getOverallOutcome(test);
+  const outcome = shownTestOutcome(test);
   const displayName = testDisplayName(agg);
 
   const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`,
@@ -1029,11 +1103,12 @@ function renderTestLeaf(test, depth) {
     const n = test.runs.reduce((a, r) => a + ((r.retries && r.retries.attempts) || 0), 0);
     badges.appendChild(el('span', {
       className: 'tree-badge retried',
-      title: 'Retried (' + n + ' attempt' + (n === 1 ? '' : 's') + ')',
+      title: 'Retried ' + n + (n === 1 ? ' time' : ' times'),
     }, '↻' + n));
   }
   if (agg.total_runs > 1) {
-    badges.appendChild(el('span', {className:'tree-badge count'}, String(agg.total_runs)));
+    badges.appendChild(el('span', {className:'tree-badge count', title: agg.total_runs + ' runs'},
+      String(agg.total_runs)));
   }
   row.appendChild(dot);
   row.appendChild(nameEl);
@@ -1057,6 +1132,14 @@ function getOverallOutcome(test) {
   if (test.aggregate.failed > 0 || test.aggregate.errors > 0) return 'failed';
   if (test.aggregate.skipped > 0 && test.aggregate.passed === 0) return 'skipped';
   return 'passed';
+}
+
+// The outcome a test is shown with: its filter outcome, except a test whose
+// runs all failed as expected (xfail), which is an "Expected fail".
+function shownTestOutcome(test) {
+  const outcome = getOverallOutcome(test);
+  return outcome === 'skipped' && test.runs.length > 0
+    && test.runs.every(r => shownOutcome(r) === 'xfailed') ? 'xfailed' : outcome;
 }
 
 // ─── Failure-first helpers ───────────────────────────────────────────
@@ -1109,9 +1192,65 @@ function failureReason(run) {
   return rest.length ? rest[rest.length - 1] : '';
 }
 
+// pytest keeps a skip as the text of a tuple, "('<file>', <line>, 'Skipped:
+// <reason>')". Its parts, or null for any other text.
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function skipParts(longrepr) {
+  const m = /^\((['"])(.*)\1, (\d+), (['"])([\s\S]*)\4\)$/.exec(String(longrepr || '').trim());
+  if (!m) return null;
+  // The tuple is a Python repr: undo its escapes
+  const unrepr = s => s.replace(/\\(n|t|r|\\|'|")/g, (all, c) => ({n:'\n', t:'\t', r:'\r'}[c] || c));
+  return {file: unrepr(m[2]), line: m[3], reason: unrepr(m[5]).replace(/^Skipped: /, '').trim()};
+}
+// The reason of a skipped run ("Batch endpoint not yet implemented"), or ''.
+function skipReason(run) {
+  if (!run || !run.phases) return '';
+  const when = ['setup', 'call', 'teardown'].find(w => run.phases[w] && run.phases[w].outcome === 'skipped');
+  if (!when) return '';
+  const longrepr = String(run.phases[when].longrepr || '');
+  const parts = skipParts(longrepr);
+  const reason = parts ? parts.reason : longrepr.replace(/^Skipped: /, '').trim();
+  return reason.split('\n')[0];
+}
+
 function runLabel(test, run) {
   const name = testDisplayName(test.aggregate);
   return run && run.parametrize_id ? name + ' [' + run.parametrize_id + ']' : name;
+}
+
+// How a run is shown: its outcome, except an xfail-marked run that failed as
+// expected (pytest counts it as skipped), which is an "Expected fail".
+function shownOutcome(run) {
+  return run && run.xfail && run.xfail.outcome === 'xfailed' ? 'xfailed' : run.outcome;
+}
+
+// What the retries of a run say: null when it was not retried; else how many
+// tries there were, how many failed, and whether it failed every one of them
+// ("consistent") or passed in the end ("flaky").
+function retryVerdict(run) {
+  const r = run && run.retries;
+  if (!r || !(r.attempts > 0)) return null;
+  const history = (r.history && r.history.length) ? r.history : [r.original_outcome || 'failed'];
+  const tries = history.length;
+  const failed = history.filter(isBad).length;
+  const flaky = !isBad(history[tries - 1]);
+  return {
+    tries: tries, failed: failed, flaky: flaky,
+    short: flaky ? 'flaky ' + failed + '/' + tries : 'failed ' + failed + '/' + tries,
+    words: flaky
+      ? 'passed on try ' + tries + ' of ' + tries + ' (flaky)'
+      : 'failed all ' + tries + ' tries',
+  };
+}
+
+function retryChip(run) {
+  const v = retryVerdict(run);
+  if (!v) return null;
+  return el('span', {className:'retry-chip ' + (v.flaky ? 'flaky' : 'consistent'), title: v.words},
+    v.short);
 }
 
 // Banner at the top of a failed run: where it failed, why, and the way to
@@ -1122,7 +1261,10 @@ function renderFailureStrip(run, selectSubTab) {
   const strip = el('div', {className:'failure-strip ' + run.outcome, role:'group',
     'aria-label':'Why this run failed'});
 
-  const label = (run.outcome === 'error' ? 'Error' : 'Failed') + (when ? ' in ' + when : '');
+  // "Failed in call, on all 3 tries": the retry verdict is part of the headline.
+  const verdict = retryVerdict(run);
+  const label = (run.outcome === 'error' ? 'Error' : 'Failed') + (when ? ' in ' + when : '')
+    + (verdict && !verdict.flaky ? ', on all ' + verdict.tries + ' tries' : '');
   strip.appendChild(el('div', {className:'failure-strip-label'}, label));
 
   if (checks.length > 0) {
@@ -1155,7 +1297,8 @@ function renderFailureStrip(run, selectSubTab) {
       selectSubTab('Summary');
       const phaseBtn = document.querySelector('#sub-tab-content .phase-tab-btn.active');
       const panel = document.querySelector('#sub-tab-content .phase-tab-panel.active');
-      if (panel) panel.scrollIntoView({block:'start', behavior:'smooth'});
+      const target = (phaseBtn && phaseBtn.parentElement) || panel;
+      if (target) target.scrollIntoView({block:'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth'});
       if (phaseBtn) phaseBtn.focus({preventScroll:true});
     });
     actions.appendChild(tbBtn);
@@ -1196,13 +1339,15 @@ function showTestDetail(test, initialRun) {
   selectedTest = test;
   const panel = document.querySelector('.detail-panel');
   panel.innerHTML = '';
+  // A new test starts at its top, not where the last one was scrolled to.
+  panel.scrollTop = 0;
 
-  const outcome = getOverallOutcome(test);
+  const outcome = shownTestOutcome(test);
   const header = el('div', {className:'detail-header'});
   const headerTop = el('div', {className:'detail-header-top'});
   const outcomeBadge = el('span', {className:'detail-header-outcome ' + outcome},
     el('span', {className:'status-dot ' + outcome}),
-    outcome
+    (LABELS[outcome] || outcome).toLowerCase()
   );
   // Class eyebrow above the function name (class-based tests only)
   if (test.aggregate.class_name) {
@@ -1211,7 +1356,23 @@ function showTestDetail(test, initialRun) {
   headerTop.appendChild(el('h2', {tabindex:'-1'}, testDisplayName(test.aggregate)));
   headerTop.appendChild(outcomeBadge);
   header.appendChild(headerTop);
-  header.appendChild(el('div', {className:'file-path'}, test.aggregate.file));
+  const meta = el('div', {className:'detail-header-meta'},
+    el('span', {className:'file-path'}, test.aggregate.file));
+  header.appendChild(meta);
+  const xfails = test.runs.filter(r => r.xfail);
+  if (xfails.length) {
+    const x = xfails[0].xfail;
+    const words = x.outcome === 'xpassed' ? 'Marked xfail, but passed' : 'Expected to fail';
+    header.appendChild(el('div', {className:'detail-xfail ' + x.outcome},
+      el('strong', null, words), x.reason ? ': ' + x.reason : ''));
+  }
+  // Why it was skipped, in words: pytest keeps it as "(file, line, reason)".
+  const skip = shownTestOutcome(test) === 'skipped'
+    ? skipReason(test.runs.find(r => shownOutcome(r) === 'skipped')) : '';
+  if (skip && !xfails.length) {
+    header.appendChild(el('div', {className:'detail-xfail skipped'},
+      el('strong', null, 'Skipped'), ': ' + skip));
+  }
   const back = el('button', {className:'detail-back', type:'button'});
   back.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
   back.appendChild(document.createTextNode('All tests'));
@@ -1234,29 +1395,35 @@ function showTestDetail(test, initialRun) {
   });
   header.appendChild(cmdRow);
 
-  // Stats row
+  // One run: its retry verdict and time sit beside the name; there is nothing
+  // to filter or to pick. Several runs: the count and total here, the outcome
+  // counts on the filters below (only when the runs differ).
   const agg = test.aggregate;
+  const single = test.runs.length === 1;
   const stats = el('div', {className:'detail-header-stats'});
-  stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, String(agg.total_runs)),
-    agg.total_runs === 1 ? ' run' : ' runs'));
-  stats.appendChild(el('span', {className:'detail-header-stat'}, el('strong', null, formatDuration(agg.total_duration_seconds)), ' total'));
-  if (agg.passed) stats.appendChild(el('span', {className:'detail-header-stat'},
-    el('span', {className:'status-dot passed'}), el('strong', null, String(agg.passed)), ' passed'));
-  if (agg.failed) stats.appendChild(el('span', {className:'detail-header-stat'},
-    el('span', {className:'status-dot failed'}), el('strong', null, String(agg.failed)), ' failed'));
-  if (agg.skipped) stats.appendChild(el('span', {className:'detail-header-stat'},
-    el('span', {className:'status-dot skipped'}), el('strong', null, String(agg.skipped)), ' skipped'));
-  header.appendChild(stats);
+  if (single) {
+    const chip = retryChip(test.runs[0]);
+    if (chip) headerTop.appendChild(chip);
+    stats.appendChild(el('span', {className:'detail-header-stat'},
+      el('strong', null, formatSeconds(agg.total_duration_seconds))));
+  } else {
+    stats.appendChild(el('span', {className:'detail-header-stat'},
+      el('strong', null, String(agg.total_runs)), ' runs'));
+    stats.appendChild(el('span', {className:'detail-header-stat'},
+      el('strong', null, formatDuration(agg.total_duration_seconds)), ' total'));
+  }
+  meta.appendChild(stats);
   panel.appendChild(header);
 
   // Run filter toggles
+  const outcomes = STATUSES.concat(['xfailed'])
+    .map(s => [s, test.runs.filter(r => shownOutcome(r) === s).length])
+    .filter(([, count]) => count > 0);
   const runFilters = el('div', {className:'run-filters'});
   const filterRow = el('div', {className:'filter-toggles', role:'group', 'aria-label':'Show runs by outcome'});
-  STATUSES.forEach(s => {
-    const count = test.runs.filter(r => r.outcome === s).length;
-    if (count === 0) return;
-    const btn = el('button', {className:`filter-btn ${s} active`, type:'button', 'aria-pressed':'true'},
-      `${LABELS[s]} (${count})`);
+  outcomes.forEach(([s, count]) => {
+    const btn = el('button', {className:`filter-btn ${s} active`, type:'button', 'aria-pressed':'true',
+      'data-run-status': s}, `${LABELS[s]} (${count})`);
     btn.addEventListener('click', () => {
       const on = !btn.classList.contains('active');
       btn.classList.toggle('active', on);
@@ -1266,10 +1433,12 @@ function showTestDetail(test, initialRun) {
     filterRow.appendChild(btn);
   });
   runFilters.appendChild(filterRow);
+  runFilters.hidden = outcomes.length < 2;
   panel.appendChild(runFilters);
 
   // Run pills
   const pillsContainer = el('div', {className:'run-pills', id:'run-pills', role:'group', 'aria-label':'Runs'});
+  pillsContainer.hidden = single;
   panel.appendChild(pillsContainer);
 
   // Run detail
@@ -1284,14 +1453,15 @@ function showTestDetail(test, initialRun) {
 // aria-pressed, and the run it stands for is kept for showRunDetail.
 function makeRunPill(run, text) {
   const on = selectedRun === run;
-  const pill = el('button', {className:`run-pill ${run.outcome}${on ? ' selected' : ''}`, type:'button',
+  const shown = shownOutcome(run);
+  const pill = el('button', {className:`run-pill ${shown}${on ? ' selected' : ''}`, type:'button',
     'aria-pressed': on ? 'true' : 'false'}, text);
   pill._run = run;
-  pill.appendChild(srText(', ' + (LABELS[run.outcome] || run.outcome)));
-  if (run.retries && run.retries.attempts > 0) {
-    const n = run.retries.attempts;
-    pill.appendChild(el('span', {className:'retry-badge', 'aria-hidden':'true'}, '\u21bb' + n));
-    pill.appendChild(srText(', retried ' + n + (n === 1 ? ' time' : ' times')));
+  pill.appendChild(srText(', ' + (LABELS[shown] || shown)));
+  const verdict = retryVerdict(run);
+  if (verdict) {
+    pill.appendChild(el('span', {className:'retry-badge', 'aria-hidden':'true'}, '\u21bb ' + verdict.short));
+    pill.appendChild(srText(', ' + verdict.words));
   }
   return pill;
 }
@@ -1303,12 +1473,11 @@ function refreshRunPills(test, panel) {
 
   const activeStatuses = new Set();
   panel.querySelectorAll('.run-filters .filter-btn.active').forEach(b => {
-    const txt = b.textContent.split(' ')[0].toLowerCase();
-    STATUSES.forEach(s => { if (LABELS[s].toLowerCase() === txt) activeStatuses.add(s); });
+    activeStatuses.add(b.dataset.runStatus);
   });
-  if (activeStatuses.size === 0) STATUSES.forEach(s => activeStatuses.add(s));
+  if (activeStatuses.size === 0) STATUSES.concat(['xfailed']).forEach(s => activeStatuses.add(s));
 
-  const filtered = test.runs.filter(r => activeStatuses.has(r.outcome));
+  const filtered = test.runs.filter(r => activeStatuses.has(shownOutcome(r)));
   const MAX = 20;
   const shown = filtered.slice(0, MAX);
   const rest = filtered.slice(MAX);
@@ -1342,12 +1511,14 @@ function refreshRunPills(test, panel) {
 
 // The sub-tabs a run's detail offers, in order.
 function subTabNames(run) {
-  const tabNames = ['Summary','Procedure','Artifacts'];
-  if (run.check_results && run.check_results.length > 0) {
-    tabNames.splice(2, 0, 'Checks');
-  }
+  // A tab is offered when it has something in it.
+  const tabNames = ['Summary'];
+  if (run.procedure && run.procedure.steps && run.procedure.steps.length > 0) tabNames.push('Procedure');
+  if (run.check_results && run.check_results.length > 0) tabNames.push('Checks');
+  if (run.artifacts && run.artifacts.length > 0) tabNames.push('Artifacts');
   if (testStrategies(selectedTest).length > 0) {
-    tabNames.splice(tabNames.indexOf('Artifacts'), 0, 'Strategy');
+    const at = tabNames.indexOf('Artifacts');
+    tabNames.splice(at < 0 ? tabNames.length : at, 0, 'Strategy');
   }
   if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
     tabNames.push('Retries');
@@ -1505,6 +1676,7 @@ window.addEventListener('message', e => {
 // focus to it: for a control inside the detail, which this call replaces.
 function showRunDetail(run, openTab) {
   selectedRun = run;
+  writeLocation();
   // Keep the header command in sync with the selected run's exact nodeid.
   const cmdCode = document.querySelector('#detail-cmd .detail-cmd-code');
   if (cmdCode) cmdCode.textContent = testCommand(run.nodeid);
@@ -1563,6 +1735,58 @@ function showRunDetail(run, openTab) {
   }
 }
 
+// The Setup / Call / Teardown logs of a run or of a retry attempt as a tab
+// set (a fragment: the bar, then one panel per phase), or null without phases.
+function renderPhaseTabs(phases, openOn, xfailed) {
+  const available = ['setup','call','teardown'].filter(w => phases && phases[w]);
+  if (available.length === 0) return null;
+  const out = document.createDocumentFragment();
+  const phaseBar = el('div', {className:'phase-tabs-bar', role:'tablist', 'aria-label':'Phase logs'});
+  const phasePanels = [];
+  const activeIdx = Math.max(0, available.indexOf(openOn));
+  available.forEach((when, idx) => {
+    const phase = phases[when];
+    const phaseShown = phase.outcome === 'skipped' && xfailed ? 'xfailed' : phase.outcome;
+    const seconds = phase.duration != null ? phase.duration : phase.duration_seconds;
+    const tabId = uid('phasetab'), panelId = uid('phasepanel');
+    const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`, type:'button',
+      role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': idx===activeIdx ? 'true' : 'false',
+      tabindex: idx===activeIdx ? '0' : '-1'},
+      el('span', {className:'phase-tab-label'},
+        el('span', {className:`status-dot ${phaseShown}`, 'aria-hidden':'true'}),
+        capitalize(when)),
+      srText(', ' + (LABELS[phaseShown] || phaseShown)),
+      el('span', {className:'phase-meta'}, formatSeconds(seconds))
+    );
+    const panel = el('div', {className:`phase-tab-panel${idx===activeIdx?' active':''}`, role:'tabpanel',
+      id:panelId, 'aria-labelledby':tabId, tabindex:'0',
+      'data-phase': when + ' \u00b7 ' + (LABELS[phaseShown] || phaseShown)});
+    const hasEntries = phase.entries && phase.entries.length > 0;
+    if (hasEntries) panel.appendChild(renderLogEntries(phase.entries));
+    if (phase.longrepr) {
+      const body = el('div', {className:'phase-tab-body'});
+      const skip = phase.outcome === 'skipped' ? skipParts(phase.longrepr) : null;
+      body.textContent = skip
+        ? 'Skipped: ' + skip.reason + '\n' + skip.file + ':' + skip.line
+        : phase.longrepr;
+      panel.appendChild(body);
+    }
+    if (!hasEntries && !phase.longrepr) {
+      panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No output'));
+    }
+    btn.addEventListener('click', () => {
+      setSelectedTab(Array.from(phaseBar.querySelectorAll('.phase-tab-btn')), btn);
+      phasePanels.forEach(p => p.classList.toggle('active', p === panel));
+    });
+    phaseBar.appendChild(btn);
+    phasePanels.push(panel);
+  });
+  wireTablist(phaseBar, '.phase-tab-btn', b => b.click());
+  out.appendChild(phaseBar);
+  phasePanels.forEach(p => out.appendChild(p));
+  return out;
+}
+
 function showSubTab(tab, run) {
   const content = document.getElementById('sub-tab-content');
   if (!content) return;
@@ -1579,14 +1803,22 @@ function showSubTab(tab, run) {
       }
     };
 
+    const shown = shownOutcome(run);
     const outcomeEl = el('span', {className:'info-value', style:'display:flex;align-items:center;gap:6px'},
-      el('span', {className:`status-dot ${run.outcome}`}),
-      run.outcome.charAt(0).toUpperCase() + run.outcome.slice(1)
+      el('span', {className:`status-dot ${shown}`}),
+      LABELS[shown] || capitalize(shown)
     );
-    addRow('Outcome', outcomeEl);
-    addRow('Duration', run.duration.toFixed(4) + 's');
-    addRow('Run ID', run.run_id);
-    if (run.parametrize_id) addRow('Parametrize ID', run.parametrize_id);
+    // Said once: a failed run has its strip above, and a test with one run has
+    // its outcome and time beside its name.
+    const failedRun = isBad(run.outcome);
+    const several = selectedTest && selectedTest.runs.length > 1;
+    if (several && !failedRun) addRow('Outcome', outcomeEl);
+    const verdict = retryVerdict(run);
+    if (verdict && !(failedRun && !verdict.flaky)) addRow('Retries', capitalize(verdict.words));
+    if (several) addRow('Duration', formatSeconds(run.duration));
+    // "default" is the folder of a test without parameters: nothing to say.
+    if (run.parametrize_id) addRow('Run', run.run_id + ' \u00b7 ' + run.parametrize_id);
+    else if (run.run_id !== 'default') addRow('Run', run.run_id);
     if (run.strategy) {
       // pytest-strategies row: "levels \u00b7 directed zero", and its seed
       const st = run.strategy;
@@ -1596,7 +1828,7 @@ function showSubTab(tab, run) {
       const used = testStrategies(selectedTest).find(u => u.name === st.strategy);
       if (used && used.nsamples) addRow('Samples', samplesEl(used.nsamples, 'info-value'));
     }
-    content.appendChild(grid);
+    if (grid.children.length > 0) content.appendChild(grid);
 
     // Parameters table
     const paramKeys = Object.keys(run.params || {});
@@ -1610,57 +1842,15 @@ function showSubTab(tab, run) {
       content.appendChild(table);
     }
 
-    // Phase logs as horizontal tabs
-    const phases = ['setup','call','teardown'];
-    const availablePhases = phases.filter(w => run.phases[w]);
-    if (availablePhases.length > 0) {
-      const phaseBar = el('div', {className:'phase-tabs-bar', role:'tablist', 'aria-label':'Phase logs'});
-      const phasePanels = [];
-      // Open on the phase that failed (or was skipped), not always on Setup.
-      const activeIdx = Math.max(0, availablePhases.indexOf(phaseOfInterest(run)));
-
-      availablePhases.forEach((when, idx) => {
-        const phase = run.phases[when];
-        const tabId = uid('phasetab'), panelId = uid('phasepanel');
-        const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`, type:'button',
-          role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': idx===activeIdx ? 'true' : 'false',
-          tabindex: idx===activeIdx ? '0' : '-1'},
-          el('span', {className:'phase-tab-label'},
-            el('span', {className:`status-dot ${phase.outcome}`, 'aria-hidden':'true'}),
-            when.charAt(0).toUpperCase() + when.slice(1)),
-          srText(', ' + (LABELS[phase.outcome] || phase.outcome)),
-          el('span', {className:'phase-meta'}, phase.duration.toFixed(4) + 's')
-        );
-
-        const panel = el('div', {className:`phase-tab-panel${idx===activeIdx?' active':''}`, role:'tabpanel',
-          id:panelId, 'aria-labelledby':tabId, tabindex:'0'});
-        const hasEntries = phase.entries && phase.entries.length > 0;
-        if (hasEntries || phase.longrepr) {
-          if (hasEntries) {
-            panel.appendChild(renderLogEntries(phase.entries));
-          }
-          if (phase.longrepr) {
-            const body = el('div', {className:'phase-tab-body'});
-            body.textContent = phase.longrepr;
-            panel.appendChild(body);
-          }
-        } else {
-          panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No output'));
-        }
-
-        btn.addEventListener('click', () => {
-          setSelectedTab(Array.from(phaseBar.querySelectorAll('.phase-tab-btn')), btn);
-          phasePanels.forEach(p => p.classList.toggle('active', p === panel));
-        });
-
-        phaseBar.appendChild(btn);
-        phasePanels.push(panel);
-      });
-
-      wireTablist(phaseBar, '.phase-tab-btn', b => b.click());
-      content.appendChild(phaseBar);
-      phasePanels.forEach(p => content.appendChild(p));
+    // Phase logs as horizontal tabs, open on the phase that failed (or was
+    // skipped), not always on Setup.
+    const phaseTabs = renderPhaseTabs(run.phases, phaseOfInterest(run), shownOutcome(run) === 'xfailed');
+    // A retried run: these logs are its first try, whatever the run ended as.
+    if (phaseTabs && verdict) {
+      content.appendChild(el('p', {className:'phase-tabs-note'},
+        'Logs of the first try, which failed. The other tries are under Retries.'));
     }
+    if (phaseTabs) content.appendChild(phaseTabs);
 
   } else if (tab === 'procedure') {
     const proc = run.procedure || {steps:[]};
@@ -1676,7 +1866,7 @@ function showSubTab(tab, run) {
   } else if (tab === 'checks') {
     const checks = run.check_results || [];
     if (checks.length === 0) {
-      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'}, 'No verification checks.'));
+      content.appendChild(el('div', {className:'tab-empty'}, 'No verification checks.'));
     } else {
       content.appendChild(renderCheckResults(checks));
     }
@@ -1684,7 +1874,7 @@ function showSubTab(tab, run) {
   } else if (tab === 'artifacts') {
     const artifacts = run.artifacts || [];
     if (artifacts.length === 0) {
-      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'},
+      content.appendChild(el('div', {className:'tab-empty'},
         'No artifacts collected for this run.'
       ));
     } else {
@@ -1700,7 +1890,7 @@ function showSubTab(tab, run) {
       // HTML artifacts (rendered inline as iframes)
       if (htmlFiles.length > 0) {
         htmlFiles.forEach(a => {
-          const label = el('div', {style:'font-size:var(--fs-sm);font-weight:600;color:var(--c-text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em'}, a.name);
+          const label = el('div', {className:'artifact-title'}, a.name);
           content.appendChild(label);
           if (a.data_uri) {
             // A data: frame is cross-origin, so its height can't be read
@@ -1772,14 +1962,14 @@ function showSubTab(tab, run) {
     const retries = run.retries || {};
     const attempts = run.retry_attempts || [];
     if (attempts.length === 0) {
-      content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'}, 'No retries for this run.'));
+      content.appendChild(el('div', {className:'tab-empty'}, 'No retries for this run.'));
     } else {
       const section = el('div', {className:'retry-section'});
       // Original failure card
       const origCard = el('div', {className:'retry-original'});
-      const origHeader = el('div', {className:'retry-original-header'},
-        el('span', {className:'status-dot failed'}),
-        'Original Failure'
+      const origHeader = el('h3', {className:'retry-original-header'},
+        el('span', {className:'status-dot failed', 'aria-hidden':'true'}),
+        'First try'
       );
       origCard.appendChild(origHeader);
       if (run.phases && run.phases.call && run.phases.call.longrepr) {
@@ -1788,8 +1978,8 @@ function showSubTab(tab, run) {
         origCard.appendChild(body);
       }
       if (run.phases && run.phases.call) {
-        origCard.appendChild(el('div', {style:'font-size:var(--fs-xs);color:var(--c-text3);margin-top:8px'},
-          'Duration: ' + run.phases.call.duration.toFixed(4) + 's'));
+        origCard.appendChild(el('div', {className:'retry-original-meta'},
+          'Call took ' + formatSeconds(run.phases.call.duration)));
       }
       section.appendChild(origCard);
 
@@ -1799,53 +1989,31 @@ function showSubTab(tab, run) {
         const callPhase = attempt.phases?.call;
         const attemptOutcome = callPhase?.outcome || 'error';
         const card = el('div', {className:`retry-card${isLast?' expanded':''}`});
-        const header = el('div', {className:'retry-card-header'},
-          el('span', {className:`status-dot ${attemptOutcome}`}),
+        const header = el('button', {className:'retry-card-header', type:'button',
+          'aria-expanded': isLast ? 'true' : 'false'},
+          chevronSvg('retry-card-chevron'),
+          el('span', {className:`status-dot ${attemptOutcome}`, 'aria-hidden':'true'}),
           `Retry ${attempt.attempt}`,
-          el('span', {style:'margin-left:auto;font-size:var(--fs-xs);color:var(--c-text3)'},
-            attemptOutcome.charAt(0).toUpperCase() + attemptOutcome.slice(1))
+          el('span', {className:'retry-card-outcome'}, capitalize(attemptOutcome))
         );
-        header.addEventListener('click', () => card.classList.toggle('expanded'));
+        header.addEventListener('click', () => {
+          const open = card.classList.toggle('expanded');
+          header.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
         card.appendChild(header);
 
         const body = el('div', {className:'retry-card-body'});
-        // Phase logs
-        const phases = ['setup','call','teardown'];
-        const availP = phases.filter(w => attempt.phases?.[w]);
-        if (availP.length > 0) {
-          const pBar = el('div', {className:'phase-tabs-bar'});
-          const pPanels = [];
-          availP.forEach((w, pi) => {
-            const ph = attempt.phases[w];
-            const pbtn = el('button', {className:`phase-tab-btn${pi===0?' active':''}`},
-              el('span', {className:`status-dot ${ph.outcome}`}),
-              w.charAt(0).toUpperCase() + w.slice(1),
-              el('span', {className:'phase-meta'}, (ph.duration_seconds||0).toFixed(4) + 's')
-            );
-            const ppanel = el('div', {className:`phase-tab-panel${pi===0?' active':''}`});
-            if (ph.entries && ph.entries.length > 0) ppanel.appendChild(renderLogEntries(ph.entries));
-            if (ph.longrepr) {
-              const b = el('div', {className:'phase-tab-body'}); b.textContent = ph.longrepr; ppanel.appendChild(b);
-            }
-            if (!ph.entries?.length && !ph.longrepr) ppanel.appendChild(el('div', {className:'phase-tab-empty'}, 'No output'));
-            pbtn.addEventListener('click', () => {
-              pBar.querySelectorAll('.phase-tab-btn').forEach(b => b.classList.remove('active'));
-              pPanels.forEach(p => p.classList.remove('active'));
-              pbtn.classList.add('active'); ppanel.classList.add('active');
-            });
-            pBar.appendChild(pbtn); pPanels.push(ppanel);
-          });
-          body.appendChild(pBar);
-          pPanels.forEach(p => body.appendChild(p));
-        }
+        const bad = ['setup','call','teardown'].find(w => attempt.phases?.[w] && isBad(attempt.phases[w].outcome));
+        const attemptLogs = renderPhaseTabs(attempt.phases, bad || 'call', false);
+        if (attemptLogs) body.appendChild(attemptLogs);
         // Procedure
         if (attempt.procedure && attempt.procedure.steps && attempt.procedure.steps.length > 0) {
-          body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Procedure'));
+          body.appendChild(el('h4', {className:'retry-subhead'}, 'Procedure'));
           body.appendChild(renderProcedure(attempt.procedure, attempt));
         }
         // Verification checks of this attempt
         if (attempt.check_results && attempt.check_results.length > 0) {
-          body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Checks'));
+          body.appendChild(el('h4', {className:'retry-subhead'}, 'Checks'));
           body.appendChild(renderCheckResults(attempt.check_results));
         }
         // Custom tabs of this attempt, once its card is open: a frame that
@@ -1855,7 +2023,7 @@ function showSubTab(tab, run) {
           if (tabsShown || !card.classList.contains('expanded')) return;
           tabsShown = true;
           customTabs(attempt).forEach(t => {
-            body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, t.title));
+            body.appendChild(el('h4', {className:'retry-subhead'}, t.title));
             body.appendChild(renderCustomTab(t));
           });
         };
@@ -1936,7 +2104,7 @@ function strategyOrigin(origin) {
 
 // The outcome of one test item of a row: the report's own (retries counted)
 // when the item is one of this test's runs, else the one pytest-strategies wrote.
-const STRATEGY_OUTCOME_DOT = {xfailed:'skipped', xpassed:'passed'};
+const STRATEGY_OUTCOME_DOT = {xpassed:'passed'};
 function strategyItemEl(item, test, current) {
   const run = test.runs.find(r => r.nodeid === item.nodeid);
   const outcome = run ? run.outcome : item.outcome;
@@ -2248,9 +2416,10 @@ function renderNode(node, depth, generic) {
     header.appendChild(el('span', {className: 'procedure-result'}, '\u2192 ' + node.result));
   }
   _appendCheckInline(header, node.check);
-  if (node.duration_seconds > 0) {
+  // Under a millisecond is the cost of the bookkeeping, not of the step.
+  if (node.duration_seconds >= 0.001) {
     header.appendChild(el('span', {className: 'procedure-step-duration'},
-      node.duration_seconds.toFixed(2) + 's'));
+      formatSeconds(node.duration_seconds)));
   }
   row.appendChild(header);
   if (node.note && !inlineNote) {
@@ -2407,7 +2576,12 @@ function renderProcedurePhases(proc, run, generic) {
   const panels = [];
   PROC_SECTIONS.forEach(function(pair, idx) {
     const inSection = bySection[pair[0]];
-    const outcome = procOutcome(inSection);
+    let outcome = procOutcome(inSection);
+    // A phase that failed never reads better than it went: when its steps all
+    // passed, it failed outside them (a bare assert after the last step).
+    const phase = run && run.phases ? run.phases[pair[2]] : null;
+    const outside = !!phase && isBad(phase.outcome) && inSection.length > 0 && !isBad(outcome);
+    if (outside) outcome = phase.outcome;
     const on = idx === active;
     const tabId = uid('proctab'), panelId = uid('procpanel');
     const label = el('span', {className:'phase-tab-label'});
@@ -2423,6 +2597,12 @@ function renderProcedurePhases(proc, run, generic) {
     );
     const panel = el('div', {className:'phase-tab-panel procedure-tab-panel' + (on ? ' active' : ''),
       role:'tabpanel', id:panelId, 'aria-labelledby':tabId, tabindex:'0', 'data-phase':pair[1]});
+    if (outside && !generic) {
+      const reason = failureReason(run);
+      panel.appendChild(el('div', {className:'procedure-outside ' + phase.outcome},
+        el('strong', null, (phase.outcome === 'error' ? 'Error' : 'Failed') + ' outside these steps'),
+        reason ? el('span', {className:'procedure-outside-reason', title: reason}, reason) : null));
+    }
     if (count === 0) {
       panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No steps in ' + pair[1].toLowerCase()));
     } else {
@@ -2449,13 +2629,15 @@ function renderCheckResults(checks) {
   const passed = checks.filter(c => c.passed).length;
   const failed = checks.filter(c => !c.passed).length;
   const summary = el('div', {className:'checks-summary'});
-  summary.appendChild(el('span', {className:'checks-count'},
-    el('span', {className:'status-dot passed'}), passed + ' passed'));
+  if (passed > 0) {
+    summary.appendChild(el('span', {className:'checks-count'},
+      el('span', {className:'status-dot passed'}), passed + ' passed'));
+  }
   if (failed > 0) {
     summary.appendChild(el('span', {className:'checks-count'},
       el('span', {className:'status-dot failed'}), failed + ' failed'));
   }
-  summary.appendChild(el('span', null, checks.length + ' total'));
+  if (passed > 0 && failed > 0) summary.appendChild(el('span', null, checks.length + ' total'));
   container.appendChild(summary);
 
   const cards = el('div', {className:'check-cards'});
@@ -2475,7 +2657,11 @@ function renderCheckResults(checks) {
     if (checkOperand(check)) {
       header.appendChild(el('span', {className:'check-operand'}, checkOperand(check)));
     }
-    if (check.description) {
+    // The judge's own line ("3.2968V == 3.3V \u00b1 0.05V") when the record has
+    // one: the measured value shows without opening the card. Else the statement.
+    if (typeof check.detail === 'string' && check.detail && isLeafCheck(check)) {
+      header.appendChild(el('span', {className:'check-desc check-result'}, check.detail));
+    } else if (check.description) {
       header.appendChild(el('span', {className:'check-desc'}, check.description));
     }
     if (checkNote(check)) {
@@ -2542,12 +2728,15 @@ function checkLabel(check, idx) {
 // `error` when the comparison raised, and where the check was made.
 function renderCheckDetail(check) {
   const detail = el('div', {className:'check-card-detail'});
+  const units = checkUnits(check);
+  let unitsShown = false;
   const fields = [
-    ['detail', 'Result'], ['note', 'Note'], ['error', 'Error'], ['also_failed', 'Also failed'],
+    ['description', 'Check'], ['detail', 'Result'], ['note', 'Note'], ['error', 'Error'], ['also_failed', 'Also failed'],
     ['actual_name', 'Actual name'], ['actual', 'Actual'],
     ['expected_name', 'Expected name'], ['expected', 'Expected'],
     ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
     ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],
+    ['distance', checkDistanceLabel(check)],
     ['units', 'Units'], ['inclusive', 'Inclusive'],
     ['expected_type', 'Expected type'], ['actual_length', 'Actual length'],
     ['haystack', 'Haystack'], ['needle', 'Needle'], ['pattern', 'Pattern'],
@@ -2559,17 +2748,78 @@ function renderCheckDetail(check) {
     ['phase', 'Phase'], ['location', 'Made at'], ['called_from', 'Called from'],
   ];
   fields.forEach(([key, label]) => {
-    if (check[key] !== undefined && check[key] !== null) {
-      detail.appendChild(el('span', {className:'label'}, label));
-      if (key === 'actual_name' || key === 'expected_name') {
-        detail.appendChild(operandNameEl(check, key));
-        return;
+    if (key === 'distance') {
+      const distance = checkDistance(check);
+      if (distance) {
+        detail.appendChild(el('span', {className:'label'}, label));
+        detail.appendChild(el('span', {className:'value'}, distance));
       }
-      const v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
-      detail.appendChild(el('span', {className:'value'}, v));
+      return;
     }
+    if (check[key] === undefined || check[key] === null) return;
+    // The units went onto the numbers they belong to: no row of their own.
+    if (key === 'units' && unitsShown) return;
+    detail.appendChild(el('span', {className:'label'}, label));
+    if (key === 'actual_name' || key === 'expected_name') {
+      detail.appendChild(operandNameEl(check, key));
+      return;
+    }
+    let v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
+    if (units && CHECK_QUANTITIES.includes(key) && isCheckQuantity(check[key])) {
+      v += units;
+      unitsShown = true;
+    }
+    detail.appendChild(el('span', {className:'value' + (key === 'detail' ? ' result' : '')}, v));
   });
   return detail;
+}
+
+// The fields of a check that are in its units (rel_tol is a ratio).
+const CHECK_QUANTITIES = ['actual', 'expected', 'threshold', 'low', 'high', 'abs_tol'];
+function isCheckNumber(v) { return typeof v === 'number' && isFinite(v); }
+// ...or an integer too large for a JS number, which the page data holds as its digits
+function isCheckQuantity(v) { return isCheckNumber(v) || (typeof v === 'string' && /^-?\d{16,}$/.test(v)); }
+function checkUnits(check) {
+  return typeof check.units === 'string' && check.units.trim() ? check.units : '';
+}
+
+// How far the measured value is from the limit it was checked against, for the
+// numeric checks: plain arithmetic on the recorded numbers, to four figures.
+// It words a distance; passing or failing stays pytest-verifier's verdict.
+function checkDistanceLabel(check) {
+  return check.check_type === 'approx' ? 'Deviation' : 'Margin';
+}
+function checkDistance(check) {
+  const num = key => isCheckNumber(check[key]) ? check[key] : null;
+  const actual = num('actual');
+  if (actual === null) return '';
+  const amount = d => String(parseFloat(Math.abs(d).toPrecision(4))) + checkUnits(check);
+  const same = d => Math.abs(d) <= 1e-9 * Math.max(Math.abs(actual), 1);  // float noise
+  const side = (d, what) => same(d) ? 'at ' + what : amount(d) + (d > 0 ? ' above ' : ' below ') + what;
+  switch (check.check_type) {
+    case 'approx': {
+      const expected = num('expected');
+      return expected === null ? '' : side(actual - expected, 'the expected value');
+    }
+    case 'greater': case 'greater_equal': case 'less': case 'less_equal': {
+      const limit = num('threshold');
+      return limit === null ? '' : side(actual - limit, 'the limit');
+    }
+    case 'between': {
+      const low = num('low'), high = num('high');
+      if (low === null || high === null) return '';
+      if (actual < low) return side(actual - low, 'the low limit');
+      if (actual > high) return side(actual - high, 'the high limit');
+      return actual - low <= high - actual
+        ? side(actual - low, 'the low limit') : side(actual - high, 'the high limit');
+    }
+    default: return '';
+  }
+}
+
+// A check of one value, not a composite (guard, conditional, ...) or a sampling check.
+function isLeafCheck(check) {
+  return ['guard', 'conditional', 'all_satisfy', 'eventually', 'stable'].indexOf(check.check_type) < 0;
 }
 
 // Dispatch a check descriptor to its body renderer (composite chain or leaf grid).
@@ -2739,6 +2989,19 @@ function formatSize(bytes) {
   return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
+// A measured time, to three figures: "0.3ms", "20ms", "1.25s"; from a minute
+// on, as formatDuration. One wording for runs, phases, steps and attempts.
+function formatSeconds(sec) {
+  if (sec == null || isNaN(sec)) return '\u2014';
+  if (sec <= 0) return '0s';
+  if (sec < 0.00005) return '<0.1ms';
+  // Each limit is where the rounded text would change unit ("1000ms")
+  if (sec < 0.00995) return (sec * 1000).toFixed(1) + 'ms';
+  if (sec < 0.9995) return Math.round(sec * 1000) + 'ms';
+  if (sec < 59.995) return sec.toFixed(2) + 's';
+  return formatDuration(Math.round(sec * 100) / 100);
+}
+
 function formatDuration(sec) {
   if (sec == null || isNaN(sec)) return '—';
   if (sec < 1) return '<1s';
@@ -2849,7 +3112,11 @@ function refreshTree(expandMatches) {
   syncFilterButtons();
   ensureTreeTabStop();
   const empty = document.getElementById('tree-empty');
-  if (empty) empty.hidden = nodes.some(n => n._test && n.style.display !== 'none');
+  const any = nodes.some(n => n._test && n.style.display !== 'none');
+  if (empty) {
+    empty.hidden = any;
+    empty.parentElement.classList.toggle('is-empty', !any);
+  }
 }
 
 function syncFilterButtons() {
@@ -3106,7 +3373,24 @@ function renderSessionLogs() {
       sec.classList.toggle('log-hidden', !has);
       if (q && has) setDisclosure(sec, true);
     });
+    const none = !treeEl.querySelector('.log-entry:not(.log-hidden)');
+    noMatch.hidden = !none;
+    if (q) announce(none ? 'No log entries match' : 'Log entries filtered');
   }
+  const noMatch = el('div', {className:'tree-empty session-log-nomatch'},
+    el('p', null, 'No log entries match the search and levels.'));
+  const showAllLogs = el('button', {className:'strip-btn', type:'button'}, 'Show all entries');
+  showAllLogs.addEventListener('click', () => {
+    search.value = '';
+    container.querySelectorAll('.session-log-level-btn').forEach(b => {
+      if (!b.classList.contains('active')) b.click();
+    });
+    applyFilters();
+    search.focus();
+  });
+  noMatch.appendChild(showAllLogs);
+  noMatch.hidden = true;
+  treeEl.after(noMatch);
   search.addEventListener('input', applyFilters);
 
   panel.appendChild(container);
@@ -3260,7 +3544,74 @@ function switchTab(name) {
     b.tabIndex = isActive ? 0 : -1;
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  document.body.dataset.tab = name;
+  writeLocation();
 }
+
+// ─── A link to what is on screen ─────────────────────────────────────
+// The address keeps the open tab, and in the Tests tab the run shown
+// (#test=<node ID>), so a reload or a pasted link lands on the same place.
+let locationReady = false;
+function writeLocation() {
+  if (!locationReady) return;
+  const tab = document.body.dataset.tab || 'summary';
+  let hash = '';
+  if (tab === 'tests') {
+    hash = selectedRun && selectedRun.nodeid ? '#test=' + encodeURIComponent(selectedRun.nodeid) : '#tab=tests';
+  } else if (tab !== 'summary') {
+    hash = '#tab=' + tab;
+  }
+  try {
+    history.replaceState(null, '', hash || location.pathname + location.search);
+  } catch (e) { /* a sandboxed page keeps its address */ }
+}
+function readLocation() {
+  const m = /^#(test|tab)=(.*)$/.exec(location.hash || '');
+  if (!m) return;
+  let value = m[2];
+  try { value = decodeURIComponent(value); } catch (e) { /* a pasted node ID with a bare % */ }
+  if (m[1] === 'tab') {
+    if (document.getElementById('tab-' + value)) switchTab(value);
+    return;
+  }
+  for (const test of DATA.tests) {
+    const run = test.runs.find(r => r.nodeid === value);
+    if (run || test.base_nodeid === value) { openRunInTests(test, run); return; }
+  }
+}
+
+// ─── Keys: / searches the tests, j and k step through them ───────────
+function stepTest(delta) {
+  const leaves = Array.from(document.querySelectorAll('.tree-content .tree-node'))
+    .filter(n => n._test && n.style.display !== 'none');
+  if (leaves.length === 0) return;
+  const at = leaves.findIndex(n => n._test === selectedTest);
+  const next = at < 0 ? leaves[delta > 0 ? 0 : leaves.length - 1] : leaves[at + delta];
+  if (!next) return;
+  selectTreeRow(next._test);
+  showTestDetail(next._test);
+  showDetailPane(true);
+  // Focus follows the selection, so the arrow keys go on from here
+  const row = next.querySelector(':scope > .tree-row');
+  if (row && row.offsetParent) row.focus({preventScroll: true});
+  announce(testDisplayName(next._test.aggregate) + ', ' + LABELS[shownTestOutcome(next._test)]);
+}
+document.addEventListener('keydown', e => {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (document.querySelector('.lightbox-overlay')) return;
+  if (e.key === '/') {
+    e.preventDefault();
+    switchTab('tests');
+    showDetailPane(false);
+    const input = document.querySelector('.tree-controls .search-input');
+    if (input) { input.focus(); input.select(); }
+  } else if ((e.key === 'j' || e.key === 'k') && document.body.dataset.tab === 'tests') {
+    e.preventDefault();
+    stepTest(e.key === 'j' ? 1 : -1);
+  }
+});
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
@@ -3281,6 +3632,10 @@ wireTablist(document.querySelector('.tabs'), '.tab-btn', btn => switchTab(btn.da
   metaEl.innerHTML = `<span>${formatted} UTC</span><span>\u00b7</span><span>${formatDuration(DATA.duration)}</span>`;
   const badge = el('span', {className: `meta-badge ${badgeClass}`}, badgeText);
   metaEl.appendChild(badge);
+  // Several reports open at once are told apart in the tab strip.
+  const m = /^(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})/.exec(DATA.timestamp || '');
+  document.title = 'Test Report \u00b7 ' + badgeText
+    + (m ? ' \u00b7 ' + m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] : '');
 })();
 
 // ─── Theme toggle ────────────────────────────────────────────────────
@@ -3314,4 +3669,7 @@ wireTablist(document.querySelector('.tabs'), '.tab-btn', btn => switchTab(btn.da
 renderSummary();
 renderTests();
 renderSessionLogs();
-renderReport();"""
+renderReport();
+locationReady = true;
+readLocation();
+window.addEventListener('hashchange', readLocation);"""

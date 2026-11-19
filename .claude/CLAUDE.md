@@ -270,7 +270,7 @@ node may hold `substeps` of the same shape.
         { "kind": "action", "number": "1.1", "description": "Measure dmm.voltage",
           "result": "1.65 V", "outcome": "info", "exc": null },
         { "kind": "check", "number": "1.2", "description": "Verify 'Vout' == 3.3V ± 0.05V",
-          "result": "got 1.65", "detail": "expected ...", "outcome": "failed", "exc": null }
+          "result": "got 1.65V", "detail": "expected ...", "outcome": "failed", "exc": null }
       ] }
   ]
 }
@@ -419,6 +419,31 @@ node may hold `substeps` of the same shape.
 | Failed | `#EF4444` |
 | Skipped | `#F59E0B` |
 | Error | `#F97316` |
+
+Status dots differ by shape too: skipped is a ring, error a square, an expected fail
+(`run.xfail.outcome == "xfailed"`, from `report.wasxfail`; `shownOutcome` in the JS; still
+counted as skipped) a dashed `--c-xfail` ring. Retried is the accent colour, never amber.
+`retryVerdict(run)` reads `retries.history`: `failed 3/3` or flaky. The Summary's Failures
+list groups by file and merges runs of one test with one reason. A Procedure phase tab is
+never better than `run.phases[when].outcome` (`.procedure-outside` when steps all passed).
+
+### Reading rules (pinned by `tests/test_html_reading.py`)
+
+- Type scale `--fs-xs..3xl`: 12, 13, 14, 16, 20, 26, 38px. Nothing under 12px.
+- Desktop Tests tab is one screen: `switchTab` sets `body[data-tab]`, and
+  `body[data-tab="tests"]` (min-width 769px) is a `100dvh` flex column, so only `.tree-content`
+  and `.detail-panel` scroll. `showTestDetail` resets `panel.scrollTop`; `.sub-tabs` is sticky.
+- Say a fact once: the hero holds pass rate, time in tests, ratio bar and counters; a
+  single-run test has outcome, retry chip and duration in its header only; `subTabNames`
+  offers Procedure / Checks / Artifacts only with content.
+- Run, phase, step and retry durations go through `formatSeconds` (`0.3ms`, `20ms`, `1.25s`,
+  then `formatDuration`); suite and group totals use `formatDuration` (`4s`, `<1s`).
+- Check cards: units appended to the numbers (`CHECK_QUANTITIES`), `checkDistance` gives the
+  Margin / Deviation row (arithmetic on the record, never a verdict), no side stripes.
+- `_js_safe` writes integers past 2**53 as strings. `skipParts` reads pytest's skip tuple.
+- Navigation: `#test=<nodeid>` / `#tab=<name>` (`writeLocation`, `readLocation`), keys `/`,
+  `j`, `k` (`stepTest`); the key hints hide on phones and touch screens.
+- Print shows every failure row and all three phase logs, and hides inert controls.
 
 ### Feature level for graphs: configurable via `pytest_reporter_dashboard` hook / `report_dashboard` fixture.
 

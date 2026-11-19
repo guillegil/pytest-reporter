@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,10 @@ def strategy_row(item: pytest.Item) -> dict[str, Any] | None:
     except Exception:  # noqa: BLE001 - a foreign mark must never break collection
         return None
     return None
+
+
+# pytest-verifier's summary at the end of an xfail reason: " [1 of 2 checks failed: …]"
+_VERIFY_SUFFIX = re.compile(r"\s*\[\d+ of \d+ checks? failed\b.*\]\s*$", re.S)
 
 
 class DataCollector:
@@ -143,6 +148,9 @@ class DataCollector:
             end_time=end_time,
             entries=entries or [],
         )
+        wasxfail = getattr(report, "wasxfail", None)
+        if isinstance(wasxfail, str):
+            phase.wasxfail = wasxfail
         self._phases[(report.nodeid, report.when)] = phase
 
     def get_phase(self, nodeid: str, when: str) -> PhaseData | None:
@@ -175,6 +183,25 @@ class DataCollector:
                 return "error"
             return "skipped"
         return call.outcome
+
+    def get_xfail(self, nodeid: str) -> dict[str, str] | None:
+        """How an xfail-marked run went: ``{"outcome", "reason"}``, else ``None``.
+
+        ``outcome`` is ``"xfailed"`` (it failed as expected; pytest reports it as
+        skipped) or ``"xpassed"`` (it passed although marked; non-strict).
+        """
+        for when in ("call", "setup"):
+            phase = self.get_phase(nodeid, when)
+            if phase is None or phase.wasxfail is None:
+                continue
+            outcome = self.get_outcome(nodeid)
+            if outcome not in ("skipped", "passed"):
+                return None
+            reason = phase.wasxfail.removeprefix("reason: ").strip()
+            # pytest-verifier appends its checks summary; the Checks tab shows them
+            reason = _VERIFY_SUFFIX.sub("", reason)
+            return {"outcome": "xfailed" if outcome == "skipped" else "xpassed", "reason": reason}
+        return None
 
     def get_duration(self, nodeid: str) -> float:
         """Get total duration for a test run across all phases."""
