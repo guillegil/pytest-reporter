@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import warnings
+from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,7 @@ from ._report_builder import build_html_data
 from ._retry import run_with_retries
 from ._safety import guard, guard_void
 from ._stepdoc import StepCollector
+from ._strategies import StrategyExport
 from ._symlinks import update_latest_copy
 
 if TYPE_CHECKING:
@@ -44,6 +46,10 @@ class Reporter:
         self._finished_runs: set[str] = set()
         # stepdoc steps of each test attempt (the Procedure tab)
         self.steps = StepCollector()
+        # pytest-strategies' run export: where it is written, and the document
+        # read from it when the session ends (strategies.vectors.json)
+        self.strategies = StrategyExport(config, context.run_dir)
+        self.strategy_export: dict[str, Any] | None = None
         # procedure.json of each finished run (first attempt): nodeid -> dict
         self._procedures: dict[str, dict[str, Any]] = {}
         # Per-test loggers: nodeid -> Logger
@@ -126,6 +132,27 @@ class Reporter:
     def pytest_stepdoc_step_finished(self, item: Item, step: Any) -> None:  # noqa: ANN401
         """stepdoc hook: a step ended."""
         guard_void("pytest_stepdoc_step_finished", lambda: self.steps.finished(item, step))
+
+    @pytest.hookimpl(hookwrapper=True, optionalhook=True)
+    def pytest_strategies_export_dir(self, config: Config) -> Generator[None, Any, None]:  # noqa: ARG002
+        """pytest-strategies hook (4.3+): the folder of its run export.
+
+        A wrapper, so every other answer comes first: the run folder is given
+        only when no implementation chose a folder (and the user's
+        ``strategies_export_dir`` ini option names none).
+        """
+        outcome = yield
+        try:
+            hooked = outcome.get_result()
+        except BaseException:  # noqa: BLE001 - the hook's own error: pluggy raises it
+            return
+        answer = guard(
+            "pytest_strategies_export_dir",
+            lambda: self.strategies.answer(hooked),
+            default=hooked,
+        )
+        if answer is not hooked:
+            outcome.force_result(answer)
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_protocol(self, item: Item, nextitem: Item | None) -> bool | None:
@@ -249,6 +276,14 @@ class Reporter:
 
         # Finalize console capture
         finalize_capture(self._tee, self.context.run_dir / "pytest.log")
+
+        # pytest-strategies wrote its run export in its own pytest_sessionfinish
+        # (ours is trylast): read it for the HTML report.
+        self.strategy_export = guard(
+            "pytest_sessionfinish (strategy export)",
+            lambda: self.strategies.load(self._start_time),
+            default=None,
+        )
 
         # Write HTML report — guarded so sessionfinish never raises (REQ-1).
         # Any exception in the build pipeline is caught, warned, and replaced

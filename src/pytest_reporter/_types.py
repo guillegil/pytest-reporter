@@ -153,7 +153,10 @@ class ProcedureNodeJson(TypedDict, total=False):
     ``stepdoc.repeat()`` reads ``Fill (repeat until full)`` with the passes in
     ``result``. Steps and repeats may carry stepdoc's ``note=`` as ``note``;
     checks may carry ``Check.note`` (pytest-verifier's ``note=`` or a source
-    comment) as ``note``, shown after the check's text in parentheses.
+    comment) as ``note``, shown after the check's text in parentheses. A check
+    made with pytest-verifier's ``actual_name=`` / ``expected_name=`` reads with
+    the names' symbolic form (``reg<channel>``) and carries this run's text of
+    each as ``actual_name`` / ``expected_name``.
     ``substeps`` is absent for leaves. Files written by pytest-reporter 0.2 (no
     ``kind``) are steps.
     """
@@ -171,6 +174,11 @@ class ProcedureNodeJson(TypedDict, total=False):
     result: str
     detail: str
     note: str
+    generic: str
+    generic_segments: list[dict[str, Any]]
+    generic_result: str
+    actual_name: str
+    expected_name: str
     substeps: list[ProcedureNodeJson]  # recursive; absent / [] => leaf node
 
 

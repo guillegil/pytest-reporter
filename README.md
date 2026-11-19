@@ -33,7 +33,7 @@ A pytest plugin that turns every test run into a self-contained, structured repo
 | 🪜 **Procedures from stepdoc** | Steps written with [stepdoc](https://github.com/guillegil/stepdoc)'s `step()` appear with timing, outcome, actions and checks. |
 | 🔁 **Built-in retries** | `--report-retries=N` re-runs failed tests with separate logs per attempt. |
 | 📎 **Artifacts** | `report_artifacts` fixture for screenshots, CSVs, HTML — embedded as data URIs in the report. |
-| 🔌 **pytest-verifier and pytest-strategies** | Verification cards for every check; the strategy row and seed of each generated test. |
+| 🔌 **pytest-verifier and pytest-strategies** | Verification cards for every check, with the names you give its operands; each test's strategy, the rows it ran and their outcomes. |
 | 📦 **JUnit XML** | Standard CI/CD output, augmented with retry metadata. |
 | ✅ **Typed** | Ships `py.typed`; full IDE autocompletion on every fixture. |
 | 🪶 **Zero deps beyond pytest** | stepdoc, pytest-verifier, pytest-strategies and pandas are all optional; the reporter never imports them. |
@@ -91,6 +91,8 @@ reports/
         ├── pytest.log              # Captured console output
         ├── session.log.json        # Session-scoped logs
         ├── stepdoc.json            # stepdoc's run record (with stepdoc installed)
+        ├── strategies.json         # pytest-strategies 4.3+: each test's strategies
+        ├── strategies.vectors.json # ... and the rows each test ran, with outcomes
         ├── failures/               # Per-test error logs
         └── tests/                  # Per-test structured data
             └── path/to/file.py/test_function/
@@ -117,6 +119,7 @@ Open `reports/01_latest/report.html` to see the dashboard.
 | ini setting | Default | Description |
 |---|---|---|
 | `report_stepdoc` | `true` | With stepdoc installed, make it record the procedures (and save `stepdoc.json` in the run folder) when you pass no `--stepdoc-*` option. `false` leaves stepdoc alone. |
+| `report_strategies` | `true` | With pytest-strategies 4.3+, save its run export (`strategies.json`, `strategies.vectors.json`) in the run folder when you chose no export folder, and show it on the Strategy sub-tab. `false` leaves pytest-strategies alone. |
 
 ---
 
@@ -225,8 +228,9 @@ def test_voltage_sweep(log, verify, psu):
 ```
 
 - Nesting `with step(...)` blocks decides the numbering (`1`, `1.1`, `1.1.1`, …). Each step has its timing, its outcome and the exception that ended it.
+- A switch above the steps chooses the view: **This run** (values, results and outcomes) or **Generic**, the procedure as the test is written, with names where this run's values were (`Verify tb.dev.map.block.reg<channel>.F == <wdata>`) and no results or outcomes. The choice is kept while you move between runs and tests. Checked expressions and operand names are set in monospace in both views; a check's `name=` stays in plain text.
 - Steps run by fixtures go into a **Setup** (`S1`, `S2`, …) or **Teardown** (`T1`, …) section of their own. The Procedure sub-tab shows **Setup**, **Call** and **Teardown** as tabs, each with its worst outcome and step count, and opens on the phase that failed (else on Call).
-- Checks appear in the step that made them: `assert` statements (passing ones need `enable_assertion_pass_hook = true`), `step("…", check=...)`, and every `verify.*` check of pytest-verifier, with its result (`→ got 3.31`). When the expected value is a variable, the line names it and gives this run's value: `Verify 'Readback' == <wdata> (243)`.
+- Checks appear in the step that made them: `assert` statements (passing ones need `enable_assertion_pass_hook = true`), `step("…", check=...)`, and every `verify.*` check of pytest-verifier, with its result (`→ got 3.31`). When the expected value is a variable, the line names it and gives this run's value: `Verify 'Readback' == <wdata> (243)`. A check made with pytest-verifier's `actual_name=` / `expected_name=` reads with those names as the test writes them, and its result names the value as this run has it: `Verify tb.dev.map.block.reg<channel>.F == wdata (243) → got tb.dev.map.block.reg3.F = 240` (see [pytest-verifier](#optional-integration-pytest-verifier)).
 - Text between backticks in a step title is shown in monospace, as in Markdown: `` step("Write into `dut.reg1 = 1`") ``, or `step(f"Write into {fmt.mono(reg.path)}")` with stepdoc's `fmt.mono`.
 - Actions recorded by stepdoc bridges (`stepdoc.record_action(...)`) appear as lines of the step (`dac.code = 12`, `Measure dmm.voltage → 1.65 V`).
 - With `--report-retries`, each attempt has its own procedure.
@@ -316,7 +320,7 @@ Behavior:
 The `report.html` is a single self-contained file with four tabs:
 
 1. **Summary** — pass-rate hero and ratio bar; when anything failed, a **Failures** list with the reason for each failed run and a **Copy rerun command** button; status counters that open the Tests tab filtered to that status; and configurable donut/bar chart groups.
-2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, and **Checks** (for tests with pytest-verifier checks).
+2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, **Checks** (for tests with pytest-verifier checks) and **Strategy** (for tests that use a pytest-strategies strategy).
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
 4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 
@@ -346,6 +350,30 @@ each run's `checks.json`. Composite checks (`guard`, `conditional`,
 pip install "pytest-reporter[verifier]"
 ```
 
+### Operand names
+
+pytest-verifier lets a test say how the operands of a check are spelled when
+the code does not, as after a `getattr`:
+
+```python
+block_reg_f = getattr(tb.dev.map.block, f"reg{channel}").F
+verify.equal(block_reg_f, wdata,
+             actual_name=f"tb.dev.map.block.reg{channel}.F",
+             expected_name="wdata")
+```
+
+The report shows each name where it helps most:
+
+| Where | What you see |
+|---|---|
+| Verification card, failure strip, Failures list | This run's text: `tb.dev.map.block.reg3.F — expected wdata (243), got 240`. A check that also has a `name=` shows the name as its label and this text beside it. |
+| Card body | **Actual name** and **Expected name**, each followed by `written as tb.dev.map.block.reg<channel>.F` when pytest-verifier knows the form with the variable parts. |
+| Procedure tab (with stepdoc) | **Generic** view: the names as the test writes them, `Verify tb.dev.map.block.reg<channel>.F == <wdata>`. **This run** view: with a stepdoc that words checks with operand names, this run's names and values, `Verify tb.dev.map.block.reg3.F == wdata (243) → got 240`; with an earlier stepdoc, `Verify tb.dev.map.block.reg<channel>.F == wdata (243) → got tb.dev.map.block.reg3.F = 240`. A `name=` leads either: `Verify 'Stored word': …`. |
+
+A plain string has no symbolic form, so every view shows the text you gave.
+This needs a pytest-verifier version with `actual_name=` / `expected_name=`;
+with an older one nothing changes.
+
 The reporter reads the checks pytest-verifier puts on each phase report
 (`report.verify_checks`), so it never imports pytest-verifier and the checks of
 every retry attempt are kept with that attempt. It never evaluates checks
@@ -365,6 +393,35 @@ and never imports it.
 pip install "pytest-reporter[strategies]"
 ```
 
+### The run export (pytest-strategies 4.3+)
+
+pytest-strategies 4.3 can write what each test's strategies were and which rows
+ran (`strategies.json` and `strategies.vectors.json`). With `--report-dir` you
+get both without any option:
+
+- **The files are saved in the run folder**, next to `report.html`. If you chose
+  a folder yourself (`--strategy-export=DIR`, a `pytest_strategies_export_dir`
+  hook in a `conftest.py`, or the `strategies_export_dir` ini option), that
+  folder is used and the two files are also copied into the run folder.
+- **A test that uses a strategy has a Strategy sub-tab.** For each strategy it
+  shows where it is defined, the arguments the test passed with `@strategy`,
+  the context fingerprint, and the sample count with where it came from. A
+  strategy with `pin_nsamples=True` is marked **pinned**. Below that: the
+  arguments with their types and what they are drawn from, the constraints,
+  and **every row the test ran** (directed, test, random and exhaustive) with
+  its values and outcome. The row of the run on screen is highlighted, and an
+  outcome opens that run. Directed and test vectors that the strategy defines
+  but this session did not run are listed under the table.
+- **The run's Summary** shows the sample count beside the strategy row, and the
+  **Report tab** has a Strategies section: the pytest-strategies version, the
+  seed, the session's `--nsamples`, and how many tests, strategies and rows the
+  export holds.
+
+Outcomes in the rows table are the report's own, so a row that passed on a
+retry shows as passed. Set `report_strategies = false` in your pytest
+configuration to turn this off. With pytest-strategies older than 4.3 nothing
+changes.
+
 ---
 
 ## Project layout
@@ -378,6 +435,7 @@ src/pytest_reporter/
 ├── _report_builder.py      # Assembles the HTML data model at session end
 ├── _logger.py              # Hierarchical Logger + table()
 ├── _stepdoc.py             # Procedures from stepdoc's steps (optional, via its hooks)
+├── _strategies.py          # pytest-strategies' run export (optional, via its hook and files)
 ├── _collector.py           # Test indexing, run IDs, parametrization, strategy rows
 ├── _phase_capture.py       # setup/call/teardown capture + pytest-verifier checks
 ├── _retry.py               # --report-retries engine

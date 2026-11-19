@@ -251,6 +251,14 @@ function compactTree(rawRoot) {
   return flagSingleFnMerges(collapsed);
 }
 
+// The compacted tree's top-level rows, as [name, node]. When every test is in
+// one file (or one class) the common prefix is that node itself, with the
+// tests on it: it is then the only top-level row.
+function treeTopLevel(compacted) {
+  if (compacted.tests && compacted.tests.length > 0) return [[compacted.name, compacted]];
+  return Object.entries(compacted.children);
+}
+
 // ─── Donut chart ─────────────────────────────────────────────────────
 function donutSVG(counts, size) {
   size = size || 130;
@@ -775,7 +783,7 @@ function renderTests() {
   treeContent.addEventListener('keydown', onTreeKeydown);
   const rawTree = buildTree(DATA.tests);
   const compacted = compactTree(rawTree);
-  Object.entries(compacted.children).forEach(([name, node]) => {
+  treeTopLevel(compacted).forEach(([name, node]) => {
     treeContent.appendChild(renderTreeNode(name, node, 0));
   });
   treePanel.appendChild(treeContent);
@@ -1092,7 +1100,11 @@ function failureReason(run) {
   const eLine = lines.find(l => /^E\s/.test(l));
   if (eLine) return eLine.replace(/^E\s+/, '').trim();
   const check = failedChecks(run)[0];
-  if (check) return (check.name || check.description || 'Check') + (check.detail ? ' — ' + check.detail : '');
+  if (check) {
+    const operand = checkOperand(check);
+    return (check.name || check.description || 'Check') + (operand ? ' (' + operand + ')' : '')
+      + (check.detail ? ' — ' + check.detail : '');
+  }
   const rest = lines.map(l => l.trim()).filter(Boolean);
   return rest.length ? rest[rest.length - 1] : '';
 }
@@ -1121,6 +1133,7 @@ function renderFailureStrip(run, selectSubTab) {
     checks.slice(0, 3).forEach(c => {
       const item = el('li', null,
         el('span', {className:'failure-strip-check-name'}, c.description || c.name || 'Check'));
+      if (checkOperand(c)) item.appendChild(el('span', {className:'check-operand'}, checkOperand(c)));
       if (checkNote(c)) item.appendChild(el('span', {className:'check-note'}, '(' + checkNote(c) + ')'));
       if (c.detail) item.appendChild(el('span', {className:'failure-strip-check-detail'}, c.detail));
       if (c.location) item.appendChild(el('span', {className:'failure-strip-check-loc'}, c.location));
@@ -1327,7 +1340,24 @@ function refreshRunPills(test, panel) {
   }
 }
 
-function showRunDetail(run) {
+// The sub-tabs a run's detail offers, in order.
+function subTabNames(run) {
+  const tabNames = ['Summary','Procedure','Artifacts'];
+  if (run.check_results && run.check_results.length > 0) {
+    tabNames.splice(2, 0, 'Checks');
+  }
+  if (testStrategies(selectedTest).length > 0) {
+    tabNames.splice(tabNames.indexOf('Artifacts'), 0, 'Strategy');
+  }
+  if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
+    tabNames.push('Retries');
+  }
+  return tabNames;
+}
+
+// `openTab` (a sub-tab's name) opens the run on that sub-tab and moves the
+// focus to it: for a control inside the detail, which this call replaces.
+function showRunDetail(run, openTab) {
   selectedRun = run;
   // Keep the header command in sync with the selected run's exact nodeid.
   const cmdCode = document.querySelector('#detail-cmd .detail-cmd-code');
@@ -1349,13 +1379,7 @@ function showRunDetail(run) {
 
   const subTabs = el('div', {className:'sub-tabs', role:'tablist', 'aria-label':'Run details'});
   const subPanelId = 'sub-tab-content';
-  const tabNames = ['Summary','Procedure','Artifacts'];
-  if (run.check_results && run.check_results.length > 0) {
-    tabNames.splice(2, 0, 'Checks');
-  }
-  if (run.retries && run.retry_attempts && run.retry_attempts.length > 0) {
-    tabNames.push('Retries');
-  }
+  const tabNames = subTabNames(run);
   const selectSubTab = (name) => {
     const tabs = Array.from(subTabs.querySelectorAll('.sub-tab-btn'));
     const tab = tabs.find(b => b.textContent === name) || tabs[0];
@@ -1378,7 +1402,13 @@ function showRunDetail(run) {
   const content = el('div', {className:'run-detail-content', id:'sub-tab-content', role:'tabpanel',
     'aria-labelledby': subTabs.querySelector('.sub-tab-btn').id});
   container.appendChild(content);
-  showSubTab('summary', run);
+  if (typeof openTab === 'string' && tabNames.indexOf(openTab) > 0) {
+    selectSubTab(openTab);
+    const tab = subTabs.querySelector('.sub-tab-btn[aria-selected="true"]');
+    if (tab) tab.focus();
+  } else {
+    showSubTab('summary', run);
+  }
 }
 
 function showSubTab(tab, run) {
@@ -1411,6 +1441,8 @@ function showSubTab(tab, run) {
       const row = [st.kind, st.name].filter(Boolean).join(' ');
       addRow('Strategy', [st.strategy, row].filter(Boolean).join(' \u00b7 '));
       if (st.seed != null) addRow('Row seed', String(st.seed));
+      const used = testStrategies(selectedTest).find(u => u.name === st.strategy);
+      if (used && used.nsamples) addRow('Samples', samplesEl(used.nsamples, 'info-value'));
     }
     content.appendChild(grid);
 
@@ -1485,6 +1517,9 @@ function showSubTab(tab, run) {
     } else {
       content.appendChild(renderProcedure(proc, run));
     }
+
+  } else if (tab === 'strategy') {
+    content.appendChild(renderStrategies(selectedTest, run));
 
   } else if (tab === 'checks') {
     const checks = run.check_results || [];
@@ -1669,6 +1704,205 @@ function showSubTab(tab, run) {
   }
 }
 
+
+// ─── pytest-strategies: a test's strategies and the rows it ran ──────
+// From the run export pytest-strategies writes (strategies.vectors.json,
+// 4.3+): each strategy as the test resolved it, and every row with the
+// outcome of the test items that ran it. Text is set via textContent only.
+const STRATEGY_ROWS_SHOWN = 100;
+
+function testStrategies(test) {
+  return test && Array.isArray(test.strategies) ? test.strategies : [];
+}
+
+// A value in pytest-strategies' schema 1 encoding, as Python would show it.
+function strategyValue(v) {
+  if (v === null || v === undefined) return 'None';
+  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'boolean') return v ? 'True' : 'False';
+  if (Array.isArray(v)) return '[' + v.map(strategyValue).join(', ') + ']';
+  if (typeof v === 'object') {
+    if (typeof v.$repr === 'string') return v.$repr;
+    if (typeof v.$enum === 'string') return v.$enum + '.' + v.member;
+    if (typeof v.$float === 'string') return v.$float;
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+// "RNGInteger(min=0, max=255)": an argument's RNG type with its settings
+// (unset and false ones left out), or its fixed value.
+function strategyDrawnFrom(arg) {
+  if (arg.source !== 'rng') return 'value' in arg ? strategyValue(arg.value) : '';
+  const rng = arg.rng;
+  if (!rng || typeof rng !== 'object') return rng == null ? '' : String(rng);
+  const settings = Object.keys(rng)
+    .filter(k => k !== 'type' && rng[k] !== null && rng[k] !== false)
+    .map(k => k + '=' + strategyValue(rng[k]));
+  return (rng.type || 'RNG') + '(' + settings.join(', ') + ')';
+}
+
+// Where a strategy's sample count came from, in words.
+function samplesSource(source) {
+  const text = String(source || '');
+  const tail = text.indexOf('no Series/RNGSequence for auto') >= 0
+    ? '; no Series or RNGSequence to enumerate' : '';
+  if (text.indexOf('Parameter(nsamples=, pinned)') === 0) return 'pinned by the strategy' + tail;
+  if (text.indexOf('Parameter(nsamples=)') === 0) return 'set by the strategy' + tail;
+  if (text.indexOf('--nsamples') === 0) return 'from --nsamples' + tail;
+  if (text.indexOf('default') === 0) return 'the default' + tail;
+  return text;
+}
+
+// "auto [pinned] pinned by the strategy": the effective count and its source.
+function samplesEl(nsamples, className) {
+  const wrap = el('span', {className: (className ? className + ' ' : '') + 'strategy-samples'});
+  wrap.appendChild(el('span', {className:'strategy-samples-value'}, String(nsamples.value)));
+  const source = String(nsamples.source || '');
+  if (source.indexOf('pinned') >= 0) wrap.appendChild(el('span', {className:'strategy-pin'}, 'pinned'));
+  if (source) wrap.appendChild(el('span', {className:'strategy-samples-source', title: source}, samplesSource(source)));
+  return wrap;
+}
+
+function strategyOrigin(origin) {
+  if (!origin || typeof origin !== 'object') return origin ? String(origin) : '';
+  return (origin.file || '') + (origin.line != null ? ':' + origin.line : '');
+}
+
+// The outcome of one test item of a row: the report's own (retries counted)
+// when the item is one of this test's runs, else the one pytest-strategies wrote.
+const STRATEGY_OUTCOME_DOT = {xfailed:'skipped', xpassed:'passed'};
+function strategyItemEl(item, test, current) {
+  const run = test.runs.find(r => r.nodeid === item.nodeid);
+  const outcome = run ? run.outcome : item.outcome;
+  const dot = el('span', {className:'status-dot ' + (STRATEGY_OUTCOME_DOT[outcome] || outcome || 'unknown'),
+    'aria-hidden':'true'});
+  const label = outcome ? (LABELS[outcome] || capitalize(outcome)) : 'Not run';
+  if (!run) return el('span', {className:'strategy-item'}, dot, label);
+  const btn = el('button', {className:'strategy-item strategy-item-link', type:'button',
+    title:'Open run ' + run.run_id}, dot, label, el('span', {className:'strategy-item-run'}, run.run_id));
+  if (run === current) btn.setAttribute('aria-current', 'true');
+  btn.addEventListener('click', () => showRunDetail(run, 'Strategy'));
+  return btn;
+}
+
+function renderStrategyRows(strategy, test, run) {
+  const rows = strategy.rows || [];
+  const names = [];
+  rows.forEach(r => Object.keys(r.values || {}).forEach(k => { if (names.indexOf(k) < 0) names.push(k); }));
+  const wrap = el('div', {className:'strategy-rows-wrap'});
+  const head = el('tr', null, el('th', {scope:'col'}, 'Row'), el('th', {scope:'col'}, 'Kind'));
+  names.forEach(n => head.appendChild(el('th', {scope:'col'}, n)));
+  head.appendChild(el('th', {scope:'col'}, 'Outcome'));
+  const body = el('tbody');
+  rows.forEach((r, idx) => {
+    const items = r.items || [];
+    const isCurrent = items.some(i => i.nodeid === run.nodeid);
+    const tr = el('tr', {className: isCurrent ? 'current' : ''});
+    if (idx >= STRATEGY_ROWS_SHOWN && !isCurrent) tr.hidden = true;
+    tr.appendChild(el('td', null, r.id != null ? String(r.id) : ''));
+    tr.appendChild(el('td', null, el('span', {className:'strategy-kind ' + (r.kind || '')}, r.kind || '')));
+    names.forEach(n => {
+      const has = r.values && Object.prototype.hasOwnProperty.call(r.values, n);
+      const cell = el('td', null, has ? strategyValue(r.values[n]) : '');
+      if ((r.enumerated || []).indexOf(n) >= 0) cell.className = 'enumerated';
+      tr.appendChild(cell);
+    });
+    const outcomes = el('div', {className:'strategy-outcomes'});
+    if (items.length === 0) outcomes.appendChild(el('span', {className:'strategy-item'}, 'Not run'));
+    items.forEach(i => outcomes.appendChild(strategyItemEl(i, test, run)));
+    tr.appendChild(el('td', null, outcomes));
+    body.appendChild(tr);
+  });
+  wrap.appendChild(el('table', {className:'params-table strategy-rows'}, el('thead', null, head), body));
+  const hidden = Array.from(body.children).filter(tr => tr.hidden);
+  if (hidden.length > 0) {
+    const more = el('button', {className:'show-more-btn', type:'button'}, 'Show all ' + rows.length + ' rows');
+    more.addEventListener('click', () => { hidden.forEach(tr => { tr.hidden = false; }); more.remove(); });
+    wrap.appendChild(more);
+  }
+  return wrap;
+}
+
+function renderStrategy(strategy, test, run) {
+  const card = el('section', {className:'strategy-card'});
+  const head = el('div', {className:'strategy-head'},
+    el('h3', {className:'strategy-name'}, strategy.name || 'strategy'));
+  const origin = strategyOrigin(strategy.origin);
+  if (origin) head.appendChild(el('span', {className:'strategy-origin'}, origin));
+  card.appendChild(head);
+
+  const grid = el('div', {className:'info-grid'});
+  const addRow = (label, value) => {
+    grid.appendChild(el('span', {className:'info-label'}, label));
+    grid.appendChild(typeof value === 'string' ? el('span', {className:'info-value strategy-mono'}, value) : value);
+  };
+  if (strategy.nsamples) addRow('Samples', samplesEl(strategy.nsamples, 'info-value'));
+  const given = strategy.arguments || {};
+  if (Object.keys(given).length > 0) {
+    addRow('@strategy', Object.keys(given).map(k => k + '=' + strategyValue(given[k])).join(', '));
+  }
+  if (strategy.context != null) addRow('Context', String(strategy.context));
+  if (DATA.strategies && DATA.strategies.seed != null) addRow('Seed', strategyValue(DATA.strategies.seed));
+  if (grid.children.length) card.appendChild(grid);
+
+  if (strategy.error) {
+    card.appendChild(el('div', {className:'strategy-error'},
+      'pytest-strategies could not describe this strategy: '
+      + (strategy.error.type || 'Error') + ': ' + (strategy.error.message || '')));
+  }
+
+  const param = strategy.parameter || {};
+  const args = param.arguments || [];
+  if (args.length > 0) {
+    card.appendChild(el('h4', {className:'strategy-subhead'}, 'Arguments'));
+    const described = args.some(a => a.description);
+    const head = el('tr', null, el('th', {scope:'col'}, 'Name'), el('th', {scope:'col'}, 'Type'),
+      el('th', {scope:'col'}, 'Drawn from'));
+    if (described) head.appendChild(el('th', {scope:'col'}, 'Description'));
+    card.appendChild(el('div', {className:'strategy-rows-wrap'}, el('table', {className:'params-table'},
+      el('thead', null, head),
+      el('tbody', null, ...args.map(a => {
+        const tr = el('tr', null, el('td', null, a.name || ''), el('td', null, a.python_type || ''),
+          el('td', null, strategyDrawnFrom(a)));
+        if (described) tr.appendChild(el('td', {className:'strategy-prose'}, a.description || ''));
+        return tr;
+      })))));
+  }
+
+  const constraints = param.constraints || [];
+  if (constraints.length > 0) {
+    card.appendChild(el('h4', {className:'strategy-subhead'}, 'Constraints'));
+    const list = el('div', {className:'strategy-chips'});
+    constraints.forEach(c => list.appendChild(el('span',
+      {className:'strategy-chip' + (c.enabled === false ? ' off' : '')},
+      (c.name || '') + (c.enabled === false ? ' (off)' : ''))));
+    card.appendChild(list);
+  }
+
+  const rows = strategy.rows || [];
+  card.appendChild(el('h4', {className:'strategy-subhead'},
+    'Rows this test ran', el('span', {className:'strategy-count'}, String(rows.length))));
+  if (rows.length > 0) card.appendChild(renderStrategyRows(strategy, test, run));
+  else card.appendChild(el('div', {className:'phase-tab-empty'}, 'No row of this strategy was selected'));
+
+  // Directed and test vectors the strategy defines that this session did not run
+  const ran = new Set(rows.map(r => r.id));
+  const idle = (param.directed_vectors || []).concat(param.test_vectors || [])
+    .filter(v => v && !ran.has(v.id)).map(v => v.id || v.name);
+  if (idle.length > 0) {
+    card.appendChild(el('div', {className:'strategy-idle'},
+      'Defined but not run in this session: ', el('span', {className:'strategy-mono'}, idle.join(', '))));
+  }
+  return card;
+}
+
+function renderStrategies(test, run) {
+  const wrap = el('div', {className:'strategy-tab'});
+  testStrategies(test).forEach(s => wrap.appendChild(renderStrategy(s, test, run)));
+  return wrap;
+}
+
 // ─── Render helpers ─────────────────────────────────────────────────
 function renderLogEntries(entries) {
   const container = el('div', {className:'log-entries'});
@@ -1794,10 +2028,13 @@ function _appendCheckInline(row, check) {
 // renderFormattedDesc \u2014 returns a DocumentFragment (segments present) or a
 // plain TextNode (fallback for no-markup descriptions). Uses textContent only;
 // NEVER innerHTML. XSS-safe: segment text is always assigned via textContent.
-function renderFormattedDesc(node) {
-  const segs = node.description_segments;
+function renderFormattedDesc(node, generic) {
+  // The Generic view reads a node's text without this run's values, when
+  // stepdoc gave one; other nodes (steps, loops) read the same in both views.
+  const useGeneric = generic && typeof node.generic === 'string';
+  const segs = useGeneric ? node.generic_segments : node.description_segments;
   if (!segs || segs.length === 0) {
-    return document.createTextNode(node.description || '');
+    return document.createTextNode((useGeneric ? node.generic : node.description) || '');
   }
   const frag = document.createDocumentFragment();
   segs.forEach(function(seg) {
@@ -1818,7 +2055,8 @@ function renderFormattedDesc(node) {
 // nodes render at depth 3). Nodes come from stepdoc: kind 'step', 'action'
 // (a line of the executed report) or 'check' (a Verify line). Files without a
 // kind (pytest-reporter 0.2) are steps. Text is set via textContent only.
-function renderNode(node, depth) {
+function renderNode(node, depth, generic) {
+  if (generic) return renderGenericNode(node, depth);
   const kind = node.kind || 'step';
   const cls = (depth === 1 ? 'procedure-step'
             : depth === 2 ? 'procedure-substep'
@@ -1872,6 +2110,45 @@ function renderNode(node, depth) {
   return row;
 }
 
+// A node of the Generic view: the procedure as the test is written, for any
+// run of it. No outcome, result, duration or failure text: the names stand
+// where this run's values were (reg<channel>.F == <wdata>).
+function renderGenericNode(node, depth) {
+  const kind = node.kind || 'step';
+  const cls = (depth === 1 ? 'procedure-step'
+            : depth === 2 ? 'procedure-substep'
+            : 'procedure-substep procedure-subsubstep') + ' proc-kind-' + kind + ' proc-generic';
+  const row = el('div', {className: cls});
+  const descSpan = el('span', {className: 'procedure-step-desc'});
+  descSpan.appendChild(renderFormattedDesc(node, true));
+  const inlineNote = kind === 'check' && node.note;
+  if (inlineNote) {
+    descSpan.appendChild(el('span', {className: 'procedure-check-note'}, ' (' + node.note + ')'));
+  }
+  const hasKids = node.substeps && node.substeps.length > 0;
+  const numText = (depth === 1 || hasKids) ? node.number + '.' : node.number;
+  const header = el('div', {className: 'procedure-step-header'},
+    el('span', {className: 'procedure-step-number'}, numText), descSpan);
+  if (node.generic_result) {
+    header.appendChild(el('span', {className: 'procedure-result'}, '\u2192 ' + node.generic_result));
+  }
+  row.appendChild(header);
+  if (node.note && !inlineNote) row.appendChild(el('div', {className: 'procedure-note'}, node.note));
+  if (hasKids) {
+    const kids = el('div', {className: 'procedure-substeps'});
+    node.substeps.forEach(function(child) {
+      kids.appendChild(renderGenericNode(child, depth < 3 ? depth + 1 : 3));
+    });
+    row.appendChild(kids);
+  }
+  return row;
+}
+
+// Which view the Procedure tab shows: 'run' (this run's values and results)
+// or 'generic'. Kept while the report is open, across runs and tests.
+let procedureView = 'run';
+const PROC_VIEWS = [['run', 'This run'], ['generic', 'Generic']];
+
 // The procedure in Setup / Call / Teardown tabs, like the phase logs: Setup
 // (S1…) and Teardown (T1…) hold the steps fixtures ran, Call the test's own.
 // Each tab shows the worst outcome and the number of its top-level steps; the
@@ -1889,6 +2166,34 @@ function procOutcome(steps) {
 }
 
 function renderProcedure(proc, run) {
+  const holder = el('div', {className:'procedure-views'});
+  const draw = function(focusView) {
+    holder.textContent = '';
+    const switcher = el('div', {className:'procedure-view-switch', role:'group', 'aria-label':'Procedure view'});
+    PROC_VIEWS.forEach(function(view) {
+      const on = procedureView === view[0];
+      const btn = el('button', {className:'procedure-view-btn' + (on ? ' active' : ''), type:'button',
+        'aria-pressed': on ? 'true' : 'false'}, view[1]);
+      btn.addEventListener('click', function() {
+        if (procedureView === view[0]) return;
+        procedureView = view[0];
+        draw(true);
+      });
+      switcher.appendChild(btn);
+      if (on && focusView) setTimeout(function() { btn.focus(); }, 0);
+    });
+    holder.appendChild(switcher);
+    if (procedureView === 'generic') {
+      holder.appendChild(el('p', {className:'procedure-view-hint'},
+        'The procedure as the test is written, without this run\u2019s values or results.'));
+    }
+    holder.appendChild(renderProcedurePhases(proc, run, procedureView === 'generic'));
+  };
+  draw(false);
+  return holder;
+}
+
+function renderProcedurePhases(proc, run, generic) {
   const steps = proc.steps || [];
   const sectionOf = s => s.section || 'procedure';
   const bySection = {};
@@ -1908,14 +2213,14 @@ function renderProcedure(proc, run) {
     const on = idx === active;
     const tabId = uid('proctab'), panelId = uid('procpanel');
     const label = el('span', {className:'phase-tab-label'});
-    if (outcome) label.appendChild(el('span', {className:'status-dot ' + outcome, 'aria-hidden':'true'}));
+    if (outcome && !generic) label.appendChild(el('span', {className:'status-dot ' + outcome, 'aria-hidden':'true'}));
     label.appendChild(document.createTextNode(pair[1]));
     const count = inSection.length;
     const btn = el('button', {className:'phase-tab-btn' + (on ? ' active' : ''), type:'button',
       role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': on ? 'true' : 'false',
       tabindex: on ? '0' : '-1'},
       label,
-      outcome ? srText(', ' + (LABELS[outcome] || outcome)) : null,
+      outcome && !generic ? srText(', ' + (LABELS[outcome] || outcome)) : null,
       el('span', {className:'phase-meta'}, count + (count === 1 ? ' step' : ' steps'))
     );
     const panel = el('div', {className:'phase-tab-panel procedure-tab-panel' + (on ? ' active' : ''),
@@ -1924,7 +2229,7 @@ function renderProcedure(proc, run) {
       panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No steps in ' + pair[1].toLowerCase()));
     } else {
       const list = el('div', {className:'procedure-list'});
-      inSection.forEach(function(s) { list.appendChild(renderNode(s, 1)); });
+      inSection.forEach(function(s) { list.appendChild(renderNode(s, 1, generic)); });
       panel.appendChild(list);
     }
     btn.addEventListener('click', function() {
@@ -1969,6 +2274,9 @@ function renderCheckResults(checks) {
     header.appendChild(el('span', {className:`status-dot ${status}`}));
     header.appendChild(el('span', {className:'check-name' + (check.auto_name === true ? ' auto-name' : '')},
       checkLabel(check, idx)));
+    if (checkOperand(check)) {
+      header.appendChild(el('span', {className:'check-operand'}, checkOperand(check)));
+    }
     if (check.description) {
       header.appendChild(el('span', {className:'check-desc'}, check.description));
     }
@@ -2003,6 +2311,26 @@ function checkNote(check) {
   return typeof check.note === 'string' ? check.note.trim() : '';
 }
 
+// The checked value's name as this run spells it (pytest-verifier's
+// actual_name=, "tb.dev.map.block.reg3.F"), for a check that has a label of
+// its own. Without name= the name is that text already, so '' is returned.
+function checkOperand(check) {
+  const operand = typeof check.actual_name === 'string' ? check.actual_name.trim() : '';
+  return operand && operand !== check.name ? operand : '';
+}
+
+// An operand name in a card's body: this run's text, then the form with each
+// interpolation as <expression> ("reg<channel>") when pytest-verifier knows it.
+function operandNameEl(check, key) {
+  const value = el('span', {className:'value operand-name'}, String(check[key]));
+  const symbolic = check[key + '_symbolic'];
+  if (typeof symbolic === 'string' && symbolic && symbolic !== check[key]) {
+    value.appendChild(el('span', {className:'operand-symbolic'}, 'written as '));
+    value.appendChild(el('span', {className:'operand-symbolic-text'}, symbolic));
+  }
+  return value;
+}
+
 // "3V3 \u203a Vout": a check's verify.section titles, then its name. A name
 // pytest-verifier took from the source (auto_name: "dat.txfe") reads as is.
 function checkLabel(check, idx) {
@@ -2018,7 +2346,8 @@ function renderCheckDetail(check) {
   const detail = el('div', {className:'check-card-detail'});
   const fields = [
     ['detail', 'Result'], ['note', 'Note'], ['error', 'Error'], ['also_failed', 'Also failed'],
-    ['actual', 'Actual'], ['expected', 'Expected'],
+    ['actual_name', 'Actual name'], ['actual', 'Actual'],
+    ['expected_name', 'Expected name'], ['expected', 'Expected'],
     ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
     ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],
     ['units', 'Units'], ['inclusive', 'Inclusive'],
@@ -2034,6 +2363,10 @@ function renderCheckDetail(check) {
   fields.forEach(([key, label]) => {
     if (check[key] !== undefined && check[key] !== null) {
       detail.appendChild(el('span', {className:'label'}, label));
+      if (key === 'actual_name' || key === 'expected_name') {
+        detail.appendChild(operandNameEl(check, key));
+        return;
+      }
       const v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
       detail.appendChild(el('span', {className:'value'}, v));
     }
@@ -2061,6 +2394,7 @@ function renderGuardCheck(check, expand) {
   const meta = el('div', {className:'guard-check-meta'});
   meta.appendChild(el('span', {className:'check-type-badge'}, check.check_type || ''));
   if (check.name) meta.appendChild(el('span', {className:'guard-check-name'}, check.name));
+  if (checkOperand(check)) meta.appendChild(el('span', {className:'check-operand'}, checkOperand(check)));
   if (check.description) meta.appendChild(el('span', {className:'guard-check-desc'}, check.description));
   box.appendChild(meta);
   if (expand) box.appendChild(renderCheckBody(check));
@@ -2615,6 +2949,36 @@ function renderReport() {
   ));
   metaSection.appendChild(metaBody);
   container.appendChild(metaSection);
+
+  // pytest-strategies run export (4.3+): what the session's strategies were
+  if (DATA.strategies) {
+    const st = DATA.strategies;
+    const stSection = el('div', {className:'report-section'});
+    const stHeader = el('div', {className:'report-section-header'});
+    stHeader.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>';
+    stHeader.appendChild(document.createTextNode(' Strategies'));
+    stSection.appendChild(stHeader);
+    const stBody = el('div', {className:'report-section-body'});
+    const gen = st.generator || {};
+    const count = (n, word) => n + ' ' + word + (n === 1 ? '' : (word === 'strategy' ? '' : 's'));
+    const stRows = [
+      ['Generator', [gen.name, gen.version].filter(Boolean).join(' ')],
+      ['Seed', st.seed != null ? strategyValue(st.seed) : ''],
+      ['Samples', st.nsamples != null ? String(st.nsamples) : ''],
+      ['Coverage', count(st.tests, 'test') + ', '
+        + (st.strategies === 1 ? '1 strategy' : st.strategies + ' strategies') + ', ' + count(st.rows, 'row')],
+      ['Files', (st.files || []).join(', ') + ' (in the run folder)'],
+    ];
+    stRows.forEach(([label, value]) => {
+      if (!value) return;
+      stBody.appendChild(el('div', {className:'report-info-row'},
+        el('span', {className:'report-info-label'}, label),
+        el('span', {className:'report-info-value'}, value)
+      ));
+    });
+    stSection.appendChild(stBody);
+    container.appendChild(stSection);
+  }
 
   // CLI args
   if (DATA.cmdline && DATA.cmdline.length > 0) {

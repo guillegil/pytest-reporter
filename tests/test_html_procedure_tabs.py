@@ -44,7 +44,7 @@ def test_procedure_has_a_tab_per_phase(pytester: Pytester) -> None:
         "const PROC_SECTIONS = [['setup','Setup','setup'], ['procedure','Call','call'], "
         "['teardown','Teardown','teardown']];" in js
     )
-    render = _function(js, "renderProcedure")
+    render = _function(js, "renderProcedurePhases")
     assert "role:'tablist', 'aria-label':'Procedure phases'" in render
     assert "role:'tab'" in render and "role:'tabpanel'" in render
     assert "wireTablist(bar, '.phase-tab-btn'" in render, "arrow keys move between the tabs"
@@ -52,7 +52,7 @@ def test_procedure_has_a_tab_per_phase(pytester: Pytester) -> None:
 
 
 def test_procedure_opens_on_the_failed_phase_else_call(pytester: Pytester) -> None:
-    render = _function(_js(_report_html(pytester)), "renderProcedure")
+    render = _function(_js(_report_html(pytester)), "renderProcedurePhases")
     assert "phaseOfInterest(run)" in render
     assert "p[2] === interest && bySection[p[0]].length > 0" in render
     assert "bySection.procedure.length > 0 ? 1" in render
@@ -61,7 +61,7 @@ def test_procedure_opens_on_the_failed_phase_else_call(pytester: Pytester) -> No
 def test_each_tab_shows_its_worst_outcome_and_step_count(pytester: Pytester) -> None:
     js = _js(_report_html(pytester))
     assert "const PROC_RANK = {error:5, failed:4, unknown:3, passed:2, skipped:1, info:0};" in js
-    render = _function(js, "renderProcedure")
+    render = _function(js, "renderProcedurePhases")
     assert "procOutcome(inSection)" in render
     assert "count + (count === 1 ? ' step' : ' steps')" in render
 
@@ -77,3 +77,15 @@ def test_procedure_panels_are_uncapped_and_all_print(pytester: Pytester) -> None
     assert ".procedure-tab-panel { max-height: none; overflow: visible; }" in html
     assert ".procedure-tabs .phase-tabs-bar { display: none; }" in html
     assert "content: attr(data-phase);" in html
+
+
+def test_procedure_has_a_generic_view(pytester: Pytester) -> None:
+    """A switch above the phase tabs: this run's procedure, or the generic one."""
+    html = _report_html(pytester)
+    js = _js(html)
+    assert "const PROC_VIEWS = [['run', 'This run'], ['generic', 'Generic']];" in js
+    assert "let procedureView = 'run';" in js
+    render = _function(js, "renderProcedure")
+    assert "'aria-pressed': on ? 'true' : 'false'" in render
+    assert "renderProcedurePhases(proc, run, procedureView === 'generic')" in render
+    assert ".procedure-view-switch { display: none; }" in html, "print shows the view on screen"
