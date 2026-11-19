@@ -671,6 +671,7 @@ def test_strategy_sub_tab_is_offered_to_tests_with_strategies() -> None:
         "console.log(JSON.stringify(out));",
         "testStrategies",
         "subTabNames",
+        "customTabs",
     )
     assert got == [
         ["Summary", "Procedure", "Strategy", "Artifacts"],

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Custom HTML tabs in a test's detail. A `conftest.py` adds them for every test with the new
+  `pytest_reporter_test_tabs(item, tabs)` hook, and a test or fixture adds its own with the
+  new `report_tabs` fixture: `tabs.add("Bench log", html)`. The content is HTML as a string, the
+  path of an HTML file, or an object with `_repr_html_()`. The tabs come after the report's own
+  (Summary, Procedure, Checks, Strategy, Artifacts, Retries), each in a sandboxed frame that
+  cannot read or change the report; JavaScript runs only with `scripts=True`. They are saved
+  in the run folder (`tabs/`), per retry attempt. `ReportTabs` is exported for type hints.
 - Checks made with pytest-verifier's `actual_name=` / `expected_name=` show those names.
   Verification cards, the failure strip and the Failures list show this run's text
   (`tb.dev.map.block.reg3.F`); a check that also has a `name=` keeps the name as its label

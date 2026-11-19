@@ -125,7 +125,7 @@ Open `reports/01_latest/report.html` to see the dashboard.
 
 ## Public API
 
-The plugin auto-registers fixtures (no imports needed). The package exports only the logger class, `ReportLogger` (alias `Logger`), for type hints.
+The plugin auto-registers fixtures (no imports needed). The package exports only the logger class, `ReportLogger` (alias `Logger`), and `ReportTabs`, for type hints.
 
 ### Fixtures
 
@@ -134,6 +134,7 @@ The plugin auto-registers fixtures (no imports needed). The package exports only
 | `log` | test | `Logger` | Structured logging during a test. |
 | `session_log` | session | `Logger` | Structured logging from session-scoped fixtures. |
 | `report_artifacts` | test | `pathlib.Path` | Directory to save artifacts (images, HTML, CSV, anything). |
+| `report_tabs` | test | `ReportTabs` | Add [custom HTML tabs](#custom-tabs) to the test's detail. |
 | `report_metadata` | session | `dict` | Mutable `{section: {label: value}}` shown in the Report tab. |
 | `report_seed` | session | `dict` | Set `report_seed["value"]` to pin the RNG seed shown in Run Information. |
 
@@ -143,6 +144,7 @@ Implement these in a `conftest.py` to enrich the report (all optional):
 
 | Hook | Purpose |
 |---|---|
+| `pytest_reporter_test_tabs(item, tabs)` | Add [custom HTML tabs](#custom-tabs) to each test's detail. |
 | `pytest_reporter_metadata()` | Return `{section: {label: value}}` for the Report tab. |
 | `pytest_reporter_seed()` | Return the RNG seed (`int` / `str`) shown in Run Information. |
 | `pytest_reporter_dashboard()` | Configure the Summary chart groups (path, depth, style). |
@@ -283,6 +285,57 @@ Behavior in the report:
 Embeddable types are base64-encoded into the HTML so the report stays portable.
 
 When `--report-retries` is enabled, each retry attempt gets its own `retries/01/artifacts/`, `retries/02/artifacts/`, etc.
+
+---
+
+## Custom tabs
+
+A test's detail can show tabs of your own HTML, in the same row as Summary, Procedure, Checks
+and Artifacts. They always come last, to the right of the report's own tabs, in the order
+they were added.
+
+Add them for every test from a `conftest.py`:
+
+```python
+def pytest_reporter_test_tabs(item, tabs):
+    bench = item.funcargs.get("bench")          # fixtures are still alive here
+    if bench is not None:
+        tabs.add("Bench log", bench.log_html())
+```
+
+The hook runs once per test, after the test body and before its fixtures are torn down. Each
+implementation is called on its own: one that raises (`pytest.skip()` and `pytest.fail()`
+included) becomes a warning, costs only its own tabs and never changes the test's outcome.
+
+A single test (or a fixture) can add its own with the `report_tabs` fixture:
+
+```python
+def test_scope(report_tabs, scope):
+    report_tabs.add("Waveform", scope.capture_html())         # HTML as a string
+    report_tabs.add("Eye diagram", Path("eye.html"))          # an HTML file
+    report_tabs.add("Readings", df.style)                     # anything with _repr_html_()
+    report_tabs.add("Plot", fig.to_html(), scripts=True)      # let its JavaScript run
+```
+
+`add(title, content, *, scripts=False, height=None)`:
+
+| Argument | Meaning |
+|---|---|
+| `title` | The tab's name: at most 40 characters, not the name of one of the report's tabs, and not repeated in the same test (a `ValueError` otherwise). |
+| `content` | A whole HTML document or a fragment. A fragment is shown in the report's font and colors, in light and dark; a whole document is shown as written. |
+| `scripts` | JavaScript in the tab is blocked unless this is `True`. |
+| `height` | The frame's height in pixels. By default the frame is as tall as its content; a page sized from its window (`height: 100vh`) has no height of its own and gets 480 pixels, so give it one. |
+
+Each tab is shown in a sandboxed frame, so its HTML cannot read or change the report, with or
+without scripts. The HTML is embedded in `report.html`, which stays one file; anything the tab
+loads from the network (a charting library from a CDN, say) needs a connection when the report
+is opened, so inline it for a report that works offline.
+
+The tabs are also saved in the run folder as they are added, as `tabs/01_<title>.html` files
+and a `tabs/tabs.json` list, next to the run's `artifacts/`. Each retry attempt has its own,
+shown in its card on the Retries tab. Without `--report-dir` the arguments are still checked
+and nothing is saved. The same goes for tests run in pytest-xdist workers (`-n`), where the
+reporter is not active: their tabs are not saved and the hook is not called.
 
 ---
 
@@ -443,6 +496,7 @@ src/pytest_reporter/
 ├── _json_writer.py         # Phase / parameters / aggregate writers
 ├── _junit_writer.py        # JUnit XML
 ├── _dashboard_config.py    # Summary dashboard group normalization
+├── _tabs.py                # Custom HTML tabs: ReportTabs, reading them back for the report
 ├── _table.py               # DataFrame normalization + HTML artifacts
 ├── _console_capture.py     # pytest.log tee
 ├── _symlinks.py            # 01_latest/ hard-copy refresh

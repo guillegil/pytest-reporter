@@ -7,11 +7,37 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
+    from ._tabs import ReportTabs
     from ._types import DashboardGroupSpec
 
 
 class ReporterSpec:
     """Hookspecs defined by pytest-reporter for external contribution."""
+
+    @pytest.hookspec(firstresult=False)
+    def pytest_reporter_test_tabs(self, item: pytest.Item, tabs: ReportTabs) -> None:
+        """Add custom HTML tabs to a test's detail in the HTML report.
+
+        Called once per test attempt (retries included) with ``--report-dir``,
+        when the test body has ended and before its fixtures are torn down, so
+        ``item.funcargs`` still holds live fixture values. Each tab added with
+        ``tabs.add(title, html)`` is shown after the report's own tabs. Each
+        implementation is called on its own: an exception raised in one
+        (``pytest.skip()`` and ``pytest.fail()`` included) becomes a warning,
+        costs only its own tabs and never changes the test's outcome. Not
+        called in pytest-xdist workers, where the reporter is not active.
+
+        Example (conftest.py)::
+
+            def pytest_reporter_test_tabs(item, tabs):
+                bench = item.funcargs.get("bench")
+                if bench is not None:
+                    tabs.add("Bench log", bench.log_html())
+
+        Args:
+            item: The test.
+            tabs: The attempt's tabs: see :class:`pytest_reporter.ReportTabs`.
+        """
 
     @pytest.hookspec(firstresult=True)
     def pytest_reporter_seed(self) -> int | str | None:

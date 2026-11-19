@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import time
 import warnings
 from collections.abc import Generator
@@ -24,6 +25,7 @@ from ._safety import guard, guard_void
 from ._stepdoc import StepCollector
 from ._strategies import StrategyExport
 from ._symlinks import update_latest_copy
+from ._tabs import ReportTabs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,6 +63,8 @@ class Reporter:
         self._check_results: dict[str, list[dict[str, Any]]] = {}
         # Checks of the attempt running now: nodeid -> list[dict]
         self._attempt_checks: dict[str, list[dict[str, Any]]] = {}
+        # Custom HTML tabs of the attempt running now: nodeid -> ReportTabs
+        self._tabs: dict[str, ReportTabs] = {}
         # Item references for stash access: nodeid -> Item
         self._items: dict[str, Item] = {}
         # Mutable metadata dict populated via report_metadata fixture or hook
@@ -74,6 +78,23 @@ class Reporter:
     def get_current_run_dir(self, nodeid: str) -> Path | None:
         """Get the current write directory for a test (retry-aware)."""
         return self._retry_paths.get(nodeid)
+
+    def tabs_for(self, nodeid: str) -> ReportTabs:
+        """The custom tabs of the attempt of a test that is running now.
+
+        Args:
+            nodeid: The test's node ID.
+
+        Returns:
+            The attempt's ``ReportTabs``; one that saves nothing for a test the
+            reporter does not know.
+        """
+        tabs = self._tabs.get(nodeid)
+        if tabs is None:
+            tabs = ReportTabs()
+            if nodeid in self.collector._run_map:
+                tabs = self._tabs[nodeid] = ReportTabs(self._get_run_dir(nodeid) / "tabs")
+        return tabs
 
     def _get_run_dir(self, nodeid: str) -> Path:
         """Get the write directory for a test, considering retries."""
@@ -107,6 +128,36 @@ class Reporter:
     def pytest_runtest_setup(self, item: Item) -> None:
         """Hook shell: crash-safe wrapper around _do_runtest_setup."""
         guard_void("pytest_runtest_setup", lambda: self._do_runtest_setup(item))
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_teardown(self, item: Item) -> None:
+        """Ask conftests and plugins for the test's custom tabs, fixtures still alive."""
+        guard_void("pytest_reporter_test_tabs", lambda: self._ask_for_tabs(item))
+
+    def _ask_for_tabs(self, item: Item) -> None:
+        """Call each ``pytest_reporter_test_tabs`` implementation on its own.
+
+        One that raises costs only its own tabs, and nothing it raises reaches
+        the test: this runs inside the test's teardown, where even
+        ``pytest.skip()`` would leave the fixtures alive and fail the next test.
+        """
+        tabs = self.tabs_for(item.nodeid)
+        given = {"item": item, "tabs": tabs}
+        hook = item.config.hook.pytest_reporter_test_tabs
+        # get_hookimpls() is in registration order; pluggy calls the last first
+        for impl in reversed(hook.get_hookimpls()):
+            if impl.hookwrapper or getattr(impl, "wrapper", False):
+                continue
+            try:
+                impl.function(**{name: given[name] for name in impl.argnames})
+            except (KeyboardInterrupt, SystemExit, pytest.exit.Exception):
+                raise
+            except BaseException as exc:  # noqa: BLE001 - skip/fail are not Exceptions
+                warnings.warn(
+                    f"pytest-reporter: pytest_reporter_test_tabs of {impl.plugin_name} "
+                    f"failed and was skipped: {type(exc).__name__}: {exc}",
+                    stacklevel=2,
+                )
 
     def pytest_runtest_logreport(self, report: TestReport) -> None:
         """Hook shell: crash-safe wrapper around _do_runtest_logreport."""
@@ -217,6 +268,10 @@ class Reporter:
         # Start a new attempt: its own stepdoc steps and verifier checks
         self.steps.begin(nodeid)
         self._attempt_checks[nodeid] = []
+        self._tabs.pop(nodeid, None)
+        # Another plugin may run the test again (pytest-rerunfailures): the
+        # attempt's folder must not keep the tabs of the run before
+        shutil.rmtree(self._get_run_dir(nodeid) / "tabs", ignore_errors=True)
 
     def _do_runtest_logreport(self, report: TestReport) -> None:
         """Real body of pytest_runtest_logreport."""
