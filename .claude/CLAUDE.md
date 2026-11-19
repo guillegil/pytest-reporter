@@ -322,6 +322,14 @@ node may hold `substeps` of the same shape.
 - A stepdoc that words checks with operand names itself (`Check.operands`, `Check.label`)
   has its `text` and `symbolic_text` shown as they are; `_named_text` / `_named_generic`
   serve earlier stepdocs.
+- A check stepdoc folded from one check per item (pytest-verifier's `all_satisfy`:
+  `Check.each` with `count`, `failed`, `item`, `items`, `values`; its `children` are only
+  the failed items, each with `index`) gets `each` (`_stepdoc._each`: plus `failed_items`
+  and `values_cut`), `result` `12 of 12 passed` / `2 of 12 failed` / `12 items` (not
+  judged), and no `detail` when its failed items are listed. A failed item reads
+  `Verify item [3]: <code>`. JS: `renderEachValues` (a closed `<details>` of every item's
+  value, failed ones marked; positions of a cut list count from the end); the Generic view
+  shows the line without items or values.
 - 0.2 files (no `kind`, optional `description_segments`, `check`) still render.
 - stepdoc records only with one of its options: `_stepdoc.activate()` (from the
   `tryfirst` `pytest_configure`) sets `--stepdoc-record=<run>/stepdoc.json` when the user

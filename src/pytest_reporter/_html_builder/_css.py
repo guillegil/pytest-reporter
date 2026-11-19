@@ -1631,6 +1631,23 @@ kbd {
   white-space: pre-line;
   margin: 2px 0 4px 2.4em;
 }
+.procedure-each { margin: 2px 0 4px 2.4em; font-size: var(--fs-xs); color: var(--c-text2); }
+.procedure-each > summary { cursor: pointer; width: fit-content; padding: 2px 0; }
+.procedure-each > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.procedure-each-values { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 4px 0 2px; }
+.procedure-each-value {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  padding: 1px 6px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  background: var(--c-surface2);
+}
+.procedure-each-value.failed { border-color: var(--c-failed); color: var(--c-failed-ink); font-weight: 600; }
+.procedure-each-index { color: var(--c-text3); }
+.procedure-each-value.failed .procedure-each-index { color: inherit; }
+.procedure-each-gap { color: var(--c-text3); align-self: center; }
 .proc-kind-action .procedure-step-desc { font-family: var(--font-mono); font-size: 0.95em; }
 .status-dot.info { background: var(--c-text3); opacity: 0.5; }
 .status-dot.unknown { background: transparent; border: 1px solid var(--c-text3); }
