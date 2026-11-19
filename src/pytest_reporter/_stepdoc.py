@@ -51,6 +51,7 @@ _TICKS = re.compile(r"`+")
 _TOKEN = re.compile(r"<[^<>\s]+>|\w+(?:\.\w+)*|\s+|.")
 # A check text's parts: ``'<name>': `` (a name given beside the checked
 # expression), then the expression, the operator and the expected side.
+_RADIX_LITERAL = re.compile(r"-?0[xXbBoO][0-9A-Fa-f_]+")
 _OPERATOR = re.compile(r" (?:==|!=|>=|<=|>|<|∈|∉|is not|is) ")
 
 
@@ -367,8 +368,17 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         node["result"] = result
     _add_note(node, check)
     detail = getattr(check, "detail", None)
-    if detail and not (each and each["failed_items"]):
-        # A folded check lists its failed items itself
+    difference = _text(check, "difference")
+    if (
+        detail
+        and not (each and each["failed_items"])
+        # A folded check lists its failed items itself, and a detail that ends
+        # with the difference says nothing the line does not: the expected
+        # value is in the text, the value got and the difference in the result
+        and not (
+            difference and result and difference in result and str(detail).endswith(difference)
+        )
+    ):
         node["detail"] = str(detail)
     children = [
         _check(child, f"{number}.{i}")
@@ -401,11 +411,17 @@ def _each(check: Any) -> dict[str, Any] | None:  # noqa: ANN401
         for i in (getattr(c, "index", None) for c in getattr(check, "children", None) or [])
         if isinstance(i, int) and not isinstance(i, bool)
     ]
+    # The items as their producer renders them (a register in hex), where known
+    texts = getattr(each, "texts", None)
+    texts = list(texts) if isinstance(texts, (list, tuple)) and len(texts) == len(values) else []
     node: dict[str, Any] = {
         "count": count,
         "failed": failed,
         "failed_items": indices,
-        "values": [_show(v) for v in values],
+        "values": [
+            text if isinstance(text, str) and text else _show(v)
+            for v, text in zip(values, texts or [None] * len(values), strict=True)
+        ],
         "values_cut": len(values) < count,
     }
     for key in ("item", "items"):
@@ -641,7 +657,9 @@ def _annotate(symbolic: str, concrete: str) -> str:
     matcher = difflib.SequenceMatcher(None, sym, conc, autojunk=False)
     for op, i1, i2, j1, j2 in matcher.get_opcodes():
         sym_part, conc_part = "".join(sym[i1:i2]), "".join(conc[j1:j2])
-        if op == "equal" or not sym_part.strip():
+        if op == "equal" or not sym_part.strip() or _RADIX_LITERAL.fullmatch(sym_part.strip()):
+            # (a literal in hex or binary is no name: pytest-verifier's bits
+            # check shows the expected value under its mask, 0x00F3 for 0xABF3)
             out.append(conc_part)
         elif not conc_part.strip():
             out.append(sym_part)
@@ -652,10 +670,29 @@ def _annotate(symbolic: str, concrete: str) -> str:
     return "".join(out)
 
 
+def _text(check: Any, key: str) -> str | None:  # noqa: ANN401
+    """A text stepdoc put on a check (``actual_text``, ``difference``), if any."""
+    text = getattr(check, key, None)
+    return text if isinstance(text, str) and text.strip() else None
+
+
 def _check_result(check: Any, actual_name: str | None = None) -> str | None:  # noqa: ANN401
+    """What a check got, as stepdoc's own report says it.
+
+    ``got 240``, or with the value as its producer renders it (stepdoc's
+    ``actual_text``: a register in hex) ``got 0x00F0``. A failed check adds
+    how the value differs when stepdoc knows (``difference``):
+    ``got 0x00F0, bits [1:0] differ: EN [0] is 0b0, expected 0b1``.
+    """
     actual = getattr(check, "actual", None)
-    if actual is not None:
-        return f"got {actual_name} = {_show(actual)}" if actual_name else f"got {_show(actual)}"
+    shown = _text(check, "actual_text")
+    difference = _text(check, "difference") if getattr(check, "passed", None) is False else None
+    if actual is not None or shown is not None:
+        value = shown if shown is not None else _show(actual)
+        result = f"got {actual_name} = {value}" if actual_name else f"got {value}"
+        return f"{result}, {difference}" if difference else result
+    if difference:
+        return difference
     reads = getattr(check, "reads", None) or []
     if len(reads) == 1:
         return f"got {_show(getattr(reads[0], 'value', None))}"

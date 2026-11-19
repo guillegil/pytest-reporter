@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
+    from ._bench import BenchInfo
     from ._tabs import ReportTabs
     from ._types import DashboardGroupSpec
 
@@ -37,6 +38,34 @@ class ReporterSpec:
         Args:
             item: The test.
             tabs: The attempt's tabs: see :class:`pytest_reporter.ReportTabs`.
+        """
+
+    @pytest.hookspec(firstresult=False)
+    def pytest_reporter_bench(self, config: pytest.Config, bench: BenchInfo) -> None:
+        """Record what is on the bench: devices, instruments, other facts.
+
+        Called once, at session start, with ``--report-dir``. It runs on the
+        pytest-xdist controller, where fixtures cannot reach the report, so it
+        is the way to record the bench in a distributed run. Each
+        implementation is called on its own: an exception raised in one
+        becomes a warning (with warnings as errors, a line of the terminal
+        summary) and costs only what it had not recorded yet. Only
+        the plugins and conftest files loaded by then are asked (the ones
+        pytest loads at startup, not a conftest of a folder collected later).
+
+        The ``report_bench`` fixture gives the same object to fixtures and
+        tests.
+
+        Example (conftest.py)::
+
+            def pytest_reporter_bench(config, bench):
+                bench.device("DUT", serial="SN-0042", firmware="2.3.1")
+                bench.instrument("DMM", idn=DMM_IDN, cal_due="2027-03-02")
+                bench.set("Site", "Lab 2")
+
+        Args:
+            config: The pytest config.
+            bench: The session's :class:`pytest_reporter.BenchInfo`.
         """
 
     @pytest.hookspec(firstresult=True)

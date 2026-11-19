@@ -583,6 +583,9 @@ function renderSummary() {
   hero.appendChild(heroBody);
   container.appendChild(hero);
 
+  const benchNotice = renderBenchNotice();
+  if (benchNotice) container.appendChild(benchNotice);
+
   const failures = renderFailuresPanel();
   if (failures) container.appendChild(failures);
 
@@ -1610,6 +1613,9 @@ function showSubTab(tab, run) {
       content.appendChild(table);
     }
 
+    const benchChanges = renderBenchChanges(run.bench_changes);
+    if (benchChanges) content.appendChild(benchChanges);
+
     // Phase logs as horizontal tabs
     const phases = ['setup','call','teardown'];
     const availablePhases = phases.filter(w => run.phases[w]);
@@ -1809,6 +1815,8 @@ function showSubTab(tab, run) {
         card.appendChild(header);
 
         const body = el('div', {className:'retry-card-body'});
+        const attemptBench = renderBenchChanges(attempt.bench_changes, 'Bench changed in this attempt');
+        if (attemptBench) body.appendChild(attemptBench);
         // Phase logs
         const phases = ['setup','call','teardown'];
         const availP = phases.filter(w => attempt.phases?.[w]);
@@ -2221,6 +2229,7 @@ function renderFormattedDesc(node, generic) {
 // (a line of the executed report) or 'check' (a Verify line). Files without a
 // kind (pytest-reporter 0.2) are steps. Text is set via textContent only.
 function renderNode(node, depth, generic) {
+  const PROC_RESULT_INLINE = 64;
   if (generic) return renderGenericNode(node, depth);
   const kind = node.kind || 'step';
   const cls = (depth === 1 ? 'procedure-step'
@@ -2244,7 +2253,10 @@ function renderNode(node, depth, generic) {
     el('span', {className: 'procedure-step-number'}, numText),
     descSpan
   );
-  if (node.result) {
+  // A long result (a register check names the bits and fields that differ)
+  // takes its own line under the text instead of squeezing it.
+  const longResult = typeof node.result === 'string' && node.result.length > PROC_RESULT_INLINE;
+  if (node.result && !longResult) {
     header.appendChild(el('span', {className: 'procedure-result'}, '\u2192 ' + node.result));
   }
   _appendCheckInline(header, node.check);
@@ -2253,6 +2265,9 @@ function renderNode(node, depth, generic) {
       node.duration_seconds.toFixed(2) + 's'));
   }
   row.appendChild(header);
+  if (longResult) {
+    row.appendChild(el('div', {className: 'procedure-result procedure-result-block'}, '\u2192 ' + node.result));
+  }
   if (node.note && !inlineNote) {
     row.appendChild(el('div', {className: 'procedure-note'}, node.note));
   }
@@ -2544,8 +2559,9 @@ function renderCheckDetail(check) {
   const detail = el('div', {className:'check-card-detail'});
   const fields = [
     ['detail', 'Result'], ['note', 'Note'], ['error', 'Error'], ['also_failed', 'Also failed'],
+    ['format_error', 'Format error'],
     ['actual_name', 'Actual name'], ['actual', 'Actual'],
-    ['expected_name', 'Expected name'], ['expected', 'Expected'],
+    ['expected_name', 'Expected name'], ['expected', 'Expected'], ['mask', 'Mask'],
     ['threshold', 'Threshold'], ['low', 'Low'], ['high', 'High'],
     ['abs_tol', 'Abs tolerance'], ['rel_tol', 'Rel tolerance'],
     ['units', 'Units'], ['inclusive', 'Inclusive'],
@@ -2563,13 +2579,251 @@ function renderCheckDetail(check) {
       detail.appendChild(el('span', {className:'label'}, label));
       if (key === 'actual_name' || key === 'expected_name') {
         detail.appendChild(operandNameEl(check, key));
-        return;
+      } else {
+        detail.appendChild(checkValueEl(check, key));
       }
-      const v = typeof check[key] === 'object' ? JSON.stringify(check[key]) : String(check[key]);
-      detail.appendChild(el('span', {className:'value'}, v));
+    }
+    // After the compared values: the same bits, one cell each, and the fields
+    if (key === 'high') {
+      const bits = renderBitView(check);
+      if (bits) detail.appendChild(bits);
     }
   });
   return detail;
+}
+
+// A check value as text. An integer too large for a JavaScript number comes
+// as {"$repr": "18446744073709551615"} and is shown as written.
+function checkValue(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v !== 'object') return String(v);
+  if (typeof v.$repr === 'string') return v.$repr;
+  return JSON.stringify(v, (k, x) => (x && typeof x === 'object' && typeof x.$repr === 'string') ? x.$repr : x);
+}
+
+// The text pytest-verifier rendered for a value of a check that has a format
+// (radix=, width=, or a register object): "0x00F3". '' when it has none.
+function renderedText(check, key) {
+  const rendered = check.rendered;
+  const text = rendered && typeof rendered === 'object' ? rendered[key] : null;
+  return typeof text === 'string' && text ? text : '';
+}
+
+// A value row of a card: the value as the check shows it ("0x00F0"), then
+// the plain number in parentheses when it is another way to read it. The
+// report never formats a number itself: a 64-bit value is exact only as text.
+function checkValueEl(check, key) {
+  const text = renderedText(check, key);
+  if (!text) return el('span', {className:'value'}, checkValue(check[key]));
+  const value = el('span', {className:'value'}, text);
+  const raw = check[key];
+  if (check.radix !== 'dec' && Number.isSafeInteger(raw) && String(raw) !== text) {
+    value.appendChild(el('span', {className:'value-dec'}, '(' + raw + ')'));
+  }
+  return value;
+}
+
+// ─── Registers: the bits of a check, one cell each ───────────────────
+// Read from the text pytest-verifier rendered, digit by digit (BigInt), so
+// every bit of a 64-bit register is right. Negative values have no strip.
+function bitsOf(text) {
+  if (typeof text !== 'string') return null;
+  const digits = text.replace(/_/g, '');
+  if (!/^(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|[0-9]+)$/.test(digits)) return null;
+  try { return BigInt(digits); } catch (e) { return null; }
+}
+
+// An operand of a check as a BigInt, or null: its rendered text, else the
+// number itself when JavaScript holds it exactly.
+function operandBits(check, key) {
+  const fromText = bitsOf(renderedText(check, key));
+  if (fromText !== null) return fromText;
+  const raw = check[key];
+  if (Number.isSafeInteger(raw) && raw >= 0) return BigInt(raw);
+  if (raw && typeof raw === 'object') return bitsOf(raw.$repr);
+  return null;
+}
+
+function bitLength(n) { return n === 0n ? 0 : n.toString(2).length; }
+
+// The record's fields as [{name, msb, lsb}], in the order given.
+function fieldSpans(check) {
+  const fields = check.fields;
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return [];
+  const spans = [];
+  Object.keys(fields).forEach(name => {
+    const span = fields[name];
+    if (!Array.isArray(span) || span.length !== 2) return;
+    const msb = Math.max(span[0], span[1]), lsb = Math.min(span[0], span[1]);
+    if (!Number.isInteger(msb) || !Number.isInteger(lsb) || lsb < 0) return;
+    spans.push({name: name, msb: msb, lsb: lsb});
+  });
+  return spans;
+}
+
+// What the bit strip shows: null for a check without one (not a register
+// check, an operand that is not a non-negative integer, more than 64 bits).
+// Cells run from the most significant bit. A bit outside the mask of a bits
+// check is not compared.
+function bitStripModel(check) {
+  const BIT_STRIP_MAX = 64;
+  if (!check || (check.check_type !== 'bits' && !check.bit_diff)) return null;
+  const actual = operandBits(check, 'actual'), expected = operandBits(check, 'expected');
+  if (actual === null || expected === null) return null;
+  const masked = check.mask !== undefined && check.mask !== null;
+  const mask = masked ? operandBits(check, 'mask') : null;
+  if (masked && mask === null) return null;
+  const given = Number.isInteger(check.width) && check.width > 0 ? check.width : 0;
+  let need = Math.max(bitLength(actual), bitLength(expected), masked ? bitLength(mask) : 0, 1);
+  fieldSpans(check).forEach(f => { need = Math.max(need, f.msb + 1); });
+  // Without a width, whole nibbles
+  const width = given ? Math.max(given, need) : Math.ceil(need / 4) * 4;
+  if (width > BIT_STRIP_MAX) return null;
+  const cells = [];
+  for (let bit = width - 1; bit >= 0; bit--) {
+    const at = BigInt(bit);
+    const a = (actual >> at) & 1n, e = (expected >> at) & 1n;
+    const compared = !masked || ((mask >> at) & 1n) === 1n;
+    cells.push({bit: bit, actual: a === 1n ? '1' : '0', expected: e === 1n ? '1' : '0',
+      compared: compared, differs: compared && a !== e});
+  }
+  const diff = check.bit_diff;
+  // outside: some bit of the strip is not under the mask (a mask of every bit
+  // dims nothing, and needs no word about it)
+  return {width: width, cells: cells, masked: masked, mask: renderedText(check, 'mask'),
+    outside: cells.some(c => !c.compared),
+    differs: cells.some(c => c.differs),
+    text: diff && typeof diff.text === 'string' ? diff.text : ''};
+}
+
+// A field's value as pytest-verifier writes it: binary up to four bits
+// ("0b001"), hex above ("0x00F3", in groups of four digits).
+function fieldText(value, bits) {
+  if (bits <= 4) return '0b' + value.toString(2).padStart(bits, '0');
+  const digits = value.toString(16).toUpperCase().padStart(Math.ceil(bits / 4), '0');
+  return '0x' + (digits.length > 4 ? digits.replace(/\B(?=(?:.{4})+$)/g, '_') : digits);
+}
+
+// The rows of the fields table: [{name, bits, actual, expected, differs}].
+// A field differs when a compared bit inside it does.
+function fieldRows(check) {
+  const spans = fieldSpans(check);
+  if (spans.length === 0) return [];
+  const actual = operandBits(check, 'actual'), expected = operandBits(check, 'expected');
+  const masked = check.mask !== undefined && check.mask !== null;
+  const mask = masked ? operandBits(check, 'mask') : null;
+  const known = {};
+  const diff = check.bit_diff && Array.isArray(check.bit_diff.fields) ? check.bit_diff.fields : [];
+  diff.forEach(f => { if (f && typeof f.name === 'string') known[f.name] = f; });
+  return spans.map(f => {
+    const bits = f.msb - f.lsb + 1;
+    const cut = v => (v >> BigInt(f.lsb)) & ((1n << BigInt(bits)) - 1n);
+    const row = {name: f.name, bits: f.msb === f.lsb ? '[' + f.msb + ']' : '[' + f.msb + ':' + f.lsb + ']',
+      actual: actual === null ? '' : fieldText(cut(actual), bits),
+      expected: expected === null ? '' : fieldText(cut(expected), bits),
+      differs: !!known[f.name]};
+    if (actual !== null && expected !== null && (!masked || mask !== null)) {
+      const under = masked ? cut(mask) : (1n << BigInt(bits)) - 1n;
+      row.differs = ((cut(actual) ^ cut(expected)) & under) !== 0n;
+    } else if (known[f.name]) {
+      row.actual = row.actual || String(known[f.name].actual || '');
+      row.expected = row.expected || String(known[f.name].expected || '');
+    }
+    return row;
+  });
+}
+
+// The strip: one column per bit, most significant first, the expected row
+// above the actual one; a register wider than 32 bits takes a table per 32
+// bits, as a datasheet draws it. Differing cells are marked by weight and a
+// frame as well as colour; bits outside the mask are dimmed. The caption says
+// the same in words (pytest-verifier's "bits [1:0] differ").
+function renderBitStrip(check) {
+  const BIT_STRIP_ROW = 32;
+  const model = bitStripModel(check);
+  if (!model) return null;
+  const top = model.width - 1;
+  let words = 'expected above actual.';
+  if (model.text) words += ' ' + model.text.charAt(0).toUpperCase() + model.text.slice(1) + '.';
+  else if (!model.differs) words += ' No compared bit differs.';
+  if (model.outside) words += ' Bits outside the mask' + (model.mask ? ' ' + model.mask : '') + ' are not compared.';
+  const tables = el('div', {className:'bit-tables'});
+  const labels = el('div', {className:'bit-strip-labels', 'aria-hidden':'true'});
+  // Chunks end on a multiple of 32, so the columns of two rows line up
+  for (let start = 0; start < model.cells.length;) {
+    const high = model.cells[start].bit;
+    const size = high % BIT_STRIP_ROW + 1;
+    const cells = model.cells.slice(start, start + size);
+    const low = cells[cells.length - 1].bit;
+    const cellClass = c => ((c.bit % 4 === 3 && c.bit !== high ? 'nib' : '')
+      + (c.compared ? '' : ' masked') + (c.differs ? ' differs' : '')).trim();
+    const row = (label, cls, text) => el('tr', {className: cls},
+      el('th', {scope:'row', className:'sr-only'}, label),
+      cells.map(c => cls === 'bit-index'
+        ? el('th', {scope:'col', className: cellClass(c)}, text(c))
+        : el('td', {className: cellClass(c)}, el('span', {className:'bit'}, text(c)))));
+    tables.appendChild(el('table', {className:'bit-table',
+      'aria-label':'Bits ' + high + ' to ' + low + ', ' + (start === 0 ? words : 'continued.')},
+      el('thead', null, row('Bit', 'bit-index', c => String(c.bit))),
+      el('tbody', null,
+        row('Expected', 'bit-expected', c => c.expected),
+        row('Actual', 'bit-actual', c => c.actual))));
+    labels.appendChild(el('div', {className:'bit-labels'},
+      el('span', {className:'bit-label-index'}, 'Bit'), el('span', null, 'Expected'), el('span', null, 'Actual')));
+    start += size;
+  }
+  const scroller = el('div', {className:'bit-strip-scroll', role:'group', tabindex:'0',
+    'aria-label':'Bits ' + top + ' to 0'}, tables);
+  const strip = el('div', {className:'bit-strip'}, el('div', {className:'bit-strip-body'}, labels, scroller));
+  // Where the strip is wider than its card (a phone), start at the first
+  // differing bit instead of the most significant one.
+  if (model.differs && typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      const cell = scroller.querySelector('td.differs');
+      if (cell && scroller.scrollWidth > scroller.clientWidth) {
+        scroller.scrollLeft = cell.offsetLeft - (scroller.clientWidth - cell.offsetWidth) / 2;
+      }
+    });
+  }
+  const key = el('div', {className:'bit-strip-key'});
+  if (model.differs) key.appendChild(el('span', {className:'bit-key'},
+    el('span', {className:'bit-key-swatch differs', 'aria-hidden':'true'}, '1'), 'differs from expected'));
+  if (model.outside) key.appendChild(el('span', {className:'bit-key'},
+    el('span', {className:'bit-key-swatch masked', 'aria-hidden':'true'}, '1'),
+    'outside the mask, not compared'));
+  if (key.children.length) strip.appendChild(key);
+  return strip;
+}
+
+// The fields of a register check as a table: name, bits, actual, expected.
+function renderFieldsTable(check) {
+  const BIT_FIELDS_SHOWN = 64;
+  const rows = fieldRows(check);
+  if (rows.length === 0) return null;
+  const table = el('table', {className:'params-table bit-fields'},
+    el('thead', null, el('tr', null, el('th', {scope:'col'}, 'Field'), el('th', {scope:'col'}, 'Bits'),
+      el('th', {scope:'col'}, 'Actual'), el('th', {scope:'col'}, 'Expected'))),
+    el('tbody', null, rows.slice(0, BIT_FIELDS_SHOWN).map(r => el('tr', {className: r.differs ? 'differs' : ''},
+      el('th', {scope:'row'}, r.name), el('td', null, r.bits),
+      el('td', null, r.actual || '\u2014', r.differs ? el('span', {className:'bit-field-flag'}, 'differs') : null),
+      el('td', null, r.expected || '\u2014')))));
+  // On a phone the table is wider than the card: its scroller can be reached
+  // from the keyboard and has a name, as the strip's has
+  const wrap = el('div', {className:'bit-fields-wrap', role:'group', tabindex:'0',
+    'aria-label':'Fields: actual and expected'}, table);
+  if (rows.length > BIT_FIELDS_SHOWN) {
+    wrap.appendChild(el('div', {className:'bit-fields-more'},
+      '+' + (rows.length - BIT_FIELDS_SHOWN) + ' more fields in checks.json'));
+  }
+  return wrap;
+}
+
+// Strip and fields of a register check, as one full-width block of the
+// card's grid; null for every other check.
+function renderBitView(check) {
+  const strip = renderBitStrip(check), fields = renderFieldsTable(check);
+  if (!strip && !fields) return null;
+  return el('div', {className:'bit-view'}, strip, fields);
 }
 
 // Dispatch a check descriptor to its body renderer (composite chain or leaf grid).
@@ -2641,7 +2895,7 @@ function renderConditionalBody(check) {
   const wrap = el('div', {className:'guard-body'});
   wrap.appendChild(el('div', {className:'guard-switch'},
     el('span', {className:'guard-kw'}, 'switch'),
-    el('span', {className:'guard-switch-val'}, String(check.switch_value))));
+    el('span', {className:'guard-switch-val'}, checkValue(check.switch_value))));
   const cases = check.cases || {};
   const matched = check.matched_case;  // str | null
   Object.keys(cases).forEach(key => {
@@ -3178,6 +3432,10 @@ function renderReport() {
     container.appendChild(stSection);
   }
 
+  // Bench provenance: devices, instruments, the setup
+  const benchSection = renderBenchSection();
+  if (benchSection) container.appendChild(benchSection);
+
   // CLI args
   if (DATA.cmdline && DATA.cmdline.length > 0) {
     const cmdSection = el('div', {className:'report-section'});
@@ -3249,6 +3507,216 @@ function renderReport() {
   container.appendChild(logSection);
 
   panel.appendChild(container);
+}
+
+// ─── Bench provenance ────────────────────────────────────────────────
+// DATA.bench: what report_bench and pytest_reporter_bench recorded. Every
+// text is set via textContent: an instrument's *IDN? reply is untrusted.
+function benchValue(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  if (typeof v === 'object') return typeof v.$repr === 'string' ? v.$repr : JSON.stringify(v);
+  return String(v);
+}
+
+// "cal_due" -> "Cal due": a key a conftest chose, as a column title.
+function benchKeyLabel(key) {
+  const words = String(key).replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function overdueInstruments() {
+  const bench = DATA.bench;
+  return bench && Array.isArray(bench.instruments) ? bench.instruments.filter(i => i && i.overdue === true) : [];
+}
+
+// The columns of a devices or instruments table: the known keys that some
+// row has, then every other key in the order first seen. An instrument's raw
+// *IDN? reply has a column only when a reply could not be split into its parts.
+function benchColumns(rows, known, skip) {
+  const has = key => rows.some(r => r[key] !== undefined && r[key] !== null && r[key] !== '');
+  const cols = known.filter(([key]) => has(key));
+  const taken = {name: true};
+  known.forEach(([key]) => { taken[key] = true; });
+  (skip || []).forEach(key => { taken[key] = true; });
+  rows.forEach(r => Object.keys(r).forEach(key => {
+    if (!taken[key]) { taken[key] = true; cols.push([key, benchKeyLabel(key)]); }
+  }));
+  return cols;
+}
+
+// How a column's cells break: the calibration dates never do; a column that
+// holds long text (an *IDN? reply, a firmware string without a space) wraps
+// inside a bounded cell, so that it cannot push the dates out of view.
+function benchCellClass(key, rows) {
+  if (key === 'calibrated' || key === 'cal_due') return 'bench-date';
+  if (key === 'model') return 'bench-wrap';
+  return rows.some(r => {
+    const text = benchValue(r[key]);
+    return text.length > 28 || /\S{21,}/.test(text);
+  }) ? 'bench-wrap' : '';
+}
+
+function renderBenchTable(rows, known, skip) {
+  const cols = benchColumns(rows, known, skip);
+  const classes = {};
+  cols.forEach(([key]) => { classes[key] = benchCellClass(key, rows); });
+  const table = el('table', {className:'params-table bench-table'},
+    el('thead', null, el('tr', null, el('th', {scope:'col'}, 'Name'),
+      cols.map(([, label]) => el('th', {scope:'col'}, label)))),
+    el('tbody', null, rows.map(r => el('tr', {className: r.overdue === true ? 'overdue' : ''},
+      el('th', {scope:'row', className: benchCellClass('name', rows)}, benchValue(r.name)),
+      cols.map(([key, label]) => {
+        // data-label: on a phone each row is a block of "label  value" lines
+        const cell = el('td', {className: classes[key], 'data-label': label},
+          el('span', {className:'bench-cell'}, benchValue(r[key]) || '\u2014'));
+        if (key === 'cal_due' && r.overdue === true) {
+          cell.firstChild.appendChild(el('span', {className:'bench-badge overdue'}, 'overdue'));
+        }
+        return cell;
+      })))));
+  return el('div', {className:'bench-table-wrap'}, table);
+}
+
+// "DUT serial", "Environment / Ambient": what a change changed.
+function benchChangeWhat(change) {
+  return change.kind === 'section' ? benchValue(change.name) + ' / ' + benchValue(change.label)
+    : benchValue(change.name) + ' ' + benchValue(change.label);
+}
+
+// One change: what, old value, new value, and when (UTC). `where` adds the
+// test that made it, as a button that opens the test.
+function benchChangeEl(change, where) {
+  const row = el('li', {className:'bench-change'},
+    el('span', {className:'bench-change-what'}, benchChangeWhat(change)),
+    el('span', {className:'bench-change-values'},
+      el('span', {className:'bench-change-old'}, benchValue(change.old)),
+      el('span', {className:'bench-change-arrow', 'aria-hidden':'true'}, '\u2192'),
+      srText(' changed to '),
+      el('span', {className:'bench-change-new'}, benchValue(change.new))));
+  const at = typeof change.at === 'string' ? change.at.slice(11, 19) : '';
+  if (where) {
+    const retry = change.attempt ? ', retry ' + change.attempt : '';
+    if (change.nodeid) {
+      const open = el('button', {className:'bench-change-test', type:'button', title:'Open this test'},
+        String(change.nodeid) + retry);
+      open.addEventListener('click', () => openBenchTest(change.nodeid));
+      row.appendChild(open);
+    } else {
+      row.appendChild(el('span', {className:'bench-change-test none'}, 'between tests'));
+    }
+  }
+  if (at) row.appendChild(el('span', {className:'bench-change-at'}, at + ' UTC'));
+  return row;
+}
+
+function openBenchTest(nodeid) {
+  for (const test of DATA.tests) {
+    const run = test.runs.find(r => r.nodeid === nodeid);
+    if (run) { openRunInTests(test, run); return; }
+  }
+}
+
+// "Bench changed in this test": the changes one run (or one retry attempt)
+// made to the bench. null when it made none.
+function renderBenchChanges(changes, title) {
+  if (!Array.isArray(changes) || changes.length === 0) return null;
+  const headId = uid('benchchanges');
+  return el('section', {className:'bench-changes', 'aria-labelledby':headId},
+    el('h4', {className:'bench-changes-title', id:headId}, title || 'Bench changed in this test'),
+    el('ul', {className:'bench-change-list'}, changes.map(c => benchChangeEl(c, false))));
+}
+
+// The Report tab's Bench section: devices, instruments with their calibration
+// dates, the other rows by section, then the change history (closed).
+function renderBenchSection() {
+  const BENCH_DEVICE_KEYS = [['serial', 'Serial'], ['firmware', 'Firmware'], ['hardware', 'Hardware']];
+  // Calibration before firmware: on a narrow page the dates stay in view.
+  const BENCH_INSTRUMENT_KEYS = [['model', 'Model'], ['serial', 'Serial'],
+    ['calibrated', 'Calibrated'], ['cal_due', 'Cal due'], ['firmware', 'Firmware']];
+  const bench = DATA.bench;
+  if (!bench) return null;
+  const section = el('div', {className:'report-section', id:'bench-section', tabindex:'-1'});
+  const header = el('div', {className:'report-section-header'});
+  header.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M7 21h10M12 17v4M7 10h2M12 10h5"/></svg>';
+  header.appendChild(document.createTextNode(' Bench'));
+  section.appendChild(header);
+  const body = el('div', {className:'report-section-body bench-body'});
+  const group = (title, content) => {
+    body.appendChild(el('div', {className:'bench-group'}, el('h3', {className:'bench-group-title'}, title), content));
+  };
+  const devices = Array.isArray(bench.devices) ? bench.devices : [];
+  const instruments = Array.isArray(bench.instruments) ? bench.instruments : [];
+  if (devices.length) group('Devices', renderBenchTable(devices, BENCH_DEVICE_KEYS));
+  if (instruments.length) {
+    const split = instruments.every(i => !i.idn || i.manufacturer || i.model);
+    // One column for the maker and the model: "Keysight Technologies 34465A"
+    const rows = instruments.map(i => Object.assign({}, i,
+      {model: [i.manufacturer, i.model].map(benchValue).filter(Boolean).join(' ')}));
+    group('Instruments', renderBenchTable(rows,
+      split ? BENCH_INSTRUMENT_KEYS : BENCH_INSTRUMENT_KEYS.concat([['idn', '*IDN?']]),
+      split ? ['idn', 'overdue', 'manufacturer'] : ['overdue', 'manufacturer']));
+  }
+  const sections = bench.sections && typeof bench.sections === 'object' ? bench.sections : {};
+  Object.keys(sections).forEach(name => {
+    const rows = sections[name] || {};
+    const list = el('div', {className:'bench-rows'});
+    Object.keys(rows).forEach(label => {
+      list.appendChild(el('div', {className:'report-info-row'},
+        el('span', {className:'report-info-label'}, label),
+        el('span', {className:'report-info-value'}, benchValue(rows[label]))));
+    });
+    if (list.children.length) group(name, list);
+  });
+  const changes = Array.isArray(bench.changes) ? bench.changes : [];
+  if (changes.length) {
+    body.appendChild(el('details', {className:'bench-history'},
+      el('summary', null, 'Change history (' + changes.length + ')'),
+      el('ul', {className:'bench-change-list'}, changes.map(c => benchChangeEl(c, true)))));
+  }
+  section.appendChild(body);
+  return section;
+}
+
+// Summary tab: a quiet line when an instrument's calibration was due before
+// the run. Not a failure: the report's warning colours, and a way to the facts.
+function renderBenchNotice() {
+  const late = overdueInstruments();
+  if (late.length === 0) return null;
+  const names = late.slice(0, 3).map(i => benchValue(i.name) + ' (due ' + benchValue(i.cal_due) + ')').join(', ')
+    + (late.length > 3 ? ' and ' + (late.length - 3) + ' more' : '');
+  const notice = el('div', {className:'bench-notice', role:'note'});
+  const icon = el('span', {className:'bench-notice-icon', 'aria-hidden':'true'});
+  icon.innerHTML = '<svg focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>';
+  notice.appendChild(icon);
+  notice.appendChild(el('span', {className:'bench-notice-text'},
+    el('strong', null, 'Calibration overdue'), ' ' + names));
+  const open = el('button', {className:'bench-notice-link', type:'button'}, 'Bench details');
+  open.addEventListener('click', showBenchSection);
+  notice.appendChild(open);
+  return notice;
+}
+
+// How much of the top of the page the sticky header and tab bar cover.
+function stickyTop() {
+  if (typeof document.querySelectorAll !== 'function' || typeof getComputedStyle !== 'function') return 0;
+  let covered = 0;
+  document.querySelectorAll('.header, .tabs').forEach(bar => {
+    const style = getComputedStyle(bar);
+    if (style.position !== 'sticky' && style.position !== 'fixed') return;
+    covered = Math.max(covered, (parseFloat(style.top) || 0) + bar.offsetHeight);
+  });
+  return covered;
+}
+
+function showBenchSection() {
+  switchTab('report');
+  const section = document.getElementById('bench-section');
+  if (!section) return;
+  // Below the sticky bars, not under them
+  if (section.style) section.style.scrollMarginTop = (stickyTop() + 12) + 'px';
+  section.scrollIntoView({block:'start'});
+  section.focus({preventScroll:true});
 }
 
 // ─── Tab switching ───────────────────────────────────────────────────

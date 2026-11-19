@@ -34,7 +34,8 @@ A pytest plugin that turns every test run into a self-contained, structured repo
 | 🔁 **Built-in retries** | `--report-retries=N` re-runs failed tests with separate logs per attempt. |
 | 📎 **Artifacts** | `report_artifacts` fixture for screenshots, CSVs, HTML — embedded as data URIs in the report. |
 | 🔌 **pytest-verifier and pytest-strategies** | Verification cards for every check, with the names you give its operands; each test's strategy, the rows it ran and their outcomes. |
-| 📦 **JUnit XML** | Standard CI/CD output, augmented with retry metadata. |
+| 🧰 **Bench provenance** | `report_bench` records the devices under test, the instruments with their calibration dates and the rest of the setup: in `bench.json`, `junit.xml` and the report. |
+| 📦 **JUnit XML** | Standard CI/CD output, augmented with retry metadata and the bench. |
 | ✅ **Typed** | Ships `py.typed`; full IDE autocompletion on every fixture. |
 | 🪶 **Zero deps beyond pytest** | stepdoc, pytest-verifier, pytest-strategies and pandas are all optional; the reporter never imports them. |
 
@@ -88,6 +89,7 @@ reports/
     └── 2026_04_27_18_30_45/
         ├── report.html             # Open in any browser
         ├── junit.xml               # CI/CD
+        ├── bench.json              # What was on the bench (when something was recorded)
         ├── pytest.log              # Captured console output
         ├── session.log.json        # Session-scoped logs
         ├── stepdoc.json            # stepdoc's run record (with stepdoc installed)
@@ -125,7 +127,7 @@ Open `reports/01_latest/report.html` to see the dashboard.
 
 ## Public API
 
-The plugin auto-registers fixtures (no imports needed). The package exports only the logger class, `ReportLogger` (alias `Logger`), and `ReportTabs`, for type hints.
+The plugin auto-registers fixtures (no imports needed). The package exports only the logger class, `ReportLogger` (alias `Logger`), `ReportTabs` and `BenchInfo`, for type hints.
 
 ### Fixtures
 
@@ -135,6 +137,7 @@ The plugin auto-registers fixtures (no imports needed). The package exports only
 | `session_log` | session | `Logger` | Structured logging from session-scoped fixtures. |
 | `report_artifacts` | test | `pathlib.Path` | Directory to save artifacts (images, HTML, CSV, anything). |
 | `report_tabs` | test | `ReportTabs` | Add [custom HTML tabs](#custom-tabs) to the test's detail. |
+| `report_bench` | session | `BenchInfo` | Record [what is on the bench](#bench-provenance): devices, instruments, the setup. |
 | `report_metadata` | session | `dict` | Mutable `{section: {label: value}}` shown in the Report tab. |
 | `report_seed` | session | `dict` | Set `report_seed["value"]` to pin the RNG seed shown in Run Information. |
 
@@ -145,6 +148,7 @@ Implement these in a `conftest.py` to enrich the report (all optional):
 | Hook | Purpose |
 |---|---|
 | `pytest_reporter_test_tabs(item, tabs)` | Add [custom HTML tabs](#custom-tabs) to each test's detail. |
+| `pytest_reporter_bench(config, bench)` | Record [what is on the bench](#bench-provenance) at session start. |
 | `pytest_reporter_metadata()` | Return `{section: {label: value}}` for the Report tab. |
 | `pytest_reporter_seed()` | Return the RNG seed (`int` / `str`) shown in Run Information. |
 | `pytest_reporter_dashboard()` | Configure the Summary chart groups (path, depth, style). |
@@ -340,6 +344,117 @@ reporter is not active: their tabs are not saved and the hook is not called.
 
 ---
 
+## Bench provenance
+
+A result is worth as much as the record of what produced it: which board, which firmware,
+which instruments, and whether they were in calibration. `report_bench` records that once per
+session.
+
+```python
+# conftest.py
+import pytest
+
+@pytest.fixture(scope="session", autouse=True)
+def bench(report_bench, dut, dmm):
+    report_bench.device("DUT", serial=dut.serial, firmware=dut.fw_version, hardware="rev C")
+    report_bench.instrument("DMM", idn=dmm.query("*IDN?"),
+                            calibrated="2026-03-02", cal_due="2027-03-02")
+    report_bench.set("Fixture board", "FB-12")
+    report_bench.set("Ambient", "23.5 °C", section="Environment")
+```
+
+The same without fixtures, as a hook called once at session start:
+
+```python
+def pytest_reporter_bench(config, bench):
+    bench.set("Site", "Lab 2")
+```
+
+| Call | Records |
+|---|---|
+| `device(name, *, serial=None, firmware=None, hardware=None, **more)` | A device under test. Any other fact goes in by name: `lot="2231"`. |
+| `instrument(name, *, idn=None, serial=None, calibrated=None, cal_due=None, **more)` | An instrument. `idn` is its `*IDN?` reply, kept as given; a reply of four comma-separated parts also fills `manufacturer`, `model`, `serial` and `firmware`, except the ones you gave by name, in this call or an earlier one for the instrument. `overdue` is the report's own key and cannot be given. |
+| `set(label, value, *, section="Bench")` | One row under a heading. |
+| `update({label: value, ...}, *, section="Bench")` | Several rows at once. |
+
+Values are `str`, `int`, `float`, `bool`, or a `datetime.date` / `datetime` (stored as ISO
+text). A member of a `str` or `int` enum is stored as its plain value, the same in every
+output. `None` stores nothing and leaves an earlier value alone. `calibrated` and `cal_due`
+take a date, a `datetime` or `YYYY-MM-DD` text. A wrong call (a blank name or label, a value of
+another type, a date that is not one) raises `TypeError` or `ValueError` where it is made,
+also without `--report-dir`.
+
+**Where it goes**
+
+- `bench.json` in the run folder (and in `01_latest/`): `sections`, `devices`, `instruments`
+  (each with `overdue`), `changes`, `run_date`, and `metadata`, which holds what
+  `report_metadata` and `pytest_reporter_metadata()` gave. It is written before `junit.xml`,
+  also when the HTML report cannot be built, and only when there is something to write.
+- `junit.xml`: properties of the test suite, named `bench.<section>.<label>`,
+  `bench.device.<name>.<key>`, `bench.instrument.<name>.<key>` and
+  `metadata.<section>.<label>`.
+- The **Report** tab: a **Bench** section with the devices, the instruments and their
+  calibration dates, the other rows by section, and a closed change history.
+
+```xml
+<testsuite name="pytest" tests="12" ...>
+  <properties>
+    <property name="bench.device.DUT.serial" value="SN-0042"/>
+    <property name="bench.instrument.DMM.cal_due" value="2027-03-02"/>
+    <property name="bench.Environment.Ambient" value="23.5 °C"/>
+  </properties>
+  <testcase .../>
+</testsuite>
+```
+
+**Calibration.** An instrument whose `cal_due` is before the day of the run (the local date
+when the session started, `run_date` in `bench.json`) is overdue. The Bench section marks it,
+the Summary tab shows a notice that leads there, and pytest prints one warning per instrument
+when the session ends:
+
+```
+UserWarning: pytest-reporter: instrument 'DMM' calibration was due 2026-03-02
+```
+
+It never changes a test's outcome or the exit code: the reporter observes, it does not judge.
+With warnings turned into errors (`-W error`) the warning cannot be issued; the lines under
+`Report` at the end of the output say it instead (`Bench: instrument 'DMM' calibration was
+due 2026-03-02`). The same goes for a `pytest_reporter_bench` or `pytest_reporter_metadata`
+implementation that raised: its message is printed there as a `Warning:` line, and
+`junit.xml` and the other files are written as usual.
+
+**Changes during the run.** Giving a name or label again replaces its values (for a device or
+an instrument: the values given, the others stay). A value that differs from the one before
+is a change, kept with the time and the test that was running:
+
+```python
+def test_second_board(report_bench, dut2):
+    report_bench.device("DUT", serial=dut2.serial)     # a change made by this test
+```
+
+The test's Summary shows a **Bench changed in this test** block, its `<testcase>` in
+`junit.xml` gets a `bench.changed` property per change
+(`device DUT serial: SN-0042 -> SN-0043`), and the Bench section's change history lists every
+change with a link to its test. A test's changes run from its setup to the end of its
+teardown; with `--report-retries` each change belongs to the attempt that made it. The Bench
+section and the suite properties show the values the session ended with.
+
+pytest may set a session, package, module or class fixture up again for a retry (it always
+does for the last test). What such a fixture gives then as it gave it before is not a change
+and replaces nothing: a board swapped by an earlier test stays the bench's last word. A value
+the fixture reads differently this time is recorded, as a change made by that retry.
+
+**pytest-xdist.** The controller writes the report, and a fixture runs in a worker, which
+cannot reach it: there `report_bench` checks its arguments and saves nothing. Use the
+`pytest_reporter_bench` hook, which runs on the controller. (The reporter does not collect
+test results from workers either; this is a limit of the whole report, not of the bench.)
+
+`report_metadata` and `pytest_reporter_metadata()` still work and still show as **System
+Data**. Use `report_bench` for the bench: it checks what it is given, knows what an instrument
+is, and reaches `bench.json` and `junit.xml` in a form other tools can read.
+
+---
+
 ## Retries
 
 Enable automatic retries for the `call` phase of failed tests:
@@ -376,7 +491,7 @@ The `report.html` is a single self-contained file with four tabs:
 1. **Summary** — pass-rate hero and ratio bar; when anything failed, a **Failures** list with the reason for each failed run and a **Copy rerun command** button; status counters that open the Tests tab filtered to that status; and configurable donut/bar chart groups.
 2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, **Checks** (for tests with pytest-verifier checks) and **Strategy** (for tests that use a pytest-strategies strategy).
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
-4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
+4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, the [bench](#bench-provenance), custom metadata, active plugins, command line, full `pytest.log`).
 
 The report works from the keyboard and with screen readers: the test tree follows the ARIA tree pattern (arrow keys, Home/End, Enter to open), tab sets switch with the arrow keys, and outcomes are read out as text, not only shown as colour.
 
@@ -403,6 +518,29 @@ each run's `checks.json`. Composite checks (`guard`, `conditional`,
 ```bash
 pip install "pytest-reporter[verifier]"
 ```
+
+### Registers and bit fields
+
+pytest-verifier 0.11 shows a value in hex or binary when the check has a format: `radix=` or
+`width=`, `verify.bits`, or a value whose class says how it is shown (`__verify_format__`).
+
+```python
+verify.equal(rdata, wdata, radix="hex", width=16)
+verify.bits(dev.CTRL, wdata, mask=0x00FF, fields={"EN": 0, "MODE": (3, 1)}, width=16)
+```
+
+| Where | What you see |
+|---|---|
+| Verification card, failure strip, Failures list | pytest-verifier's own text: `Verify 'CTRL' & 0x00FF == 0x00F3`, `expected 0x00F3, got 0x12F0 (mask 0x00FF); bits [1:0] differ: EN [0] is 0b0, expected 0b1`. |
+| Card body | **Actual**, **Expected**, **Mask**, **Threshold**, **Low** and **High** in the check's format, each followed by the plain number: `0x12F0 (4848)`. |
+| Bit strip | For a `bits` check, and for a failed `equal` on integers: one cell per bit, most significant first, the expected row above the actual one. Bits that differ are framed and bold; bits outside the mask are dimmed. A register wider than 32 bits takes one row per 32 bits; above 64 bits there is no strip. On a phone the strip scrolls inside the card and starts at the first differing bit. |
+| Fields table | When the check has `fields`: name, bits (`[3:1]`), actual and expected value of each field, the differing ones marked. |
+| Procedure tab (with a stepdoc that carries the rendered value) | `Verify dev.CTRL & 0x00FF == <wdata> (0x00F3) → got 0x12F0, bits [1:0] differ: …`. The **Generic** view shows the names: `Verify dev.CTRL & <MASK> == <wdata>`. |
+
+The report does not format numbers itself. It shows the text pytest-verifier rendered, and
+reads the bits of the strip from that text, so a 64-bit value is right to the last bit. An
+integer too large for a JavaScript number (above 2**53) is shown exactly on every card, with
+or without a format. Records of an older pytest-verifier have none of this and look as before.
 
 ### Operand names
 
@@ -482,7 +620,7 @@ changes.
 
 ```
 src/pytest_reporter/
-├── __init__.py             # Public API: Logger/ReportLogger
+├── __init__.py             # Public API: Logger/ReportLogger, ReportTabs, BenchInfo
 ├── plugin.py               # Hooks, fixtures, CLI options, entry point
 ├── _hookspecs.py           # pytest_reporter_* hook specifications
 ├── reporter.py             # Orchestrator
@@ -497,6 +635,7 @@ src/pytest_reporter/
 ├── _json_writer.py         # Phase / parameters / aggregate writers
 ├── _junit_writer.py        # JUnit XML
 ├── _dashboard_config.py    # Summary dashboard group normalization
+├── _bench.py               # Bench provenance: BenchInfo, bench.json, junit properties
 ├── _tabs.py                # Custom HTML tabs: ReportTabs, reading them back for the report
 ├── _table.py               # DataFrame normalization + HTML artifacts
 ├── _console_capture.py     # pytest.log tee

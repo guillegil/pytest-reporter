@@ -179,16 +179,16 @@ def _list(value: Any) -> list[Any]:  # noqa: ANN401
     return value if isinstance(value, list) else []
 
 
-def _js_safe(value: Any) -> Any:  # noqa: ANN401
+def js_safe(value: Any) -> Any:  # noqa: ANN401
     """``value`` with every integer JavaScript cannot hold exactly as ``{"$repr": text}``."""
     if isinstance(value, bool):
         return value
     if isinstance(value, int):
         return value if -_SAFE_INT <= value <= _SAFE_INT else {"$repr": str(value)}
     if isinstance(value, list):
-        return [_js_safe(v) for v in value]
+        return [js_safe(v) for v in value]
     if isinstance(value, dict):
-        return {key: _js_safe(v) for key, v in value.items()}
+        return {key: js_safe(v) for key, v in value.items()}
     return value
 
 
@@ -232,8 +232,8 @@ def html_data(
     generator = document.get("generator")
     session = {
         "generator": generator if isinstance(generator, dict) else None,
-        "seed": _js_safe(document.get("seed")),
-        "nsamples": _js_safe(document.get("nsamples")),
+        "seed": js_safe(document.get("seed")),
+        "nsamples": js_safe(document.get("nsamples")),
         "tests": len(by_test),
         "strategies": strategies,
         "rows": rows,
@@ -243,13 +243,13 @@ def html_data(
 
 
 def _strategy(strategy: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {key: _js_safe(strategy.get(key)) for key in _STRATEGY_KEYS}
+    out: dict[str, Any] = {key: js_safe(strategy.get(key)) for key in _STRATEGY_KEYS}
     out["rows"] = [_row(r) for r in _list(strategy.get("rows")) if isinstance(r, dict)]
     return out
 
 
 def _row(row: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {key: _js_safe(row.get(key)) for key in _ROW_KEYS}
+    out: dict[str, Any] = {key: js_safe(row.get(key)) for key in _ROW_KEYS}
     out["items"] = [
         {"nodeid": item.get("nodeid"), "outcome": item.get("outcome")}
         for item in _list(row.get("items"))

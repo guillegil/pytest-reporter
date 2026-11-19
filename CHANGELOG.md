@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bench provenance: what was on the bench when the tests ran. The new session fixture
+  `report_bench` and the new hook `pytest_reporter_bench(config, bench)` give a `BenchInfo`
+  (exported for type hints) with `device(name, serial=, firmware=, hardware=, ...)`,
+  `instrument(name, idn=, serial=, calibrated=, cal_due=, ...)`, `set(label, value,
+  section="Bench")` and `update({...})`. A `*IDN?` reply of four parts also gives the
+  manufacturer, model, serial and firmware. The data is written to `bench.json` in the run
+  folder (before `junit.xml`, and also when the HTML report cannot be built), to `junit.xml`
+  as properties of the test suite (`bench.<section>.<label>`, `bench.device.<name>.<key>`,
+  `bench.instrument.<name>.<key>`), and to a **Bench** section in the Report tab. A wrong
+  call raises `TypeError` or `ValueError` where it is made, also without `--report-dir`.
+- An instrument whose `cal_due` is before the day of the run is marked overdue in the Bench
+  section, named in a notice on the Summary tab and in one pytest warning at the end of the
+  session (`pytest-reporter: instrument 'DMM' calibration was due 2026-03-02`). It never
+  changes a test's outcome.
+- A bench value changed after it was first given is kept as a change, with the time and the
+  test (and retry attempt) that made it: a "Bench changed in this test" block in the test's
+  Summary, `bench.changed` properties on its `<testcase>` in `junit.xml`, and a change history
+  in the Bench section. A session, package, module or class fixture that pytest sets up again
+  for a retry changes nothing when it gives the values it gave before.
+- Bench values that are members of a `str` or `int` enum are stored as their plain value, so
+  `bench.json`, `junit.xml` and the report read the same. A part of a `*IDN?` reply never
+  replaces a value given by name, in the same call or an earlier one. `instrument(...,
+  overdue=...)` raises `ValueError`: the report works that key out from `cal_due`.
+- In the Instruments table a long value (an `*IDN?` reply, a firmware string) wraps inside its
+  cell, and the calibration dates and the "overdue" badge never break, on screen and in print.
+  The Summary notice's **Bench details** button shows the Bench section below the page's
+  sticky header, outlined.
+- `bench.json` and `junit.xml` also hold what `report_metadata` and
+  `pytest_reporter_metadata()` gave (`metadata` in the file, `metadata.<section>.<label>`
+  properties). The System Data panel shows them as before.
+- Register checks of pytest-verifier 0.11 (`radix=`, `width=`, `verify.bits`, a value with
+  `__verify_format__`). A card's Actual, Expected, Mask, Threshold, Low and High rows show the
+  value as the check renders it, followed by the plain number (`0x12F0 (4848)`). A `bits`
+  check, and a failed `equal` on integers, get a bit strip: one cell per bit, the expected row
+  above the actual one, differing bits marked, bits outside the mask dimmed, one row per 32
+  bits. A check with `fields` gets a table of each field's bits, actual and expected value.
+  The strip scrolls inside the card on a phone, prints, and works with forced colours.
+- The Procedure tab shows a check's value as stepdoc carries it (`actual_text`) and, for a
+  failed check, how it differs (`difference`): `→ got 0x12F0, bits [1:0] differ: EN [0] is
+  0b0, expected 0b1`. Items of a folded `all_satisfy` check show their rendered values
+  (`each.texts`). A result too long for its line goes under it, and on a narrow page every
+  check's result has its own line instead of squeezing the check's text.
+- With warnings as errors (`-W error`), a `pytest_reporter_bench` or
+  `pytest_reporter_metadata` implementation that raised is named in a `Warning:` line under
+  `Report` in the terminal summary, where its warning could not be issued.
+
 - A check made once per item (pytest-verifier's `all_satisfy`) is one line in the Procedure
   tab, not one line per item. With a stepdoc that folds these checks (`Check.each`) the line
   reads `Verify 'Index error clear': for each w in waveforms, w & INDEX_ERROR_BIT == 0` and
@@ -114,6 +160,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The reporter's `pytest_runtest_teardown` is now a hook wrapper (it still asks for custom
+  tabs before fixtures are torn down), so a bench change made while fixtures are torn down
+  belongs to the test that was running.
+- In the Procedure tab, a check whose expected value is written as a hex, binary or octal
+  literal shows this run's value alone (`== 0x00F3`) instead of the literal followed by the
+  same number in parentheses.
 - A test opens on its first failed run instead of run 01, and a run's phase logs open
   on the phase that failed (or was skipped) instead of Setup.
 - When the run has failures, the Tests tab starts on them: only failed tests shown,
@@ -148,6 +200,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An integer above 2**53 in a verification card (a 64-bit register, a large counter) lost its
+  last digits, because the report read it as a JavaScript number. Such values now reach the
+  report as text and show exactly.
 - The test tree of the HTML report was empty when every test was in one file (or one
   class): the Tests tab said "No tests match the search and filters". The file is now the
   tree's top row.

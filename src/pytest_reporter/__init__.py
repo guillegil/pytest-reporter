@@ -7,10 +7,12 @@ are optional: the reporter reads what they publish and never imports them.
 
 from __future__ import annotations
 
+from ._bench import BenchInfo
 from ._logger import Logger, ReportLogger
 from ._tabs import ReportTabs
 
 __all__ = [
+    "BenchInfo",
     "Logger",
     "ReportLogger",
     "ReportTabs",

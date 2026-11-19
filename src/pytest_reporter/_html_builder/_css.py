@@ -1509,8 +1509,9 @@ button { font-family: inherit; }
 }
 .procedure-step-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
   font-size: var(--fs-md);
 }
 .procedure-step-number {
@@ -1520,7 +1521,9 @@ button { font-family: inherit; }
   font-size: var(--fs-sm);
   min-width: 28px;
 }
-.procedure-step-desc { color: var(--c-text); flex: 1; }
+/* The text keeps a readable width: what does not fit beside it (a check's
+   result) goes to the next line instead of squeezing it. */
+.procedure-step-desc { color: var(--c-text); flex: 1 1 9em; min-width: 0; }
 .procedure-step-duration {
   color: var(--c-text3);
   font-size: var(--fs-xs);
@@ -1571,7 +1574,13 @@ button { font-family: inherit; }
   color: var(--c-text2);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
+/* Beside its check it sits at the right; pushed to the next line, it stays there */
+.procedure-step-header > .procedure-result { margin-left: auto; }
+/* A result too long for the line of its check: under it, as a note is. */
+.procedure-result-block { margin: 2px 0 4px 2.4em; overflow-wrap: anywhere; }
 .procedure-note {
   color: var(--c-text2);
   font-style: italic;
@@ -1780,6 +1789,130 @@ button { font-family: inherit; }
 .check-card-detail .operand-name { overflow-wrap: anywhere; }
 .operand-symbolic { margin-left: 10px; display: inline-block; overflow-wrap: normal; font-family: var(--font-sans, inherit); color: var(--c-text3); }
 .operand-symbolic-text { color: var(--c-text2); }
+/* A value with a format (pytest-verifier's radix= / width=): the plain number after it. */
+.check-card-detail .value-dec { margin-left: 8px; color: var(--c-text3); }
+
+/* Register checks: the bits of the compared values, one cell each, and the
+   fields. The block spans the card's grid; the strip scrolls inside itself. */
+.bit-view {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 8px 0 10px;
+}
+.bit-strip { max-width: 100%; min-width: 0; }
+.bit-strip-body { display: flex; gap: 10px; max-width: 100%; }
+.bit-strip-labels { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.bit-labels {
+  display: grid;
+  grid-template-rows: 16px 24px 24px;
+  gap: 2px;
+  padding: 2px 0;
+  white-space: nowrap;
+  align-items: center;
+  color: var(--c-text3);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.bit-labels .bit-label-index { font-size: var(--fs-xs); }
+.bit-strip-scroll { overflow-x: auto; min-width: 0; border-radius: 4px; scrollbar-width: thin; scrollbar-color: var(--c-border2) transparent; }
+.bit-strip-scroll:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.bit-tables { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; width: max-content; }
+.bit-table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.bit-table th, .bit-table td { padding: 0; text-align: center; }
+.bit-table .bit-index th {
+  width: 18px;
+  min-width: 18px;
+  height: 16px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--c-text3);
+}
+.bit-table .bit {
+  display: block;
+  box-sizing: border-box;
+  width: 18px;
+  height: 24px;
+  line-height: 22px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--c-well);
+  color: var(--c-text);
+}
+/* A wider gap before each nibble */
+.bit-table .nib { padding-left: 5px; }
+.bit-table .masked .bit, .bit-key-swatch.masked { background: transparent; color: var(--c-text3); }
+.bit-table .bit-expected .differs .bit { font-weight: 700; }
+.bit-table .bit-actual .differs .bit, .bit-key-swatch.differs {
+  background: var(--c-failed-strong-dim);
+  border-color: var(--c-failed);
+  color: var(--c-failed-ink);
+  font-weight: 700;
+}
+.bit-strip-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: var(--fs-xs); color: var(--c-text2); }
+.bit-key { display: inline-flex; align-items: center; gap: 6px; }
+.bit-key-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  line-height: 14px;
+  text-align: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+}
+.bit-key-swatch.masked { border-color: var(--c-border2); }
+.bit-fields-wrap { max-width: 100%; overflow-x: auto; border-radius: 4px; }
+.bit-fields-wrap:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.params-table.bit-fields { width: auto; margin-bottom: 0; background: var(--c-surface); }
+.bit-fields th, .bit-fields td { padding: 5px 14px; white-space: nowrap; }
+.bit-fields tbody th {
+  background: none;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.bit-fields tbody tr:last-child th { border-bottom: none; }
+.bit-fields tr.differs td:nth-child(3) { color: var(--c-failed-ink); font-weight: 700; }
+.bit-field-flag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--c-failed-dim);
+  color: var(--c-failed-ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.bit-fields-more { margin-top: 4px; font-size: var(--fs-xs); color: var(--c-text3); }
+@media print {
+  .bit-strip-scroll, .bit-fields-wrap { overflow: visible; }
+  .bit-table .bit-index th, .bit-table .bit { width: 15px; min-width: 15px; }
+  .bit-table .nib { padding-left: 4px; }
+  .bit-view { break-inside: avoid; }
+  .bit-table .bit, .bit-key-swatch, .bit-field-flag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+@media (forced-colors: active) {
+  .bit-table .bit { border-color: CanvasText; }
+  .bit-table .masked .bit, .bit-key-swatch.masked { color: GrayText; border-color: GrayText; border-style: dotted; }
+  .bit-table .bit-actual .differs .bit, .bit-key-swatch.differs { border: 3px double Highlight; line-height: 18px; }
+  .bit-key-swatch.differs { line-height: 10px; }
+  .bit-field-flag { border: 1px solid CanvasText; }
+}
+
 /* Guard check (if/elif/else chain) rendering */
 .guard-body {
   display: flex;
@@ -2141,6 +2274,189 @@ button { font-family: inherit; }
 .report-info-value { color: var(--c-text); font-family: var(--font-mono); font-size: var(--fs-sm); text-align: right; }
 .report-info-value.mono { font-family: var(--font-mono); }
 .report-info-not-provided { color: var(--c-text3); font-style: italic; font-size: var(--fs-sm); text-align: right; }
+/* Bench provenance: the Report tab's Bench section */
+.bench-body { display: flex; flex-direction: column; gap: 22px; }
+.bench-group-title {
+  margin: 0 0 8px;
+  color: var(--c-text3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.bench-table-wrap { overflow-x: auto; }
+.params-table.bench-table { margin-bottom: 0; }
+.bench-table th, .bench-table td { padding: 8px 10px; vertical-align: baseline; }
+.bench-table th:first-child { padding-left: 14px; }
+.bench-table th, .bench-table td { white-space: nowrap; }
+/* Long text (a model, an *IDN? reply, a firmware string) wraps in a bounded
+   cell: one instrument's reply must not push the calibration dates away. */
+.bench-table td.bench-wrap, .bench-table tbody th.bench-wrap { white-space: normal; min-width: 9em; max-width: 26em; overflow-wrap: anywhere; }
+.bench-table td.bench-date, .bench-badge { white-space: nowrap; }
+.bench-table tbody th {
+  background: none;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-size: var(--fs-md);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.bench-table tbody tr:last-child th { border-bottom: none; }
+.bench-badge {
+  display: block;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.bench-badge.overdue { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
+.bench-rows .report-info-row:first-child { padding-top: 0; }
+.bench-rows .report-info-row:last-child { padding-bottom: 0; }
+.bench-history > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--c-text2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.bench-history > summary:hover { color: var(--c-text); }
+.bench-history > summary:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; border-radius: 4px; }
+.bench-history[open] > summary { margin-bottom: 4px; }
+.bench-change-list { list-style: none; margin: 0; padding: 0; }
+.bench-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--c-border);
+  font-size: var(--fs-md);
+}
+.bench-change:last-child { border-bottom: none; padding-bottom: 0; }
+.bench-change-what { font-weight: 600; color: var(--c-text); overflow-wrap: anywhere; }
+.bench-change-values { font-family: var(--font-mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.bench-change-old { color: var(--c-text2); text-decoration: line-through; text-decoration-color: var(--c-text3); }
+.bench-change-arrow { margin: 0 7px; color: var(--c-text3); }
+.bench-change-new { color: var(--c-text); font-weight: 600; }
+.bench-change-test {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--c-accent-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.bench-change-test:hover { text-decoration: underline; }
+.bench-change-test:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; border-radius: 2px; }
+.bench-change-test.none { color: var(--c-text3); font-family: inherit; cursor: default; }
+.bench-change-test.none:hover { text-decoration: none; }
+.bench-change-at { margin-left: auto; color: var(--c-text3); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: nowrap; }
+/* Reached from the Summary notice: under the sticky header and tab bar (the
+   script sets the exact margin), and outlined while it has the focus. */
+#bench-section { scroll-margin-top: 112px; }
+#bench-section:focus { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+/* A test's own changes to the bench (Summary sub-tab, retry cards) */
+.bench-changes {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+}
+.retry-card-body .bench-changes { margin: 4px 0 12px; }
+.bench-changes-title {
+  margin: 0 0 4px;
+  color: var(--c-text3);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* Summary tab: a calibration was due before the run. A notice, not a failure. */
+.bench-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 24px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid color-mix(in srgb, var(--c-skipped) 28%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--c-skipped-dim);
+  color: var(--c-text);
+  font-size: var(--fs-md);
+}
+.bench-notice-icon { display: flex; color: var(--c-skipped-ink); }
+.bench-notice-text { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.bench-notice-text strong { margin-right: 6px; color: var(--c-skipped-ink); font-weight: 600; }
+.bench-notice-link {
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--c-skipped) 40%, transparent);
+  background: none;
+  color: var(--c-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--t-control);
+}
+.bench-notice-link:hover { background: var(--c-skipped-dim); border-color: var(--c-skipped-ink); }
+.bench-notice-link:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .bench-change-at { margin-left: 0; }
+  /* Each device or instrument as a block of "label  value" lines: nothing
+     to scroll sideways for, the calibration dates least of all. */
+  .bench-table, .bench-table tbody, .bench-table tr, .bench-table tbody th, .bench-table td { display: block; }
+  .bench-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .bench-table th, .bench-table td, .bench-table td.bench-wrap, .bench-table tbody th.bench-wrap { white-space: normal; min-width: 0; max-width: none; }
+  .bench-table tbody th { padding: 10px 14px 4px; border-bottom: none; }
+  .bench-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 14px;
+    border-bottom: none;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .bench-table td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--c-text3);
+    font-family: var(--font-sans);
+    text-align: left;
+  }
+  .bench-table td:last-child { padding-bottom: 10px; }
+  .bench-table tr + tr { border-top: 1px solid var(--c-border); }
+  .bench-badge { margin-left: auto; }
+  .bit-fields th, .bit-fields td { padding: 5px 10px; }
+  /* A check's result on its own line, under the text it belongs to */
+  .procedure-step-header > .procedure-result { flex-basis: 100%; margin-left: 2.4em; }
+}
+@media print {
+  .bench-table-wrap { overflow: visible; }
+  /* Short cells break between words only, the dates and the badge never:
+     a column of one character per line reads as nothing. */
+  .bench-table th, .bench-table td { white-space: normal; min-width: 0; overflow-wrap: break-word; }
+  .bench-table td.bench-wrap, .bench-table tbody th.bench-wrap { min-width: 7em; max-width: none; overflow-wrap: anywhere; }
+  .bench-table td.bench-date, .bench-badge { white-space: nowrap; }
+  .bench-table th, .bench-table td { padding-left: 6px; padding-right: 6px; }
+  .bench-notice-link { display: none; }
+  .bench-notice, .bench-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bench-changes, .bench-change { break-inside: avoid; }
+}
+@media (forced-colors: active) {
+  .bench-badge, .bench-notice { border: 1px solid CanvasText; }
+}
 .log-viewer {
   background: var(--c-bg);
   border: 1px solid var(--c-border);

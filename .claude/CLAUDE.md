@@ -56,7 +56,7 @@ pytest tests/ --report-dir=reports --report-retries=3  # Enable retries
 
 ```
 pytest_reporter/
-├── __init__.py              # Exports: Logger, ReportLogger, ReportTabs (removed names raise ImportError)
+├── __init__.py              # Exports: Logger, ReportLogger, ReportTabs, BenchInfo (removed names raise ImportError)
 ├── py.typed                 # PEP 561 marker — REQUIRED
 ├── plugin.py                # Plugin registration (pytest11 entry point)
 ├── reporter.py              # Reporter class — main hook orchestrator
@@ -70,6 +70,9 @@ pytest_reporter/
 ├── _json_writer.py          # Phase log, test.log.json, session.log.json writers
 ├── _junit_writer.py         # junit.xml generation
 ├── _html_builder.py         # Self-contained HTML report generation at session end
+├── _bench.py                # BenchInfo (report_bench, pytest_reporter_bench): devices,
+│                            #   instruments, rows, changes; bench.json document, junit
+│                            #   properties, html_data() for the report
 ├── _tabs.py                 # ReportTabs (custom HTML tabs: saves tabs/NN_<slug>.html and
 │                            #   tabs.json per attempt), collect_tabs() for the report
 ├── _table.py                # Table normalization and HTML artifact builder
@@ -87,6 +90,7 @@ pytest_reporter/
 | `session_log` | session | `ReportLogger` | Structured logging for session-scoped fixtures |
 | `report_artifacts` | test | `pathlib.Path` | Directory path for saving test artifacts |
 | `report_tabs` | test | `ReportTabs` | Custom HTML tabs in the test's detail |
+| `report_bench` | session | `BenchInfo` | What was on the bench: devices, instruments, rows |
 
 ### Imports
 
@@ -154,6 +158,7 @@ reports/
         ├── junit.xml
         ├── pytest.log
         ├── session.log.json
+        ├── bench.json               (only when a bench or metadata was recorded)
         ├── strategies.json          (pytest-strategies 4.3+)
         ├── strategies.vectors.json  (pytest-strategies 4.3+)
         ├── failures/
@@ -373,6 +378,39 @@ node may hold `substeps` of the same shape.
   label, in the card header, the failure strip and the failure reason (`checkOperand`;
   without `name=` the name is that text already).
 
+### Register checks (pytest-verifier 0.11)
+
+- A record may carry `radix`, `width`, `fields` (`{name: [msb, lsb]}`), `mask`, `rendered`
+  (`actual`, `expected`, `threshold`, `low`, `high`, `mask`: the text pytest-verifier shows),
+  `bit_diff` (`bits`, `text`, `fields`) and `format_error`; `check_type` `"bits"` is new.
+  All optional: a record without them renders as before. The reporter never formats a
+  number itself.
+- `checkValueEl` shows `rendered.<key>` followed by the plain number in `.value-dec` (only
+  for a radix other than decimal and a safe integer); `checkValue` / `renderedText` give
+  the text alone. Units stay their own row.
+- `renderBitView` (after the value rows of `renderCheckDetail`): `renderBitStrip` for a
+  `bits` record or one with `bit_diff`, non-negative values of at most 64 bits, 32 bits per
+  row (`bitStripModel`: cells with `differs` and `compared`; `outside` when some bit is not
+  under the mask, which alone brings the legend entry and the sentence about it); `renderFieldsTable` when the
+  record has `fields` (`fieldRows`, `fieldText`). Bits come from the rendered text through
+  `BigInt` (`bitsOf`, `operandBits`), never from a JSON number. The strip is a table with
+  an `aria-label` that says the same in words; it scrolls inside the card and starts at the
+  first differing bit.
+- `_strategies.js_safe` turns an integer beyond ±(2**53 − 1) into `{"$repr": "<digits>"}`;
+  `build_html_data` applies it to every run's and retry attempt's `check_results`, so cards
+  show such values exactly.
+- Procedure (`_stepdoc`): a check's `result` uses stepdoc's `Check.actual_text` and, when
+  it failed, `Check.difference` (`got 0x12F0, bits [1:0] differ: …`); the node's `detail`
+  is dropped when it only repeats that difference. `each.texts` replaces `each.values`
+  when both have the same length. `_annotate` shows this run's value alone when the
+  symbolic text is a `0x`/`0b`/`0o` literal. `renderNode` puts a result of more than 64
+  characters under the line (`.procedure-result-block`); the header wraps, so a shorter
+  result goes to the next line when it does not fit beside 9em of text, and always at
+  640px and below.
+- The Node tests cut top-level `function name(` blocks out of the JS
+  (`tests/test_operand_names.py::_FUNCTIONS`): a new card helper must be a top-level
+  function, listed there, with its constants inside it.
+
 ### Strategy export (pytest-strategies 4.3+)
 
 - `Reporter.pytest_strategies_export_dir` is a hook wrapper (`optionalhook=True`): when no
@@ -430,6 +468,58 @@ DashboardConfig) and `_dashboard_config.normalize_dashboard()`.
 
 `"auto"` density heuristic (pinned threshold): `depth >= 2` OR child count > 5 → pass-rate bars;
 else donut grid.
+
+## Bench provenance
+
+- `BenchInfo` (`_bench.py`): `set(label, value, *, section="Bench")`, `update(values, *,
+  section="Bench")`, `device(name, *, serial, firmware, hardware, **more)`,
+  `instrument(name, *, idn, serial, calibrated, cal_due, **more)`. Values: `str`, `int`,
+  `float`, `bool`, `date`/`datetime` (ISO text); `None` stores nothing; `calibrated` /
+  `cal_due` become `YYYY-MM-DD`. Usage errors (`TypeError`/`ValueError`) raise from the
+  call, with and without `--report-dir`. `parse_idn` splits a four-part `*IDN?` reply.
+- A plain `BenchInfo()` validates and saves nothing: the `report_bench` fixture returns one
+  without `--report-dir` and on xdist workers. `Reporter.bench` is `_bench.recording(...)`,
+  the saving one, also given to each `pytest_reporter_bench(config, bench)` implementation
+  at session start (`Reporter._ask_for_bench`: one at a time, anything raised becomes a
+  config-time warning).
+- Giving a name or label again merges; a value that differs from the earlier one is a
+  change: `{at, nodeid, attempt, kind, name, label, old, new}` (`kind`: `section`,
+  `device`, `instrument`; `attempt` 0 for the first run, N for retry N; `nodeid` null
+  outside a test). `Reporter._running` is set at each attempt's setup and cleared when the
+  `pytest_runtest_teardown` wrapper finishes.
+- pytest sets fixtures above function scope up again for a retry (always for the last
+  test's). `Reporter.pytest_fixture_setup` (a wrapper) counts such setups in progress
+  (`_bench_shared`); `BenchInfo._given` holds what a shared fixture, or a call outside
+  every test, last gave each key. In a retry attempt a shared fixture that gives a key
+  the value in `_given` is skipped: no change, and the current value stays.
+- Values are stored plain (`_bench._value`: `str.__str__`, `int.__int__`,
+  `float.__float__`), so a `str`/`int` enum member reads the same in every output.
+  `BenchInfo._by_name` holds the idn parts each instrument was given by name: a later
+  `idn=` does not replace them. `overdue` in `instrument(**more)` is a `ValueError`.
+- A warning that could not be issued under `-W error` (a raising `pytest_reporter_bench`
+  or `pytest_reporter_metadata` implementation) goes to `Reporter._unwarned`, printed as
+  `Warning:` lines by `_do_terminal_summary`. `_write_bench` catches the metadata
+  warning, so `junit.xml` and the files after it are always written.
+- `BenchInfo.document(today, metadata)` is `bench.json`: `run_date`, `sections`, `devices`,
+  `instruments` (each with `overdue`: `cal_due` before `Reporter._run_date`, the local date
+  at session start), `changes`, `metadata` (the `report_metadata` /
+  `pytest_reporter_metadata()` sections, from `_report_builder.collect_metadata`). Written
+  in `_do_sessionfinish` before `junit.xml` and the HTML, guarded, only when not empty.
+- `junit.xml`: `<properties>` first in `<testsuite>` (`bench.<section>.<label>`,
+  `bench.device.<name>.<key>`, `bench.instrument.<name>.<key>`,
+  `metadata.<section>.<label>`), and `bench.changed` properties on a `<testcase>`
+  (`_bench.change_text`), before the retry properties. `_bench.xml_text` drops what XML 1.0
+  cannot hold.
+- `DATA.bench` (`_bench.html_data`: the document without `metadata`, `js_safe`, null when
+  empty), each run's `bench_changes` (attempt 0) and each retry attempt's. JS:
+  `renderBenchSection` (Report tab, `#bench-section`; `renderBenchTable`, `benchColumns`,
+  `benchCellClass`: `bench-date` cells never break, `bench-wrap` cells (the model, any
+  column with long text) wrap in a bounded cell; a closed change history), `renderBenchNotice` (Summary tab, when `overdueInstruments`
+  finds any; `showBenchSection`, which sets the section's `scroll-margin-top` from
+  `stickyTop()`), `renderBenchChanges` (the test's Summary and retry
+  cards). Everything goes in as text nodes.
+- Overdue instruments: one `UserWarning` each at session end (`_warn_overdue`,
+  `_bench.overdue_message`) and a line in the terminal summary. Never an outcome.
 
 ## Custom tabs
 
@@ -546,7 +636,8 @@ else donut grid.
 ### HTML report:
 - Self-contained (no external resources)
 - All four tabs render correctly
-- Verification cards render from `report.verify_checks` data
+- Verification cards render from `report.verify_checks` data; register cards and the bench
+  renderers run in Node (`tests/test_register_checks.py`, `tests/test_bench.py`)
 - Graphs use correct colors and feature depth
 - Retries tab: original failure pinned, retry cards correct
 
