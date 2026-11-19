@@ -599,10 +599,23 @@ def _annotate(symbolic: str, concrete: str) -> str:
     return "".join(out)
 
 
+def _units(check: Any, actual: Any) -> str:  # noqa: ANN401
+    """The units of a measured number, from the check's pytest-verifier record.
+
+    ``got 86.59%`` reads as the judge's own line does (``expected > 90.0%, got
+    86.59%``); a number without its unit invites a mV-for-V misreading.
+    """
+    source = getattr(check, "source", None)
+    units = source.get("units") if isinstance(source, dict) else None
+    is_number = isinstance(actual, (int, float)) and not isinstance(actual, bool)
+    return units.strip() if is_number and isinstance(units, str) else ""
+
+
 def _check_result(check: Any, actual_name: str | None = None) -> str | None:  # noqa: ANN401
     actual = getattr(check, "actual", None)
     if actual is not None:
-        return f"got {actual_name} = {_show(actual)}" if actual_name else f"got {_show(actual)}"
+        shown = _show(actual) + _units(check, actual)
+        return f"got {actual_name} = {shown}" if actual_name else f"got {shown}"
     reads = getattr(check, "reads", None) or []
     if len(reads) == 1:
         return f"got {_show(getattr(reads[0], 'value', None))}"

@@ -395,6 +395,12 @@ _FUNCTIONS = (
     "operandNameEl",
     "checkLabel",
     "renderCheckDetail",
+    "isCheckNumber",
+    "checkUnits",
+    "checkDistanceLabel",
+    "checkDistance",
+    "isLeafCheck",
+    "retryVerdict",
     "renderCheckBody",
     "renderGuardCheck",
 )
@@ -469,7 +475,14 @@ def test_card_shows_the_names() -> None:
     )
     named, auto, plain = got
     assert named["header"] == [ACTUAL]
-    assert named["labels"][:5] == ["Result", "Actual name", "Actual", "Expected name", "Threshold"]
+    assert named["labels"][:6] == [
+        "Check",
+        "Result",
+        "Actual name",
+        "Actual",
+        "Expected name",
+        "Threshold",
+    ]
     assert named["names"] == [
         f"{ACTUAL}written as {ACTUAL_SYMBOLIC}",
         "limits[3]written as limits[<channel>]",

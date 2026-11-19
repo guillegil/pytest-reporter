@@ -419,6 +419,23 @@ counted as skipped) a dashed `--c-xfail` ring. Retried is the accent colour, nev
 list groups by file and merges runs of one test with one reason. A Procedure phase tab is
 never better than `run.phases[when].outcome` (`.procedure-outside` when steps all passed).
 
+### Reading rules (pinned by `tests/test_html_reading.py`)
+
+- Type scale `--fs-xs..3xl`: 12, 13, 14, 16, 20, 26, 38px. Nothing under 12px.
+- Desktop Tests tab is one screen: `switchTab` sets `body[data-tab]`, and
+  `body[data-tab="tests"]` (min-width 769px) is a `100dvh` flex column, so only `.tree-content`
+  and `.detail-panel` scroll. `showTestDetail` resets `panel.scrollTop`; `.sub-tabs` is sticky.
+- Say a fact once: the hero holds pass rate, time in tests, ratio bar and counters; a
+  single-run test has outcome, retry chip and duration in its header only; `subTabNames`
+  offers Procedure / Checks / Artifacts only with content.
+- Durations go through `formatSeconds` (`0.3ms`, `20ms`, `1.25s`, then `formatDuration`).
+- Check cards: units appended to the numbers (`CHECK_QUANTITIES`), `checkDistance` gives the
+  Margin / Deviation row (arithmetic on the record, never a verdict), no side stripes.
+- `_js_safe` writes integers past 2**53 as strings. `skipParts` reads pytest's skip tuple.
+- Navigation: `#test=<nodeid>` / `#tab=<name>` (`writeLocation`, `readLocation`), keys `/`,
+  `j`, `k` (`stepTest`); the key hints hide on phones and touch screens.
+- Print shows every failure row and all three phase logs, and hides inert controls.
+
 ### Feature level for graphs: configurable via `pytest_reporter_dashboard` hook / `report_dashboard` fixture.
 
 Each group spec carries `path` (required), `depth` (default 1), `include_self` (default False), `label`,

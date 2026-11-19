@@ -377,7 +377,7 @@ The `report.html` is a single self-contained file with four tabs:
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
 4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 
-The report works from the keyboard and with screen readers: the test tree follows the ARIA tree pattern (arrow keys, Home/End, Enter to open), tab sets switch with the arrow keys, and outcomes are read out as text, not only shown as colour.
+Press `/` to search the tests and `j` / `k` to open the next or previous one. The address follows what is open (`report.html#test=<node ID>`), so you can link to one test. The report works from the keyboard and with screen readers: the test tree follows the ARIA tree pattern (arrow keys, Home/End, Enter to open), tab sets switch with the arrow keys, and outcomes are read out as text, not only shown as colour.
 
 It also works on phones and tablets: on a phone the Tests tab shows the test list, then one test with a way back, and controls are sized for touch.
 
