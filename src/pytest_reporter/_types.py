@@ -247,6 +247,9 @@ class RunInfo:
     display_name: str = ""  # bare method name; equals function_name for plain functions
     # pytest-strategies row (VectorInfo.to_dict()), or None for other tests
     strategy: dict[str, Any] | None = None
+    # The node ID as a command takes it from the folder pytest was started in;
+    # "" when that is the node ID itself (pytest was started in the rootdir)
+    command_nodeid: str = ""
 
 
 @dataclass

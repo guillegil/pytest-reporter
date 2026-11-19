@@ -14,6 +14,7 @@ import pytest
 
 from ._dashboard_config import normalize_dashboard
 from ._strategies import html_data as strategies_html_data
+from ._strategies import rerun_data, seed_text
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -167,6 +168,36 @@ def strategies_seed(collector: DataCollector) -> int | str | None:
     return None
 
 
+def has_strategy_rows(collector: DataCollector, strategies_by_test: dict[str, Any]) -> bool:
+    """Whether the session has pytest-strategies rows.
+
+    Args:
+        collector: The session's ``DataCollector``.
+        strategies_by_test: Each test's strategies from the run export.
+
+    Returns:
+        ``True`` when the export lists a strategy of a test, or a collected
+        test carries a row (``RunInfo.strategy``).
+    """
+    if any(strategies_by_test.values()):
+        return True
+    return any(collector.get_run_info(nodeid).strategy is not None for nodeid in collector._run_map)
+
+
+def _js_strategy(strategy: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A run's strategy row with its seed as JavaScript can hold it.
+
+    A 64-bit seed does not fit a JavaScript number: one past 2**53 is embedded
+    as its text, so the report shows it, and puts it in commands, as it is.
+    """
+    if strategy is None:
+        return None
+    seed = strategy.get("seed")
+    if isinstance(seed, int) and not isinstance(seed, bool) and abs(seed) > 2**53 - 1:
+        return {**strategy, "seed": str(seed)}
+    return strategy
+
+
 def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dict:  # type: ignore[type-arg]
     """Build the data dict for the HTML report.
 
@@ -184,6 +215,12 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         strategies_session, strategies_by_test = strategies_html_data(reporter.strategy_export)
     except Exception:  # noqa: BLE001
         strategies_session, strategies_by_test = None, {}
+    # Its "rerun" objects (4.4+): the commands that bring the same vectors back
+    try:
+        rerun = rerun_data(reporter.strategy_export)
+    except Exception:  # noqa: BLE001
+        rerun = rerun_data(None)
+    rerun_by_test: dict[str, dict[str, Any]] = rerun["tests"]
 
     # Collect all test data
     tests: list[dict] = []  # type: ignore[type-arg]
@@ -286,8 +323,10 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                 {
                     "run_id": run_info.run_id,
                     "nodeid": nodeid,
+                    # Only when a command needs another spelling (pytest started below the rootdir)
+                    **({"cmd_nodeid": run_info.command_nodeid} if run_info.command_nodeid else {}),
                     "parametrize_id": run_info.parametrize_id,
-                    "strategy": run_info.strategy,
+                    "strategy": _js_strategy(run_info.strategy),
                     "params": {
                         k: {"type": type(v).__name__, "value": str(v)}
                         for k, v in run_info.params.items()
@@ -308,6 +347,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                 "aggregate": dict(aggregate),
                 "runs": runs,
                 "strategies": strategies_by_test.get(base_nodeid, []),
+                "rerun": rerun_by_test.get(base_nodeid),
             }
         )
 
@@ -410,6 +450,19 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
 
     seed: str | None = str(seed_raw) if seed_raw is not None else None
 
+    # Running again with the same vectors: what pytest-strategies' export says,
+    # else the seed its rows were drawn from (all arguments and the seed as text).
+    # Only for a run with strategy rows: pytest-strategies writes its export, with
+    # a seed and the run's command, for a session that drew nothing too, where
+    # there are no vectors to bring back and the commands stay as they are.
+    run_rerun: dict[str, Any] = {}
+    if has_strategy_rows(reporter.collector, strategies_by_test):
+        run_rerun = dict(rerun["run"] or {})
+        rerun_seed = rerun["seed"] or seed_text(strategies_seed(reporter.collector))
+        if run_rerun or rerun_seed is not None:
+            run_rerun["seed"] = rerun_seed
+            run_rerun.setdefault("cwd", str(reporter.config.invocation_params.dir))
+
     return {
         "timestamp": reporter.context.timestamp,
         "duration": round(duration, 2),
@@ -427,4 +480,5 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         "dashboard": dashboard_config,
         "seed": seed,
         "strategies": strategies_session,
+        "rerun": run_rerun or None,
     }

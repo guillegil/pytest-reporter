@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,32 @@ def strategy_row(item: pytest.Item) -> dict[str, Any] | None:
     except Exception:  # noqa: BLE001 - a foreign mark must never break collection
         return None
     return None
+
+
+def command_nodeid(item: pytest.Item) -> str:
+    """An item's node ID as a pytest command takes it from the folder pytest was started in.
+
+    A node ID is relative to the rootdir, and a command is typed where pytest
+    was started: from a subfolder, ``sub/test_x.py::test_a`` names no file.
+    The file's path is written from the invocation folder instead (as
+    pytest-strategies writes its rerun commands), followed by the names.
+
+    Args:
+        item: A collected test item.
+
+    Returns:
+        The node ID to put in a command, or ``""`` when it is the item's own
+        node ID or the item has no file.
+    """
+    try:
+        path, sep, names = item.nodeid.partition("::")
+        start = str(item.config.invocation_params.dir)
+        relative = os.path.relpath(str(item.path), start).replace(os.sep, "/")
+    except Exception:  # noqa: BLE001 - no path, or one on another drive: keep the node ID
+        return ""
+    if not sep or relative == path:
+        return ""
+    return f"{relative}{sep}{names}"
 
 
 class DataCollector:
@@ -110,6 +137,7 @@ class DataCollector:
                 class_name=class_name_val,
                 display_name=display_name_val,
                 strategy=strategy_row(item),
+                command_nodeid=command_nodeid(item),
             )
             self._run_map[item.nodeid] = run_info
 

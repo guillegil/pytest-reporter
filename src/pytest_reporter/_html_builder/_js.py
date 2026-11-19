@@ -124,11 +124,125 @@ function fallbackCopy(text) {
     document.body.removeChild(ta);
   } catch (e) { /* clipboard unavailable — silent no-op */ }
 }
-// Build the exact single-test pytest command for a run's nodeid.
-// Quoted because parametrize ids ([...]) are glob/shell-special.
-function testCommand(nodeid) {
-  return 'pytest "' + nodeid + '"';
+// One argument as a shell reads it back unchanged. A plain word stays bare
+// (unless `always`: node IDs keep their quotes). Anything else goes in double
+// quotes, which POSIX shells, cmd and PowerShell all read alike, as long as
+// nothing in it is special inside them; what is ($ ` " !, a backslash that
+// would escape) goes in POSIX single quotes.
+function shellQuote(arg, always) {
+  const s = String(arg);
+  if (!always && /^[A-Za-z0-9_\/.:+-][A-Za-z0-9_\/.:+=-]*$/.test(s)) return s;
+  if (!/["$`!\n]/.test(s) && !/\\(\\|$)/.test(s)) return '"' + s + '"';
+  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
+// An unquoted argument list (pytest-strategies' rerun args) as command text.
+function quoteArgs(args) {
+  return (args || []).map(a => shellQuote(a)).join(' ');
+}
+// "pytest <node IDs> <options>": the node IDs always quoted, as [..] needs.
+function nodeCommand(nodeids, options) {
+  return ['pytest'].concat(nodeids.map(n => shellQuote(n, true)), (options || []).map(a => shellQuote(a))).join(' ');
+}
+// Build the exact single-test pytest command for a run's nodeid.
+// Quoted because parametrize ids ([...]) are glob/shell-special. In a run with
+// a pytest-strategies 4.4 export, followed by the run's options (plainOptions).
+function testCommand(nodeid) {
+  return nodeCommand([nodeid], plainOptions());
+}
+// A run's node ID as a command takes it. Node IDs are relative to the rootdir
+// and commands run from the folder pytest was started in: when the two differ
+// the run carries `cmd_nodeid`, its file written from that folder.
+function commandNodeid(run) {
+  return (run && run.cmd_nodeid) || (run ? run.nodeid : '');
+}
+// The same for a test function: a run's command node ID without its parameters.
+function commandBaseNodeid(test) {
+  const run = (test.runs || []).find(r => r.cmd_nodeid);
+  if (!run) return test.base_nodeid;
+  const at = run.cmd_nodeid.indexOf('[');
+  return at < 0 ? run.cmd_nodeid : run.cmd_nodeid.slice(0, at);
+}
+
+// ─── Running again with the same vectors (pytest-strategies) ─────────
+// DATA.rerun holds what pytest-strategies' export (4.4+) says: `args` of the
+// whole run, `options` that follow chosen node IDs, `cwd`; and the `seed` the
+// rows were drawn from, as text (a 64-bit seed never passes through a number).
+// Each returns {text, note, cwd}.
+
+// What follows node IDs so that their rows get the same values: the export's
+// options, else --rng-seed=<seed> (the row's own seed first), else nothing.
+function vectorOptions(run) {
+  const rerun = DATA.rerun || {};
+  if (rerun.options && rerun.options.length) return rerun.options;
+  const own = run && run.strategy ? run.strategy.seed : null;
+  const seed = own != null ? own : rerun.seed;
+  return seed != null ? ['--rng-seed=' + String(seed)] : [];
+}
+// What follows the node ID of a test without strategy rows: the export's
+// options (4.4+), which hold the run's own options too. Under them the test is
+// collected as this run collected it: an item pytest named [NOTSET] because
+// --vector-name left its strategy without rows exists only with that option.
+// Without them (an export of 4.3, or none) nothing: a seed alone changes nothing here.
+function plainOptions() {
+  const rerun = DATA.rerun || {};
+  return rerun.options && rerun.options.length ? rerun.options : [];
+}
+// Whether the export lists a test: it lists the tests the run selected.
+function inExport(test) {
+  return ((test && test.strategies) || []).length > 0;
+}
+// The export's entry for a test item: {nodeid, outcome, rerun?}, or null.
+function exportItem(test, nodeid) {
+  let found = null;
+  ((test && test.strategies) || []).forEach(s => (s.rows || []).forEach(r => (r.items || []).forEach(i => {
+    if (!found && i.nodeid === nodeid) found = i;
+  })));
+  return found;
+}
+// Whether a test runs strategy rows (a test that does not keeps its one plain command).
+function hasVectors(test) {
+  return !!test && (((test.strategies || []).length > 0) || (test.runs || []).some(r => r.strategy));
+}
+// One run: the export's command for its item, else its node ID and the options.
+function vectorCommand(test, run) {
+  const item = exportItem(test, run.nodeid);
+  if (item && item.rerun && item.rerun.args) {
+    return {text: 'pytest ' + quoteArgs(item.rerun.args), note: item.rerun.note || ''};
+  }
+  if (item || run.strategy) return {text: nodeCommand([commandNodeid(run)], vectorOptions(run)), note: ''};
+  return {text: testCommand(commandNodeid(run)), note: ''};
+}
+// Every row this run selected of a test, or null when nothing brings them back
+// or the run selected none: with an export, a test it does not list (-k, -m and
+// --deselect left all its rows out) has no rows of this run to run again.
+function allVectorsCommand(test) {
+  if (!hasVectors(test)) return null;
+  if (test.rerun && test.rerun.args) {
+    return {text: 'pytest ' + quoteArgs(test.rerun.args), note: test.rerun.note || ''};
+  }
+  if (DATA.strategies && !inExport(test)) return null;
+  const options = vectorOptions((test.runs || []).find(r => r.strategy));
+  if (options.length === 0) return null;
+  return {text: nodeCommand([commandBaseNodeid(test)], options), note: ''};
+}
+// The whole run: the export's arguments, else the recorded command line with
+// the seed (unless it gives one already); null when neither is known.
+function runAgainCommand() {
+  const rerun = DATA.rerun;
+  if (!rerun) return null;
+  if (rerun.args && rerun.args.length) {
+    return {text: 'pytest ' + quoteArgs(rerun.args), note: rerun.note || '', cwd: rerun.cwd || ''};
+  }
+  if (rerun.seed == null) return null;
+  const args = (DATA.cmdline || []).slice();
+  if (!args.some(a => a === '--rng-seed' || a.indexOf('--rng-seed=') === 0)) args.push('--rng-seed=' + rerun.seed);
+  return {text: 'pytest ' + quoteArgs(args), note: '', cwd: rerun.cwd || ''};
+}
+// The failed runs, with the options that give their rows the same values.
+function failuresCommand(runs) {
+  return nodeCommand(runs.map(commandNodeid), vectorOptions(null));
+}
+
 // Copy the command shown in a .detail-cmd row, with transient feedback.
 function copyCommandRow(rowEl) {
   const codeEl = rowEl.querySelector('.detail-cmd-code');
@@ -142,6 +256,54 @@ function copyCommandRow(rowEl) {
     rowEl.classList.remove('copied');
     if (hint) hint.textContent = 'Copy';
   }, 1400);
+}
+// A copy line: an optional label, the command in a box that copies it (click,
+// Enter or Space) and, under it, where to run it from and the export's note.
+// opts: {label, ariaLabel, id, command: {text, note, cwd}}.
+function commandLine(opts) {
+  const line = el('div', {className:'cmd-line' + (opts.label ? ' labeled' : '')});
+  if (opts.label) line.appendChild(el('span', {className:'cmd-label'}, opts.label));
+  const box = el('div', {className:'detail-cmd', role:'button', tabindex:'0',
+    'aria-label': opts.ariaLabel || ('Copy command: ' + opts.label)},
+    el('code', {className:'detail-cmd-code'}),
+    el('span', {className:'detail-cmd-hint'}, 'Copy')
+  );
+  if (opts.id) box.setAttribute('id', opts.id);
+  box.addEventListener('click', function() { copyCommandRow(box); });
+  box.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); copyCommandRow(box); }
+  });
+  line.appendChild(box);
+  line.appendChild(el('div', {className:'cmd-hints'}));
+  setCommandLine(line, opts.command);
+  return line;
+}
+function setCommandLine(line, command) {
+  const box = line.children[line.children.length - 2];
+  const hints = line.children[line.children.length - 1];
+  box.children[0].textContent = command.text;
+  box.setAttribute('title', command.text);
+  hints.textContent = '';
+  if (command.cwd) {
+    hints.appendChild(el('div', {className:'cmd-cwd'}, 'Run from ',
+      el('span', {className:'cmd-cwd-path'}, command.cwd)));
+  }
+  // The export's note is the terminal's text, which starts in lowercase
+  if (command.note) hints.appendChild(el('div', {className:'cmd-note'}, capitalize(command.note)));
+  hints.hidden = hints.children.length === 0;
+}
+// A small icon button that copies a command (a row of the Strategy tab).
+function copyButton(command, label) {
+  const btn = el('button', {className:'strategy-copy', type:'button', 'aria-label': label,
+    title: command.text + (command.note ? '\n' + capitalize(command.note) : '')});
+  btn.innerHTML = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+  btn.addEventListener('click', () => {
+    copyToClipboard(command.text);
+    btn.classList.add('copied');
+    announce('Command copied');
+    setTimeout(() => { btn.classList.remove('copied'); }, 1400);
+  });
+  return btn;
 }
 
 // ─── Aggregate helpers ───────────────────────────────────────────────
@@ -586,6 +748,13 @@ function renderSummary() {
   const failures = renderFailuresPanel();
   if (failures) container.appendChild(failures);
 
+  // Only for a run with pytest-strategies rows (DATA.rerun): the command that draws them again
+  const again = runAgainCommand();
+  if (again) {
+    container.appendChild(el('div', {className:'run-again'},
+      commandLine({label:'Run again with the same vectors', command: again})));
+  }
+
   // ── Counter cards ──
   const counterDefs = [{k:'passed',l:'Passed'},{k:'failed',l:'Failed'},{k:'skipped',l:'Skipped'},{k:'error',l:'Errors'}];
   if (DATA.retries_enabled) counterDefs.push({k:'retried',l:'Retried'});
@@ -648,7 +817,8 @@ function renderFailuresPanel() {
   head.appendChild(el('span', {className:'failures-count'},
     items.length + ' failed ' + runsWord + ' in ' + testCount + ' ' + testsWord));
 
-  const rerun = 'pytest ' + items.map(i => '"' + i.run.nodeid + '"').join(' ');
+  // With pytest-strategies: the options (or the seed) that bring the same rows back
+  const rerun = failuresCommand(items.map(i => i.run));
   const copyBtn = el('button', {className:'strip-btn failures-copy', type:'button',
     title: rerun}, 'Copy rerun command');
   copyBtn.addEventListener('click', () => {
@@ -1192,6 +1362,7 @@ function showDetailPane(on) {
   }
 }
 
+let detailCmdLine = null;  // the header's copy line of the selected run
 function showTestDetail(test, initialRun) {
   selectedTest = test;
   const panel = document.querySelector('.detail-panel');
@@ -1220,19 +1391,25 @@ function showTestDetail(test, initialRun) {
 
   // Exact "run only this test" command — updates with the selected run's nodeid.
   const firstRun = initialRun || firstFailingRun(test);
-  const initialCmd = testCommand(firstRun ? firstRun.nodeid : test.base_nodeid);
-  const cmdRow = el('div', {
-    className:'detail-cmd', id:'detail-cmd', role:'button', tabindex:'0',
-    'aria-label':'Copy command to run this test'
-  },
-    el('code', {className:'detail-cmd-code'}, initialCmd),
-    el('span', {className:'detail-cmd-hint'}, 'Copy')
-  );
-  cmdRow.addEventListener('click', function() { copyCommandRow(cmdRow); });
-  cmdRow.addEventListener('keydown', function(ev) {
-    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); copyCommandRow(cmdRow); }
+  // A test that runs pytest-strategies rows gets two labelled lines: this
+  // vector, and every vector of the test, each with what draws the same values.
+  const vectors = hasVectors(test);
+  const allVectors = allVectorsCommand(test);
+  const cmds = el('div', {className:'detail-cmds' + (vectors ? ' labeled' : '')});
+  detailCmdLine = commandLine({
+    id:'detail-cmd',
+    label: vectors ? 'This vector' : '',
+    ariaLabel: vectors ? 'Copy command to run this vector again' : 'Copy command to run this test',
+    command: firstRun ? vectorCommand(test, firstRun) : {text: testCommand(commandBaseNodeid(test))},
   });
-  header.appendChild(cmdRow);
+  cmds.appendChild(detailCmdLine);
+  if (allVectors) {
+    cmds.appendChild(commandLine({
+      id:'detail-cmd-all', label:'All vectors of this test',
+      ariaLabel:'Copy command to run all vectors of this test again', command: allVectors,
+    }));
+  }
+  header.appendChild(cmds);
 
   // Stats row
   const agg = test.aggregate;
@@ -1360,8 +1537,7 @@ function subTabNames(run) {
 function showRunDetail(run, openTab) {
   selectedRun = run;
   // Keep the header command in sync with the selected run's exact nodeid.
-  const cmdCode = document.querySelector('#detail-cmd .detail-cmd-code');
-  if (cmdCode) cmdCode.textContent = testCommand(run.nodeid);
+  if (detailCmdLine) setCommandLine(detailCmdLine, vectorCommand(selectedTest, run));
   // A run past the first 20 opens the rest of the pills, so its own shows.
   const pills = [...document.querySelectorAll('#run-pills .run-pill')];
   const more = document.querySelector('#run-pills .show-more-btn[aria-expanded="false"]');
@@ -1795,6 +1971,10 @@ function renderStrategyRows(strategy, test, run) {
   names.forEach(n => head.appendChild(el('th', {scope:'col'}, n)));
   head.appendChild(el('th', {scope:'col'}, 'Outcome'));
   const body = el('tbody');
+  // A note of the export (a command that does not reproduce its row) is the
+  // same for every row it applies to: each such row gets a mark, and the text
+  // is written once under the table.
+  const notes = [];
   rows.forEach((r, idx) => {
     const items = r.items || [];
     const isCurrent = items.some(i => i.nodeid === run.nodeid);
@@ -1810,7 +1990,21 @@ function renderStrategyRows(strategy, test, run) {
     });
     const outcomes = el('div', {className:'strategy-outcomes'});
     if (items.length === 0) outcomes.appendChild(el('span', {className:'strategy-item'}, 'Not run'));
-    items.forEach(i => outcomes.appendChild(strategyItemEl(i, test, run)));
+    items.forEach(i => {
+      const pair = el('span', {className:'strategy-outcome'}, strategyItemEl(i, test, run));
+      outcomes.appendChild(pair);
+      if (typeof i.nodeid !== 'string') return;
+      // The command that runs this row's item again with the same values
+      const cmd = vectorCommand(test, test.runs.find(t => t.nodeid === i.nodeid) || {nodeid: i.nodeid});
+      pair.appendChild(copyButton(cmd, 'Copy command to run row ' + (r.id != null ? r.id : '')
+        + (items.length > 1 ? ' (' + i.nodeid + ')' : '') + ' again'));
+      if (cmd.note) {
+        if (notes.indexOf(cmd.note) < 0) notes.push(cmd.note);
+        const mark = '*'.repeat(notes.indexOf(cmd.note) + 1);
+        pair.appendChild(el('span', {className:'strategy-note-mark', title: capitalize(cmd.note),
+          'aria-label': 'See the note under the table'}, mark));
+      }
+    });
     tr.appendChild(el('td', null, outcomes));
     body.appendChild(tr);
   });
@@ -1821,6 +2015,9 @@ function renderStrategyRows(strategy, test, run) {
     more.addEventListener('click', () => { hidden.forEach(tr => { tr.hidden = false; }); more.remove(); });
     wrap.appendChild(more);
   }
+  notes.forEach((note, at) => {
+    wrap.appendChild(el('p', {className:'cmd-note strategy-rows-note'}, '*'.repeat(at + 1) + ' ' + capitalize(note)));
+  });
   return wrap;
 }
 
@@ -2981,14 +3178,20 @@ function renderReport() {
   }
 
   // CLI args
-  if (DATA.cmdline && DATA.cmdline.length > 0) {
+  const runAgain = runAgainCommand();
+  if ((DATA.cmdline && DATA.cmdline.length > 0) || runAgain) {
     const cmdSection = el('div', {className:'report-section'});
     const cmdHeader = el('div', {className:'report-section-header'});
     cmdHeader.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
     cmdHeader.appendChild(document.createTextNode(' Command Line'));
     cmdSection.appendChild(cmdHeader);
     const cmdBody = el('div', {className:'report-section-body'});
-    cmdBody.appendChild(el('div', {className:'log-viewer'}, DATA.cmdline.join(' ')));
+    if (DATA.cmdline && DATA.cmdline.length > 0) {
+      cmdBody.appendChild(el('div', {className:'log-viewer'}, DATA.cmdline.join(' ')));
+    }
+    if (runAgain) {
+      cmdBody.appendChild(commandLine({label:'Run again with the same vectors', command: runAgain}));
+    }
     cmdSection.appendChild(cmdBody);
     container.appendChild(cmdSection);
   }

@@ -56,7 +56,7 @@ mypy --strict src/pytest_reporter/
 - `_html_builder.py` — self-contained HTML with embedded JSON data, rendered by inline JS (SVG donut charts, tree navigation, 3 tabs)
 - `_console_capture.py` — `TeeFile` wraps terminal reporter to capture pytest.log
 - `_stepdoc.py` — optional stepdoc integration: makes stepdoc record (`--stepdoc-record=<run>/stepdoc.json`) and turns its steps into `procedure.json`
-- `_strategies.py` — optional pytest-strategies integration (4.3+): answers its `pytest_strategies_export_dir` hook with the run folder and reads `strategies.vectors.json` for the Strategy sub-tab
+- `_strategies.py` — optional pytest-strategies integration (4.3+): answers its `pytest_strategies_export_dir` hook with the run folder and reads `strategies.vectors.json` for the Strategy sub-tab and the `rerun` arguments (4.4+) behind the report's "same vectors" copy lines
 - `_symlinks.py` — refreshes the `01_latest/` hard copy of the most recent run (legacy filename; the module exports `update_latest_copy`)
 
 **Tests use `pytester`** — all plugin behavior is tested via subprocess isolation. The `pytester` fixture is enabled in `tests/conftest.py`.
