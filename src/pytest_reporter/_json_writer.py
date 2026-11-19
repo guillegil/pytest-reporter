@@ -65,6 +65,11 @@ def write_checks_json(path: Path, checks: list[dict[str, Any]]) -> None:
     _write_json(path, {"checks": checks})
 
 
+def write_bench_json(path: Path, document: dict[str, Any]) -> None:
+    """Write bench.json: the bench provenance of the run (devices, instruments, changes)."""
+    _write_json(path, document)
+
+
 def write_test_log_json(path: Path, aggregate: TestLogJson) -> None:
     """Write test.log.json aggregate for a test function."""
     _write_json(path, aggregate)

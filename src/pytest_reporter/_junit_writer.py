@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from xml.etree.ElementTree import Element, ElementTree, SubElement
+
+from ._bench import change_text, junit_properties, xml_text
 
 if TYPE_CHECKING:
     from ._collector import DataCollector
@@ -16,10 +19,32 @@ def write_junit_xml(
     duration: float,
     *,
     retries_enabled: bool = False,
+    bench: Mapping[str, Any] | None = None,
 ) -> None:
-    """Write a standard JUnit XML report."""
+    """Write a standard JUnit XML report.
+
+    Args:
+        path: Where to write it.
+        collector: The session's tests and outcomes.
+        duration: The session's duration in seconds.
+        retries_enabled: Whether the reporter's retries are on.
+        bench: The ``bench.json`` document: its facts become the testsuite's
+            ``<properties>``, and each test that changed the bench gets
+            ``bench.changed`` properties.
+    """
     testsuites = Element("testsuites")
     testsuite = SubElement(testsuites, "testsuite", name="pytest")
+
+    # The junit schema wants a testsuite's properties before its testcases
+    suite_properties = junit_properties(bench) if bench else []
+    if suite_properties:
+        suite_props = SubElement(testsuite, "properties")
+        for prop_name, prop_value in suite_properties:
+            SubElement(suite_props, "property", name=prop_name, value=prop_value)
+    changes_by_test: dict[str, list[str]] = {}
+    for change in (bench or {}).get("changes", []):
+        if change.get("nodeid"):
+            changes_by_test.setdefault(change["nodeid"], []).append(xml_text(change_text(change)))
 
     total = passed = failed = errors = skipped = 0
 
@@ -43,8 +68,15 @@ def write_junit_xml(
 
             # Add retry properties if applicable
             retry_data = collector.get_retry_data(nodeid)
-            if retry_data and retry_data.attempts > 0:
+            changed = changes_by_test.get(nodeid, [])
+            props = None
+            if changed:
                 props = SubElement(tc, "properties")
+                for text in changed:
+                    SubElement(props, "property", name="bench.changed", value=text)
+            if retry_data and retry_data.attempts > 0:
+                if props is None:
+                    props = SubElement(tc, "properties")
                 SubElement(
                     props,
                     "property",

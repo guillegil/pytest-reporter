@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from . import _hookspecs, _stepdoc
+from ._bench import BenchInfo
 from ._context import RunContext
 from ._logger import Logger
 from ._tabs import ReportTabs
@@ -158,6 +159,34 @@ def report_tabs(request: pytest.FixtureRequest) -> ReportTabs:
     if reporter is None:
         return ReportTabs()
     return reporter.tabs_for(request.node.nodeid)
+
+
+@pytest.fixture(scope="session")
+def report_bench(request: pytest.FixtureRequest) -> BenchInfo:
+    """Provide the session's bench provenance: devices, instruments, other facts.
+
+    What is recorded goes to ``bench.json`` in the run folder, to ``junit.xml``
+    as properties and to the Report tab of the HTML report. A value changed
+    from a test is shown as a change made by that test. Without
+    ``--report-dir``, and in pytest-xdist workers, the arguments are still
+    checked and nothing is saved (use the ``pytest_reporter_bench`` hook for
+    a distributed run).
+
+    Example::
+
+        @pytest.fixture(scope="session", autouse=True)
+        def bench(report_bench, dut, dmm):
+            report_bench.device("DUT", serial=dut.serial, firmware=dut.fw_version)
+            report_bench.instrument("DMM", idn=dmm.query("*IDN?"), cal_due="2027-03-02")
+            report_bench.set("Fixture board", "FB-12")
+
+    Returns:
+        The session's ``BenchInfo``.
+    """
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
+    if reporter is None:
+        return BenchInfo()
+    return reporter.bench
 
 
 @pytest.fixture(scope="session")

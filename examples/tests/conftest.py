@@ -13,6 +13,25 @@ def pytest_reporter_seed() -> int:
     return 1337
 
 
+def pytest_reporter_bench(config, bench) -> None:
+    """Record the bench in the report (Report tab, bench.json, junit.xml)."""
+    bench.device("DUT", serial="SN-0042", firmware="2.3.1", hardware="rev C")
+    bench.instrument(
+        "PSU", idn="Keysight Technologies,E36312A,MY56001234,2.1.0", cal_due="2027-01-15"
+    )
+    bench.instrument(
+        "Scope",
+        idn="Keysight Technologies,MSOX3104T,MY57009876,7.40",
+        calibrated="2026-01-15",
+        cal_due="2027-01-15",
+    )
+    bench.instrument(
+        "DMM", idn="Keysight Technologies,34461A,MY58005555,A.03.01", cal_due="2027-03-02"
+    )
+    bench.set("Site", "Lab 2")
+    bench.set("Fixture board", "FB-12")
+
+
 @pytest.fixture(scope="session")
 def testbench(session_log):
     """Simulate a hardware testbench with instrument discovery."""
@@ -23,27 +42,42 @@ def testbench(session_log):
     psu = tb.child("psu")
     psu.info("Connecting to PSU", data={"address": "TCPIP::192.168.1.10", "port": 5025})
     psu.info("Identification query sent")
-    psu.info("Connected", data={"model": "Keysight E36312A", "firmware": "2.1.0", "serial": "MY56001234"})
+    psu.info(
+        "Connected", data={"model": "Keysight E36312A", "firmware": "2.1.0", "serial": "MY56001234"}
+    )
     psu.info("Self-test passed", data={"result": "0,No error"})
-    psu.info("Output channels configured", data={"ch1": "3.3V/1A", "ch2": "5.0V/2A", "ch3": "12V/3A"})
+    psu.info(
+        "Output channels configured", data={"ch1": "3.3V/1A", "ch2": "5.0V/2A", "ch3": "12V/3A"}
+    )
 
     scope = tb.child("scope")
     scope.info("Connecting to oscilloscope", data={"address": "TCPIP::192.168.1.11", "port": 5025})
-    scope.info("Connected", data={"model": "Keysight MSOX3104T", "firmware": "7.40", "serial": "MY57009876"})
+    scope.info(
+        "Connected",
+        data={"model": "Keysight MSOX3104T", "firmware": "7.40", "serial": "MY57009876"},
+    )
     scope.info("Calibration check", data={"status": "passed", "last_cal": "2026-01-15"})
-    scope.info("Channel configuration", data={
-        "ch1": {"coupling": "DC", "scale": "1V/div", "probe": "10x"},
-        "ch2": {"coupling": "DC", "scale": "500mV/div", "probe": "1x"},
-    })
+    scope.info(
+        "Channel configuration",
+        data={
+            "ch1": {"coupling": "DC", "scale": "1V/div", "probe": "10x"},
+            "ch2": {"coupling": "DC", "scale": "500mV/div", "probe": "1x"},
+        },
+    )
 
     dmm = tb.child("dmm")
     dmm.info("Connecting to DMM", data={"address": "TCPIP::192.168.1.12", "port": 5025})
-    dmm.info("Connected", data={"model": "Keysight 34461A", "firmware": "A.03.01", "serial": "MY58005555"})
+    dmm.info(
+        "Connected",
+        data={"model": "Keysight 34461A", "firmware": "A.03.01", "serial": "MY58005555"},
+    )
     dmm.info("Range set to auto")
 
     siggen = tb.child("siggen")
     siggen.info("Connecting to signal generator", data={"address": "TCPIP::192.168.1.13"})
-    siggen.info("Connected", data={"model": "Keysight 33600A", "firmware": "5.10", "serial": "MY59001111"})
+    siggen.info(
+        "Connected", data={"model": "Keysight 33600A", "firmware": "5.10", "serial": "MY59001111"}
+    )
     siggen.info("Output impedance set to 50 ohm")
 
     tb.info("All instruments discovered and initialized", data={"instrument_count": 4})
@@ -67,7 +101,9 @@ def testbench(session_log):
 def db_pool(session_log):
     """Simulate a database connection pool."""
     db = session_log.child("database")
-    db.info("Creating connection pool", data={"host": "db.internal", "port": 5432, "database": "testdb"})
+    db.info(
+        "Creating connection pool", data={"host": "db.internal", "port": 5432, "database": "testdb"}
+    )
     db.info("Pool created", data={"min_connections": 2, "max_connections": 10})
     db.info("Running schema migration check")
     db.info("Schema is up to date", data={"version": "2026.03.28.001"})
@@ -103,7 +139,9 @@ def flaky_service():
         _flaky_counters.setdefault(name, 0)
         _flaky_counters[name] += 1
         if _flaky_counters[name] <= fail_first:
-            raise ConnectionError(f"Service '{name}' temporarily unavailable (attempt {_flaky_counters[name]})")
+            raise ConnectionError(
+                f"Service '{name}' temporarily unavailable (attempt {_flaky_counters[name]})"
+            )
         return f"ok:{name}"
 
     return call

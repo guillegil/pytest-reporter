@@ -12,8 +12,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from ._bench import html_data as bench_html_data
 from ._dashboard_config import normalize_dashboard
 from ._strategies import html_data as strategies_html_data
+from ._strategies import js_safe
 from ._tabs import collect_tabs
 
 if TYPE_CHECKING:
@@ -62,6 +64,31 @@ def merge_metadata(
         merged.setdefault(section, {}).update({str(k): str(v) for k, v in rows.items()})
 
     return merged
+
+
+def collect_metadata(reporter: Reporter) -> dict[str, dict[str, str]]:
+    """The sections of the ``pytest_reporter_metadata`` hook and ``report_metadata``.
+
+    Broad except is intentional: ``pytest_reporter_metadata()`` is third-party
+    user code. The reporter is an observer and must never crash or suppress
+    test outcomes because a plugin misbehaves. A raising hook gets its data
+    dropped with a warning; the fixture's ``metadata_store`` is still merged.
+
+    Args:
+        reporter: The active ``Reporter``.
+
+    Returns:
+        The merged ``{section: {label: text}}`` dict.
+    """
+    hook_results: list[dict[str, dict[str, object]]] = []
+    try:
+        hook_results = reporter.config.hook.pytest_reporter_metadata()
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(
+            f"pytest_reporter_metadata hook raised an exception and will be ignored: {exc}",
+            stacklevel=2,
+        )
+    return merge_metadata(hook_results, reporter.metadata_store)
 
 
 MAX_EMBED_BYTES = 25 * 1024 * 1024  # 25 MB per-file embedding cap (REQ-6)
@@ -270,19 +297,24 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                             checks_file = attempt_dir / "checks.json"
                             if checks_file.exists():
                                 try:
-                                    attempt_data["check_results"] = json.loads(
-                                        checks_file.read_text()
-                                    ).get("checks", [])
+                                    attempt_data["check_results"] = js_safe(
+                                        json.loads(checks_file.read_text()).get("checks", [])
+                                    )
                                 except (json.JSONDecodeError, OSError, AttributeError) as err:
                                     warnings.warn(
                                         f"pytest-reporter: retry checks skipped "
                                         f"(unreadable): {checks_file}: {err}",
                                         stacklevel=2,
                                     )
+                            if attempt_dir.name.isdigit():
+                                changed = reporter.bench.changes(nodeid, int(attempt_dir.name))
+                                if changed:
+                                    attempt_data["bench_changes"] = js_safe(changed)
                             retry_attempts.append(attempt_data)
 
             # Verification checks from pytest-verifier (first attempt)
-            check_results = reporter._check_results.get(nodeid, [])
+            # (a 64-bit register value is more than a JavaScript number holds)
+            check_results = js_safe(reporter._check_results.get(nodeid, []))
 
             runs.append(
                 {
@@ -303,6 +335,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                     "retries": retries_info,
                     "retry_attempts": retry_attempts,
                     "check_results": check_results,
+                    "bench_changes": js_safe(reporter.bench.changes(nodeid, 0)),
                 }
             )
         tests.append(
@@ -352,22 +385,17 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
     # Session log data
     session_log_data = reporter.session_logger.serialize()
 
-    # Collect and merge metadata from hook + fixture.
-    # Broad except is intentional: pytest_reporter_metadata() is third-party
-    # user code called at report-generation time.  The reporter is an observer
-    # and must never crash or suppress test outcomes because a plugin misbehaves
-    # (see .claude/CLAUDE.md: "The reporter observes, never judges / never
-    # affects outcomes").  A raising hook gets its data silently dropped; the
-    # fixture-provided metadata_store is still merged as usual.
-    hook_results: list[dict[str, dict[str, object]]] = []
-    try:
-        hook_results = reporter.config.hook.pytest_reporter_metadata()
-    except Exception as exc:  # noqa: BLE001
-        warnings.warn(
-            f"pytest_reporter_metadata hook raised an exception and will be ignored: {exc}",
-            stacklevel=2,
-        )
-    system_metadata = merge_metadata(hook_results, reporter.metadata_store)
+    # report_metadata and the pytest_reporter_metadata hook: collected when the
+    # session ended (bench.json and junit.xml hold them too)
+    system_metadata = reporter.system_metadata
+    if system_metadata is None:
+        system_metadata = collect_metadata(reporter)
+
+    # Bench provenance: the Report tab's Bench section, and each run's changes
+    bench_document = reporter.bench_document
+    if bench_document is None:
+        bench_document = reporter.bench.document(reporter._run_date)
+    bench_data = bench_html_data(bench_document)
 
     # Collect dashboard grouping config from hook + fixture.
     # Same crash-safety pattern as metadata: a raising hook is warned and its
@@ -427,6 +455,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         "retries_enabled": reporter.max_retries > 0,
         "max_retries": reporter.max_retries,
         "system_metadata": system_metadata,
+        "bench": bench_data,
         "dashboard": dashboard_config,
         "seed": seed,
         "strategies": strategies_session,
