@@ -24,6 +24,7 @@ from ._safety import guard, guard_void
 from ._stepdoc import StepCollector
 from ._strategies import StrategyExport
 from ._symlinks import update_latest_copy
+from ._tabs import ReportTabs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,6 +62,8 @@ class Reporter:
         self._check_results: dict[str, list[dict[str, Any]]] = {}
         # Checks of the attempt running now: nodeid -> list[dict]
         self._attempt_checks: dict[str, list[dict[str, Any]]] = {}
+        # Custom HTML tabs of the attempt running now: nodeid -> ReportTabs
+        self._tabs: dict[str, ReportTabs] = {}
         # Item references for stash access: nodeid -> Item
         self._items: dict[str, Item] = {}
         # Mutable metadata dict populated via report_metadata fixture or hook
@@ -74,6 +77,23 @@ class Reporter:
     def get_current_run_dir(self, nodeid: str) -> Path | None:
         """Get the current write directory for a test (retry-aware)."""
         return self._retry_paths.get(nodeid)
+
+    def tabs_for(self, nodeid: str) -> ReportTabs:
+        """The custom tabs of the attempt of a test that is running now.
+
+        Args:
+            nodeid: The test's node ID.
+
+        Returns:
+            The attempt's ``ReportTabs``; one that saves nothing for a test the
+            reporter does not know.
+        """
+        tabs = self._tabs.get(nodeid)
+        if tabs is None:
+            tabs = ReportTabs()
+            if nodeid in self.collector._run_map:
+                tabs = self._tabs[nodeid] = ReportTabs(self._get_run_dir(nodeid) / "tabs")
+        return tabs
 
     def _get_run_dir(self, nodeid: str) -> Path:
         """Get the write directory for a test, considering retries."""
@@ -107,6 +127,16 @@ class Reporter:
     def pytest_runtest_setup(self, item: Item) -> None:
         """Hook shell: crash-safe wrapper around _do_runtest_setup."""
         guard_void("pytest_runtest_setup", lambda: self._do_runtest_setup(item))
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_teardown(self, item: Item) -> None:
+        """Ask conftests and plugins for the test's custom tabs, fixtures still alive."""
+        guard_void(
+            "pytest_reporter_test_tabs",
+            lambda: item.config.hook.pytest_reporter_test_tabs(
+                item=item, tabs=self.tabs_for(item.nodeid)
+            ),
+        )
 
     def pytest_runtest_logreport(self, report: TestReport) -> None:
         """Hook shell: crash-safe wrapper around _do_runtest_logreport."""
@@ -217,6 +247,7 @@ class Reporter:
         # Start a new attempt: its own stepdoc steps and verifier checks
         self.steps.begin(nodeid)
         self._attempt_checks[nodeid] = []
+        self._tabs.pop(nodeid, None)
 
     def _do_runtest_logreport(self, report: TestReport) -> None:
         """Real body of pytest_runtest_logreport."""

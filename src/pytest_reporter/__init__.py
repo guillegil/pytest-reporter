@@ -8,10 +8,12 @@ are optional: the reporter reads what they publish and never imports them.
 from __future__ import annotations
 
 from ._logger import Logger, ReportLogger
+from ._tabs import ReportTabs
 
 __all__ = [
     "Logger",
     "ReportLogger",
+    "ReportTabs",
 ]
 
 # Names removed in 0.3.0, with where they went.

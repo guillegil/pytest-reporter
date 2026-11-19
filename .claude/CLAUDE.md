@@ -56,7 +56,7 @@ pytest tests/ --report-dir=reports --report-retries=3  # Enable retries
 
 ```
 pytest_reporter/
-├── __init__.py              # Exports: Logger, ReportLogger (removed names raise ImportError)
+├── __init__.py              # Exports: Logger, ReportLogger, ReportTabs (removed names raise ImportError)
 ├── py.typed                 # PEP 561 marker — REQUIRED
 ├── plugin.py                # Plugin registration (pytest11 entry point)
 ├── reporter.py              # Reporter class — main hook orchestrator
@@ -70,6 +70,8 @@ pytest_reporter/
 ├── _json_writer.py          # Phase log, test.log.json, session.log.json writers
 ├── _junit_writer.py         # junit.xml generation
 ├── _html_builder.py         # Self-contained HTML report generation at session end
+├── _tabs.py                 # ReportTabs (custom HTML tabs: saves tabs/NN_<slug>.html and
+│                            #   tabs.json per attempt), collect_tabs() for the report
 ├── _table.py                # Table normalization and HTML artifact builder
 ├── _console_capture.py      # TeeFile — captures pytest.log output
 └── _symlinks.py             # 01_latest/ hard-copy refresh (update_latest_copy)
@@ -84,6 +86,7 @@ pytest_reporter/
 | `log` | test | `ReportLogger` | Structured logging during test phases |
 | `session_log` | session | `ReportLogger` | Structured logging for session-scoped fixtures |
 | `report_artifacts` | test | `pathlib.Path` | Directory path for saving test artifacts |
+| `report_tabs` | test | `ReportTabs` | Custom HTML tabs in the test's detail |
 
 ### Imports
 
@@ -419,6 +422,24 @@ DashboardConfig) and `_dashboard_config.normalize_dashboard()`.
 
 `"auto"` density heuristic (pinned threshold): `depth >= 2` OR child count > 5 → pass-rate bars;
 else donut grid.
+
+## Custom tabs
+
+- `ReportTabs.add(title, content, *, scripts=False, height=None)` (`_tabs.py`): from the
+  `report_tabs` fixture, or from `pytest_reporter_test_tabs(item, tabs)` implementations, which
+  `Reporter.pytest_runtest_teardown` (tryfirst, guarded) calls before fixtures are torn down.
+  `Reporter.tabs_for(nodeid)` gives both the same object; it is dropped at each attempt's
+  setup, so a retry starts empty and writes to `retries/XX/tabs/`.
+- Titles: stripped, at most 40 characters, not a built-in tab's name (`RESERVED`), not
+  repeated in the test (casefold); usage errors raise from `add()`, also without
+  `--report-dir` (where nothing is saved).
+- `collect_tabs` gives each run (and retry attempt) its `tabs`: `title`, `scripts`,
+  `height`, `html` (`too_large` over 25 MB). Only file names inside `tabs/` are read.
+- JS: `customTabs(run)` (after every built-in tab, Retries included), `renderCustomTab`.
+  The HTML goes only into an iframe's `srcdoc`: `sandbox="allow-same-origin"` without
+  scripts (inert, so the report measures its height), `sandbox="allow-scripts"` with them
+  (its own origin; height by `postMessage`). Never both tokens. A fragment is wrapped in a
+  page with the report's font and colors (`customTabDoc`).
 
 ## Artifact System (§9)
 

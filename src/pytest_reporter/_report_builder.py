@@ -14,6 +14,7 @@ import pytest
 
 from ._dashboard_config import normalize_dashboard
 from ._strategies import html_data as strategies_html_data
+from ._tabs import collect_tabs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -236,6 +237,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                                 "attempt": attempt_dir.name,
                                 "phases": {},
                                 "artifacts": collect_artifacts(attempt_dir / "artifacts"),
+                                "tabs": collect_tabs(attempt_dir / "tabs"),
                             }
                             # Read phase logs from retry dir — guarded per-file (REQ-2B).
                             # A corrupt or unreadable phase log is warned and omitted
@@ -297,6 +299,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                     "phases": phases,
                     "procedure": procedure,
                     "artifacts": artifacts,
+                    "tabs": collect_tabs(run_dir / "tabs"),
                     "retries": retries_info,
                     "retry_attempts": retry_attempts,
                     "check_results": check_results,

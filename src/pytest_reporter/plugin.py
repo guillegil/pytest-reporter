@@ -10,6 +10,7 @@ import pytest
 from . import _hookspecs, _stepdoc
 from ._context import RunContext
 from ._logger import Logger
+from ._tabs import ReportTabs
 from .reporter import Reporter
 
 if TYPE_CHECKING:
@@ -135,6 +136,28 @@ def report_artifacts(request: pytest.FixtureRequest) -> Path:
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     return artifacts_dir
+
+
+@pytest.fixture
+def report_tabs(request: pytest.FixtureRequest) -> ReportTabs:
+    """Provide the current test's custom tabs in the HTML report.
+
+    ``report_tabs.add("Waveform", html)`` adds a tab to the test's detail,
+    shown in a sandboxed frame after the report's own tabs. Without
+    ``--report-dir`` the arguments are still checked and nothing is saved.
+
+    Example::
+
+        def test_scope(report_tabs, scope):
+            report_tabs.add("Waveform", scope.capture_html())
+
+    Returns:
+        The ``ReportTabs`` of this test attempt.
+    """
+    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
+    if reporter is None:
+        return ReportTabs()
+    return reporter.tabs_for(request.node.nodeid)
 
 
 @pytest.fixture(scope="session")
