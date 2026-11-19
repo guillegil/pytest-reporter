@@ -412,6 +412,13 @@ node may hold `substeps` of the same shape.
 | Skipped | `#F59E0B` |
 | Error | `#F97316` |
 
+Status dots differ by shape too: skipped is a ring, error a square, an expected fail
+(`run.xfail.outcome == "xfailed"`, from `report.wasxfail`; `shownOutcome` in the JS; still
+counted as skipped) a dashed `--c-xfail` ring. Retried is the accent colour, never amber.
+`retryVerdict(run)` reads `retries.history`: `failed 3/3` or flaky. The Summary's Failures
+list groups by file and merges runs of one test with one reason. A Procedure phase tab is
+never better than `run.phases[when].outcome` (`.procedure-outside` when steps all passed).
+
 ### Feature level for graphs: configurable via `pytest_reporter_dashboard` hook / `report_dashboard` fixture.
 
 Each group spec carries `path` (required), `depth` (default 1), `include_self` (default False), `label`,

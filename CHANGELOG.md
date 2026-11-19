@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Failures list on the Summary is grouped by file, most failures first. Runs of one test
+  that failed for the same reason share a row, and a retried run says how its tries went:
+  `failed 3/3`. Below the list, a link counts the runs that passed only on a retry and opens
+  them in the Tests tab. The Retried counter says how many of its runs passed on a retry.
+- A test marked `xfail` that failed as expected shows as **Expected fail** (a dashed grey
+  ring) in the tree, the run pills and the run's Summary, with the mark's reason under the
+  test's name. pytest still counts it as skipped, so the Skipped counter says how many of its
+  runs were expected fails. Each run in the report data has `xfail`: `{"outcome": "xfailed"
+  | "xpassed", "reason"}`, or `null`.
+- A run's Summary has a **Retries** row (`Failed all 3 tries`) when it was retried.
 - Custom HTML tabs in a test's detail. A `conftest.py` adds them for every test with the new
   `pytest_reporter_test_tabs(item, tabs)` hook, and a test or fixture adds its own with the
   new `report_tabs` fixture: `tabs.add("Bench log", html)`. The content is HTML as a string, the
@@ -104,6 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Status colours mean one thing each. The ↻ retried pill is blue like the Retried counter,
+  not Skipped's amber. Skipped dots are rings and Error dots squares, so they differ from
+  each other by shape as well as colour. The pass rate is green when nothing failed and
+  plain text otherwise, never amber.
+- A run pill's retry badge says how the tries went (`↻ failed 3/3`) instead of a bare count.
 - A test opens on its first failed run instead of run 01, and a run's phase logs open
   on the phase that failed (or was skipped) instead of Setup.
 - When the run has failures, the Tests tab starts on them: only failed tests shown,
@@ -138,6 +153,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed retry attempt no longer shows a Procedure with only passed steps. Its checks went
+  into the first attempt's steps (fixed in stepdoc, which now places a rerun's checks in its
+  own steps). The Procedure tab also never shows a phase as better than it went: when a phase
+  failed but all its steps passed (a bare `assert` after the last step), its tab is red and
+  says it failed outside these steps, with the reason.
 - The test tree of the HTML report was empty when every test was in one file (or one
   class): the Tests tab said "No tests match the search and filters". The file is now the
   tree's top row.

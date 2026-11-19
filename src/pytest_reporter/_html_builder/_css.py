@@ -98,6 +98,9 @@ CSS: str = (
   --c-skipped-dim: color-mix(in srgb, var(--c-skipped) var(--tint), transparent);
   --c-error-dim: color-mix(in srgb, var(--c-error) var(--tint), transparent);
   --c-accent-dim: color-mix(in srgb, var(--c-accent) var(--tint), transparent);
+  /* Expected fail (xfail): neutral, not a warning; told apart by its dashed ring */
+  --c-xfail: var(--c-text2);
+  --c-xfail-dim: color-mix(in srgb, var(--c-text2) var(--tint), transparent);
   --c-failed-strong-dim: color-mix(in srgb, var(--c-failed) 26%, transparent);
   --c-failed-line: color-mix(in srgb, var(--c-failed) 32%, transparent);
 
@@ -298,7 +301,7 @@ button { font-family: inherit; }
   line-height: 1;
 }
 .summary-hero-pct.good { color: var(--c-passed-ink); }
-.summary-hero-pct.warn { color: var(--c-skipped-ink); }
+.summary-hero-pct.neutral { color: var(--c-text); }
 .summary-hero-pct.bad { color: var(--c-failed-ink); }
 .summary-hero-pct-label {
   font-size: var(--fs-xs);
@@ -715,6 +718,7 @@ button { font-family: inherit; }
 .filter-btn.failed.active { color: var(--c-failed-ink); background: var(--c-failed-dim); }
 .filter-btn.skipped.active { color: var(--c-skipped-ink); background: var(--c-skipped-dim); }
 .filter-btn.error.active { color: var(--c-error-ink); background: var(--c-error-dim); }
+.filter-btn.xfailed.active { color: var(--c-text); background: var(--c-xfail-dim); border-color: var(--c-xfail); }
 .tree-expand-btn {
   padding: 3px 6px;
   border-radius: var(--radius-sm);
@@ -794,10 +798,11 @@ button { font-family: inherit; }
   background: var(--c-surface3);
   color: var(--c-text3);
 }
-/* Flaky marker: a test/group that needed retries (final outcome may be pass) */
+/* Retry marker: a test/group that needed retries (final outcome may be pass).
+   Accent, like the Retried counter: amber is Skipped's. */
 .tree-badge.retried {
-  background: var(--c-skipped-dim);
-  color: var(--c-skipped-ink);
+  background: var(--c-accent-dim);
+  color: var(--c-accent-ink);
 }
 .tree-children { display: none; }
 .tree-node.expanded > .tree-children { display: block; }
@@ -848,8 +853,11 @@ button { font-family: inherit; }
 }
 .status-dot.passed { background: var(--c-passed); }
 .status-dot.failed { background: var(--c-failed); }
-.status-dot.skipped { background: var(--c-skipped); }
-.status-dot.error { background: var(--c-error); }
+/* Shape tells the statuses apart as well as hue: skipped (did not run) is a
+   ring, error (broke before judging) a square, an expected fail a dashed ring. */
+.status-dot.skipped { background: transparent; box-shadow: inset 0 0 0 2px var(--c-skipped); }
+.status-dot.error { background: var(--c-error); border-radius: 2px; }
+.status-dot.xfailed { background: transparent; border: 1.5px dashed var(--c-xfail); }
 
 /* ================================================================
    Detail Panel
@@ -892,6 +900,14 @@ button { font-family: inherit; }
 .detail-header-outcome.failed { background: var(--c-failed-dim); color: var(--c-failed-ink); }
 .detail-header-outcome.skipped { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
 .detail-header-outcome.error { background: var(--c-error-dim); color: var(--c-error-ink); }
+.detail-header-outcome.xfailed { background: var(--c-xfail-dim); color: var(--c-text); }
+.detail-xfail {
+  margin-top: 6px;
+  font-size: var(--fs-md);
+  color: var(--c-text2);
+  overflow-wrap: anywhere;
+}
+.detail-xfail strong { color: var(--c-text); font-weight: 600; }
 .detail-header h2 {
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -1000,6 +1016,7 @@ button { font-family: inherit; }
 .run-pill.failed { background: var(--c-failed-dim); color: var(--c-failed-ink); }
 .run-pill.skipped { background: var(--c-skipped-dim); color: var(--c-skipped-ink); }
 .run-pill.error { background: var(--c-error-dim); color: var(--c-error-ink); }
+.run-pill.xfailed { background: var(--c-xfail-dim); color: var(--c-text); }
 .run-pill:hover { filter: brightness(1.2); }
 .run-pill.selected { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
 .show-more-btn {
@@ -2313,6 +2330,66 @@ button.counter-card:focus-visible {
   cursor: pointer;
 }
 .failures-more:hover { color: var(--c-text); }
+.failures-group + .failures-group { margin-top: 14px; }
+.failures-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 10px 4px;
+  border-bottom: 1px solid var(--c-border);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.failures-group-file {
+  font-family: var(--font-mono);
+  color: var(--c-text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.failures-group-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--c-text2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.failures-group .failures-list li:first-child .failure-row { border-top: 0; }
+.failures-foot { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.failures-flaky { color: var(--c-accent-ink); }
+/* How a retried run went: failed every try, or passed in the end */
+.retry-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 20px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.retry-chip.consistent { background: var(--c-failed-dim); color: var(--c-failed-ink); }
+.retry-chip.flaky { background: var(--c-accent-dim); color: var(--c-accent-ink); }
+/* A phase that failed outside its steps (Procedure tab) */
+.procedure-outside {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--c-failed-dim);
+  color: var(--c-failed-ink);
+  font-size: var(--fs-md);
+}
+.procedure-outside.error { background: var(--c-error-dim); color: var(--c-error-ink); }
+.procedure-outside-reason {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
 .failures-more:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 
 .filter-chip {

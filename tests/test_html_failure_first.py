@@ -96,7 +96,7 @@ def test_summary_lists_failures_and_counters_filter(pytester: Pytester) -> None:
     js = _js(html)
     assert "function renderFailuresPanel(" in js
     assert "'Copy rerun command'" in js
-    assert "openRunInTests(item.test, item.run)" in js
+    assert "openRunInTests(row.test, first)" in js
     assert "el(clickable ? 'button' : 'div', {className:'counter-card '" in js
     assert "function showTreeSubset(" in js
     assert ".failures-panel {" in html

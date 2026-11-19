@@ -30,7 +30,7 @@ function el(tag, attrs, ...children) {
 
 // Status fills come from the CSS tokens, so charts follow the theme.
 const COLORS = {passed:'var(--c-passed)',failed:'var(--c-failed)',skipped:'var(--c-skipped)',error:'var(--c-error)'};
-const LABELS = {passed:'Passed',failed:'Failed',skipped:'Skipped',error:'Error'};
+const LABELS = {passed:'Passed',failed:'Failed',skipped:'Skipped',error:'Error',xfailed:'Expected fail'};
 const STATUSES = ['passed','failed','skipped','error'];
 
 // SVG helper
@@ -535,15 +535,20 @@ function renderSummary() {
   const total = agg.total || 1;
   const passRate = Math.round((agg.passed / total) * 100);
 
-  // Count retried tests
-  let retriedCount = 0;
-  DATA.tests.forEach(t => t.runs.forEach(r => { if (r.retries && r.retries.attempts > 0) retriedCount++; }));
+  // Count retried runs, those that passed on a retry, and expected fails
+  let retriedCount = 0, flakyCount = 0, xfailCount = 0;
+  DATA.tests.forEach(t => t.runs.forEach(r => {
+    const v = retryVerdict(r);
+    if (v) { retriedCount++; if (v.flaky) flakyCount++; }
+    if (shownOutcome(r) === 'xfailed') xfailCount++;
+  }));
 
   // ── Hero: pass rate + duration + ratio bar ──
   const suiteDuration = DATA.tests.reduce((a, t) => a + (t.aggregate.total_duration_seconds || 0), 0);
   const hero = el('div', {className:'summary-hero'});
   const rateSection = el('div', {className:'summary-hero-rate'});
-  const rateClass = passRate >= 90 ? 'good' : passRate >= 70 ? 'warn' : 'bad';
+  // Green only when nothing failed: a pass rate has no threshold to be amber at.
+  const rateClass = agg.failed + agg.error === 0 ? 'good' : 'neutral';
   rateSection.appendChild(el('div', {className:'summary-hero-pct ' + rateClass}, passRate + '%'));
   rateSection.appendChild(el('div', {className:'summary-hero-pct-label'}, 'Pass rate'));
   hero.appendChild(rateSection);
@@ -613,6 +618,11 @@ function renderSummary() {
       // Every card has a second line, so the figures line up across the row.
       if (c.k === 'total') {
         card.appendChild(el('div', {className:'counter-pct'}, val === 1 ? 'run' : 'runs'));
+      } else if (c.k === 'retried') {
+        card.appendChild(el('div', {className:'counter-pct'}, flakyCount + ' passed on retry'));
+      } else if (c.k === 'skipped' && xfailCount > 0) {
+        card.appendChild(el('div', {className:'counter-pct'},
+          'incl. ' + xfailCount + ' expected fail' + (xfailCount === 1 ? '' : 's')));
       } else if (total > 0) {
         const pct = Math.round((val / total) * 100);
         card.appendChild(el('div', {className:'counter-pct'}, pct + '%'));
@@ -660,37 +670,89 @@ function renderFailuresPanel() {
   head.appendChild(copyBtn);
   section.appendChild(head);
 
-  const list = el('ul', {className:'failures-list'});
-  items.forEach((item, idx) => {
-    const when = failedPhase(item.run);
+  // Grouped by file, most failures first. Runs of one test that failed for
+  // the same reason (parametrized runs, usually) are one row.
+  const files = new Map();
+  items.forEach(item => {
+    const file = item.test.aggregate.file || '';
+    if (!files.has(file)) files.set(file, new Map());
     const reason = failureReason(item.run);
-    const where = item.test.aggregate.file + (when && when !== 'call' ? ' · failed in ' + when : '');
-    const btn = el('button', {className:'failure-row', type:'button'},
-      el('span', {className:'status-dot ' + item.run.outcome, 'aria-hidden':'true'}),
-      el('span', {className:'failure-row-main'},
-        el('span', {className:'failure-row-name'}, runLabel(item.test, item.run)),
-        el('span', {className:'failure-row-file'}, where)
-      ),
-      el('span', {className:'failure-row-reason', title: reason}, reason || 'No failure message')
-    );
-    btn.addEventListener('click', () => openRunInTests(item.test, item.run));
-    const li = el('li', null, btn);
-    if (idx >= FAILURES_SHOWN) li.hidden = true;
-    list.appendChild(li);
+    const key = item.test.base_nodeid + '\u0000' + failedPhase(item.run) + '\u0000' + reason;
+    const rows = files.get(file);
+    if (!rows.has(key)) rows.set(key, {test: item.test, reason: reason, runs: []});
+    rows.get(key).runs.push(item.run);
   });
-  section.appendChild(list);
+  const groups = [...files.entries()].map(([file, rows]) => ({
+    file: file,
+    rows: [...rows.values()].sort((x, y) => y.runs.length - x.runs.length),
+    count: [...rows.values()].reduce((n, r) => n + r.runs.length, 0),
+  })).sort((x, y) => y.count - x.count || x.file.localeCompare(y.file));
 
-  if (items.length > FAILURES_SHOWN) {
-    const more = el('button', {className:'failures-more', type:'button', 'aria-expanded':'false'},
-      'Show all ' + items.length);
+  const filesWord = groups.length === 1 ? 'file' : 'files';
+  head.querySelector('.failures-count').textContent += ' · ' + groups.length + ' ' + filesWord;
+
+  const body = el('div', {className:'failures-groups'});
+  let shown = 0, rowCount = 0;
+  const hideable = [];
+  groups.forEach(group => {
+    const groupEl = el('div', {className:'failures-group'});
+    groupEl.appendChild(el('h3', {className:'failures-group-head'},
+      el('span', {className:'failures-group-file'}, group.file),
+      el('span', {className:'failures-group-count'},
+        group.count + ' failed ' + (group.count === 1 ? 'run' : 'runs'))));
+    const list = el('ul', {className:'failures-list'});
+    let visible = 0;
+    group.rows.forEach(row => {
+      const first = row.runs[0];
+      const when = failedPhase(first);
+      const many = row.runs.length > 1;
+      const name = many ? testDisplayName(row.test.aggregate) : runLabel(row.test, first);
+      const sub = [];
+      if (many) sub.push(row.runs.length + ' runs: ' + row.runs.map(r => r.parametrize_id || r.run_id).join(', '));
+      if (when && when !== 'call') sub.push('failed in ' + when);
+      const btn = el('button', {className:'failure-row', type:'button'},
+        el('span', {className:'status-dot ' + first.outcome, 'aria-hidden':'true'}),
+        el('span', {className:'failure-row-main'},
+          el('span', {className:'failure-row-name'}, name, retryChip(first)),
+          sub.length ? el('span', {className:'failure-row-file'}, sub.join(' · ')) : null
+        ),
+        el('span', {className:'failure-row-reason', title: row.reason}, row.reason || 'No failure message')
+      );
+      btn.addEventListener('click', () => openRunInTests(row.test, first));
+      const li = el('li', null, btn);
+      rowCount++;
+      if (shown >= FAILURES_SHOWN) { li.hidden = true; hideable.push(li); }
+      else { shown++; visible++; }
+      list.appendChild(li);
+    });
+    groupEl.appendChild(list);
+    if (!visible) { groupEl.hidden = true; hideable.push(groupEl); }
+    body.appendChild(groupEl);
+  });
+  section.appendChild(body);
+
+  const flaky = [];
+  DATA.tests.forEach(t => t.runs.forEach(r => { const v = retryVerdict(r); if (v && v.flaky) flaky.push(r); }));
+
+  const foot = el('div', {className:'failures-foot'});
+  if (rowCount > FAILURES_SHOWN) {
+    const label = 'Show all ' + rowCount + ' rows';
+    const more = el('button', {className:'failures-more', type:'button', 'aria-expanded':'false'}, label);
     more.addEventListener('click', () => {
       const open = more.getAttribute('aria-expanded') !== 'true';
-      list.querySelectorAll('li').forEach((li, i) => { if (i >= FAILURES_SHOWN) li.hidden = !open; });
+      hideable.forEach(n => { n.hidden = !open; });
       more.setAttribute('aria-expanded', open ? 'true' : 'false');
-      more.textContent = open ? 'Show fewer' : 'Show all ' + items.length;
+      more.textContent = open ? 'Show fewer' : label;
     });
-    section.appendChild(more);
+    foot.appendChild(more);
   }
+  if (flaky.length) {
+    const fl = el('button', {className:'failures-more failures-flaky', type:'button'},
+      flaky.length + (flaky.length === 1 ? ' run' : ' runs') + ' passed only on a retry');
+    fl.addEventListener('click', () => showTreeSubset(['passed'], true));
+    foot.appendChild(fl);
+  }
+  if (foot.children.length) section.appendChild(foot);
   return section;
 }
 
@@ -1009,7 +1071,7 @@ function testDisplayName(agg) {
 function renderTestLeaf(test, depth) {
   const container = el('div', {className:'tree-node', role:'none'});
   const agg = test.aggregate;
-  const outcome = getOverallOutcome(test);
+  const outcome = shownTestOutcome(test);
   const displayName = testDisplayName(agg);
 
   const row = el('div', {className:'tree-row', style:`padding-left:${16 + depth * 16}px`,
@@ -1029,7 +1091,7 @@ function renderTestLeaf(test, depth) {
     const n = test.runs.reduce((a, r) => a + ((r.retries && r.retries.attempts) || 0), 0);
     badges.appendChild(el('span', {
       className: 'tree-badge retried',
-      title: 'Retried (' + n + ' attempt' + (n === 1 ? '' : 's') + ')',
+      title: 'Retried ' + n + (n === 1 ? ' time' : ' times'),
     }, '↻' + n));
   }
   if (agg.total_runs > 1) {
@@ -1057,6 +1119,14 @@ function getOverallOutcome(test) {
   if (test.aggregate.failed > 0 || test.aggregate.errors > 0) return 'failed';
   if (test.aggregate.skipped > 0 && test.aggregate.passed === 0) return 'skipped';
   return 'passed';
+}
+
+// The outcome a test is shown with: its filter outcome, except a test whose
+// runs all failed as expected (xfail), which is an "Expected fail".
+function shownTestOutcome(test) {
+  const outcome = getOverallOutcome(test);
+  return outcome === 'skipped' && test.runs.length > 0
+    && test.runs.every(r => shownOutcome(r) === 'xfailed') ? 'xfailed' : outcome;
 }
 
 // ─── Failure-first helpers ───────────────────────────────────────────
@@ -1112,6 +1182,38 @@ function failureReason(run) {
 function runLabel(test, run) {
   const name = testDisplayName(test.aggregate);
   return run && run.parametrize_id ? name + ' [' + run.parametrize_id + ']' : name;
+}
+
+// How a run is shown: its outcome, except an xfail-marked run that failed as
+// expected (pytest counts it as skipped), which is an "Expected fail".
+function shownOutcome(run) {
+  return run && run.xfail && run.xfail.outcome === 'xfailed' ? 'xfailed' : run.outcome;
+}
+
+// What the retries of a run say: null when it was not retried; else how many
+// tries there were, how many failed, and whether it failed every one of them
+// ("consistent") or passed in the end ("flaky").
+function retryVerdict(run) {
+  const r = run && run.retries;
+  if (!r || !(r.attempts > 0)) return null;
+  const history = (r.history && r.history.length) ? r.history : [r.original_outcome || 'failed'];
+  const tries = history.length;
+  const failed = history.filter(isBad).length;
+  const flaky = !isBad(history[tries - 1]);
+  return {
+    tries: tries, failed: failed, flaky: flaky,
+    short: flaky ? 'flaky ' + failed + '/' + tries : 'failed ' + failed + '/' + tries,
+    words: flaky
+      ? 'passed on try ' + tries + ' of ' + tries + ' (flaky)'
+      : 'failed all ' + tries + ' tries',
+  };
+}
+
+function retryChip(run) {
+  const v = retryVerdict(run);
+  if (!v) return null;
+  return el('span', {className:'retry-chip ' + (v.flaky ? 'flaky' : 'consistent'), title: v.words},
+    v.short);
 }
 
 // Banner at the top of a failed run: where it failed, why, and the way to
@@ -1197,12 +1299,12 @@ function showTestDetail(test, initialRun) {
   const panel = document.querySelector('.detail-panel');
   panel.innerHTML = '';
 
-  const outcome = getOverallOutcome(test);
+  const outcome = shownTestOutcome(test);
   const header = el('div', {className:'detail-header'});
   const headerTop = el('div', {className:'detail-header-top'});
   const outcomeBadge = el('span', {className:'detail-header-outcome ' + outcome},
     el('span', {className:'status-dot ' + outcome}),
-    outcome
+    (LABELS[outcome] || outcome).toLowerCase()
   );
   // Class eyebrow above the function name (class-based tests only)
   if (test.aggregate.class_name) {
@@ -1212,6 +1314,13 @@ function showTestDetail(test, initialRun) {
   headerTop.appendChild(outcomeBadge);
   header.appendChild(headerTop);
   header.appendChild(el('div', {className:'file-path'}, test.aggregate.file));
+  const xfails = test.runs.filter(r => r.xfail);
+  if (xfails.length) {
+    const x = xfails[0].xfail;
+    const words = x.outcome === 'xpassed' ? 'Marked xfail, but passed' : 'Expected to fail';
+    header.appendChild(el('div', {className:'detail-xfail ' + x.outcome},
+      el('strong', null, words), x.reason ? ': ' + x.reason : ''));
+  }
   const back = el('button', {className:'detail-back', type:'button'});
   back.innerHTML = '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
   back.appendChild(document.createTextNode('All tests'));
@@ -1244,19 +1353,22 @@ function showTestDetail(test, initialRun) {
     el('span', {className:'status-dot passed'}), el('strong', null, String(agg.passed)), ' passed'));
   if (agg.failed) stats.appendChild(el('span', {className:'detail-header-stat'},
     el('span', {className:'status-dot failed'}), el('strong', null, String(agg.failed)), ' failed'));
-  if (agg.skipped) stats.appendChild(el('span', {className:'detail-header-stat'},
-    el('span', {className:'status-dot skipped'}), el('strong', null, String(agg.skipped)), ' skipped'));
+  const xfailed = test.runs.filter(r => shownOutcome(r) === 'xfailed').length;
+  if (agg.skipped - xfailed > 0) stats.appendChild(el('span', {className:'detail-header-stat'},
+    el('span', {className:'status-dot skipped'}), el('strong', null, String(agg.skipped - xfailed)), ' skipped'));
+  if (xfailed) stats.appendChild(el('span', {className:'detail-header-stat'},
+    el('span', {className:'status-dot xfailed'}), el('strong', null, String(xfailed)), ' expected to fail'));
   header.appendChild(stats);
   panel.appendChild(header);
 
   // Run filter toggles
   const runFilters = el('div', {className:'run-filters'});
   const filterRow = el('div', {className:'filter-toggles', role:'group', 'aria-label':'Show runs by outcome'});
-  STATUSES.forEach(s => {
-    const count = test.runs.filter(r => r.outcome === s).length;
+  STATUSES.concat(['xfailed']).forEach(s => {
+    const count = test.runs.filter(r => shownOutcome(r) === s).length;
     if (count === 0) return;
-    const btn = el('button', {className:`filter-btn ${s} active`, type:'button', 'aria-pressed':'true'},
-      `${LABELS[s]} (${count})`);
+    const btn = el('button', {className:`filter-btn ${s} active`, type:'button', 'aria-pressed':'true',
+      'data-run-status': s}, `${LABELS[s]} (${count})`);
     btn.addEventListener('click', () => {
       const on = !btn.classList.contains('active');
       btn.classList.toggle('active', on);
@@ -1284,14 +1396,15 @@ function showTestDetail(test, initialRun) {
 // aria-pressed, and the run it stands for is kept for showRunDetail.
 function makeRunPill(run, text) {
   const on = selectedRun === run;
-  const pill = el('button', {className:`run-pill ${run.outcome}${on ? ' selected' : ''}`, type:'button',
+  const shown = shownOutcome(run);
+  const pill = el('button', {className:`run-pill ${shown}${on ? ' selected' : ''}`, type:'button',
     'aria-pressed': on ? 'true' : 'false'}, text);
   pill._run = run;
-  pill.appendChild(srText(', ' + (LABELS[run.outcome] || run.outcome)));
-  if (run.retries && run.retries.attempts > 0) {
-    const n = run.retries.attempts;
-    pill.appendChild(el('span', {className:'retry-badge', 'aria-hidden':'true'}, '\u21bb' + n));
-    pill.appendChild(srText(', retried ' + n + (n === 1 ? ' time' : ' times')));
+  pill.appendChild(srText(', ' + (LABELS[shown] || shown)));
+  const verdict = retryVerdict(run);
+  if (verdict) {
+    pill.appendChild(el('span', {className:'retry-badge', 'aria-hidden':'true'}, '\u21bb ' + verdict.short));
+    pill.appendChild(srText(', ' + verdict.words));
   }
   return pill;
 }
@@ -1303,12 +1416,11 @@ function refreshRunPills(test, panel) {
 
   const activeStatuses = new Set();
   panel.querySelectorAll('.run-filters .filter-btn.active').forEach(b => {
-    const txt = b.textContent.split(' ')[0].toLowerCase();
-    STATUSES.forEach(s => { if (LABELS[s].toLowerCase() === txt) activeStatuses.add(s); });
+    activeStatuses.add(b.dataset.runStatus);
   });
-  if (activeStatuses.size === 0) STATUSES.forEach(s => activeStatuses.add(s));
+  if (activeStatuses.size === 0) STATUSES.concat(['xfailed']).forEach(s => activeStatuses.add(s));
 
-  const filtered = test.runs.filter(r => activeStatuses.has(r.outcome));
+  const filtered = test.runs.filter(r => activeStatuses.has(shownOutcome(r)));
   const MAX = 20;
   const shown = filtered.slice(0, MAX);
   const rest = filtered.slice(MAX);
@@ -1579,11 +1691,14 @@ function showSubTab(tab, run) {
       }
     };
 
+    const shown = shownOutcome(run);
     const outcomeEl = el('span', {className:'info-value', style:'display:flex;align-items:center;gap:6px'},
-      el('span', {className:`status-dot ${run.outcome}`}),
-      run.outcome.charAt(0).toUpperCase() + run.outcome.slice(1)
+      el('span', {className:`status-dot ${shown}`}),
+      LABELS[shown] || capitalize(shown)
     );
     addRow('Outcome', outcomeEl);
+    const verdict = retryVerdict(run);
+    if (verdict) addRow('Retries', capitalize(verdict.words));
     addRow('Duration', run.duration.toFixed(4) + 's');
     addRow('Run ID', run.run_id);
     if (run.parametrize_id) addRow('Parametrize ID', run.parametrize_id);
@@ -1621,14 +1736,16 @@ function showSubTab(tab, run) {
 
       availablePhases.forEach((when, idx) => {
         const phase = run.phases[when];
+        const phaseShown = phase.outcome === 'skipped' && shownOutcome(run) === 'xfailed'
+          ? 'xfailed' : phase.outcome;
         const tabId = uid('phasetab'), panelId = uid('phasepanel');
         const btn = el('button', {className:`phase-tab-btn${idx===activeIdx?' active':''}`, type:'button',
           role:'tab', id:tabId, 'aria-controls':panelId, 'aria-selected': idx===activeIdx ? 'true' : 'false',
           tabindex: idx===activeIdx ? '0' : '-1'},
           el('span', {className:'phase-tab-label'},
-            el('span', {className:`status-dot ${phase.outcome}`, 'aria-hidden':'true'}),
+            el('span', {className:`status-dot ${phaseShown}`, 'aria-hidden':'true'}),
             when.charAt(0).toUpperCase() + when.slice(1)),
-          srText(', ' + (LABELS[phase.outcome] || phase.outcome)),
+          srText(', ' + (LABELS[phaseShown] || phaseShown)),
           el('span', {className:'phase-meta'}, phase.duration.toFixed(4) + 's')
         );
 
@@ -1936,7 +2053,7 @@ function strategyOrigin(origin) {
 
 // The outcome of one test item of a row: the report's own (retries counted)
 // when the item is one of this test's runs, else the one pytest-strategies wrote.
-const STRATEGY_OUTCOME_DOT = {xfailed:'skipped', xpassed:'passed'};
+const STRATEGY_OUTCOME_DOT = {xpassed:'passed'};
 function strategyItemEl(item, test, current) {
   const run = test.runs.find(r => r.nodeid === item.nodeid);
   const outcome = run ? run.outcome : item.outcome;
@@ -2374,7 +2491,12 @@ function renderProcedurePhases(proc, run, generic) {
   const panels = [];
   PROC_SECTIONS.forEach(function(pair, idx) {
     const inSection = bySection[pair[0]];
-    const outcome = procOutcome(inSection);
+    let outcome = procOutcome(inSection);
+    // A phase that failed never reads better than it went: when its steps all
+    // passed, it failed outside them (a bare assert after the last step).
+    const phase = run && run.phases ? run.phases[pair[2]] : null;
+    const outside = !!phase && isBad(phase.outcome) && inSection.length > 0 && !isBad(outcome);
+    if (outside) outcome = phase.outcome;
     const on = idx === active;
     const tabId = uid('proctab'), panelId = uid('procpanel');
     const label = el('span', {className:'phase-tab-label'});
@@ -2390,6 +2512,12 @@ function renderProcedurePhases(proc, run, generic) {
     );
     const panel = el('div', {className:'phase-tab-panel procedure-tab-panel' + (on ? ' active' : ''),
       role:'tabpanel', id:panelId, 'aria-labelledby':tabId, tabindex:'0', 'data-phase':pair[1]});
+    if (outside && !generic) {
+      const reason = failureReason(run);
+      panel.appendChild(el('div', {className:'procedure-outside ' + phase.outcome},
+        el('strong', null, (phase.outcome === 'error' ? 'Error' : 'Failed') + ' outside these steps'),
+        reason ? el('span', {className:'procedure-outside-reason', title: reason}, reason) : null));
+    }
     if (count === 0) {
       panel.appendChild(el('div', {className:'phase-tab-empty'}, 'No steps in ' + pair[1].toLowerCase()));
     } else {
