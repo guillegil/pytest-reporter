@@ -60,7 +60,14 @@ def _run(script: str) -> Any:  # noqa: ANN401
         [_DOM]
         + [
             _function(n)
-            for n in ("el", "_appendCheckInline", "renderFormattedDesc", "renderNode", "checkNote")
+            for n in (
+                "el",
+                "_appendCheckInline",
+                "renderFormattedDesc",
+                "renderNode",
+                "renderEachValues",
+                "checkNote",
+            )
         ]
         + [_function("checkLabel"), script]
     )

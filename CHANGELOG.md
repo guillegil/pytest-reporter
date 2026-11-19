@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A check made once per item (pytest-verifier's `all_satisfy`) is one line in the Procedure
+  tab, not one line per item. With a stepdoc that folds these checks (`Check.each`) the line
+  reads `Verify 'Index error clear': for each w in waveforms, w & INDEX_ERROR_BIT == 0` and
+  its result says `12 of 12 passed` or `2 of 12 failed`. Only the items that failed are listed
+  under it, each with its position and value (`Verify item [3]: w & INDEX_ERROR_BIT == 0 → got
+  64`). A closed "Values of waveforms (12 items)" list under the line opens to show what every
+  item's check got, the failed ones marked. The **Generic** view shows the line alone.
+  `procedure.json` check nodes get `each` (`count`, `failed`, `failed_items`, `values`,
+  `values_cut`, `item`, `items`). With an earlier stepdoc the items are listed as before.
+
 - Custom HTML tabs in a test's detail. A `conftest.py` adds them for every test with the new
   `pytest_reporter_test_tabs(item, tabs)` hook, and a test or fixture adds its own with the
   new `report_tabs` fixture: `tabs.add("Bench log", html)`. The content is HTML as a string, the

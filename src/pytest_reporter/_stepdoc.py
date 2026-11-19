@@ -335,11 +335,16 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
         text += f" [→ {selected}]"
         generic += f" [→ {selected}]"
     label = getattr(check, "label", None)
+    index = getattr(check, "index", None)
+    head = "Verify "
+    if isinstance(index, int) and not isinstance(index, bool):
+        # One failed item of a check stepdoc folded into one line (all_satisfy)
+        head, label = f"Verify item [{index}]: ", None
     node: dict[str, Any] = {
         "kind": "check",
         "number": number,
-        "description": f"Verify {text}",
-        "description_segments": _check_segments(text, label),
+        "description": f"{head}{text}",
+        "description_segments": _check_segments(text, label, head),
         "generic": f"Verify {generic}",
         "generic_segments": _check_segments(generic, label),
         "outcome": "unknown" if passed is None else ("passed" if passed else "failed"),
@@ -354,11 +359,16 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     result = _check_result(
         check, actual_name if actual_name and names.get("actual_name_symbolic") else None
     )
+    each = _each(check)
+    if each is not None:
+        node["each"] = each
+        result = _each_result(each, passed is not None)
     if result is not None:
         node["result"] = result
     _add_note(node, check)
     detail = getattr(check, "detail", None)
-    if detail:
+    if detail and not (each and each["failed_items"]):
+        # A folded check lists its failed items itself
         node["detail"] = str(detail)
     children = [
         _check(child, f"{number}.{i}")
@@ -369,7 +379,50 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     return node
 
 
-def _check_segments(text: str, label: Any) -> list[dict[str, Any]]:  # noqa: ANN401
+def _each(check: Any) -> dict[str, Any] | None:  # noqa: ANN401
+    """stepdoc's ``Check.each``: one check per item, folded into one line.
+
+    pytest-verifier's ``all_satisfy`` checks every item of a collection. stepdoc
+    words it as ``for each w in waveforms, <check>`` and keeps only the failed
+    items as children. The node carries how many items there were, how many
+    failed, which ones (``failed_items``, their positions from 0) and the value
+    each item's check got (``values``; stepdoc keeps the first and last 32 of a
+    longer list, ``values_cut`` then says so).
+    """
+    each = getattr(check, "each", None)
+    count, failed = getattr(each, "count", None), getattr(each, "failed", None)
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        return None
+    failed = failed if isinstance(failed, int) and not isinstance(failed, bool) else 0
+    values = getattr(each, "values", None)
+    values = list(values) if isinstance(values, (list, tuple)) else []
+    indices = [
+        i
+        for i in (getattr(c, "index", None) for c in getattr(check, "children", None) or [])
+        if isinstance(i, int) and not isinstance(i, bool)
+    ]
+    node: dict[str, Any] = {
+        "count": count,
+        "failed": failed,
+        "failed_items": indices,
+        "values": [_show(v) for v in values],
+        "values_cut": len(values) < count,
+    }
+    for key in ("item", "items"):
+        word = getattr(each, key, None)
+        if isinstance(word, str) and word:
+            node[key] = word
+    return node
+
+
+def _each_result(each: dict[str, Any], judged: bool) -> str:
+    count, failed = each["count"], each["failed"]
+    if not judged:
+        return f"{count} item{'' if count == 1 else 's'}"
+    return f"{failed} of {count} failed" if failed else f"{count} of {count} passed"
+
+
+def _check_segments(text: str, label: Any, verb: str = "Verify ") -> list[dict[str, Any]]:  # noqa: ANN401
     """A check's line as segments: the words plain, the code in monospace.
 
     ``Verify`` and the check's name (``'Stored word':``) are words; the checked
@@ -388,7 +441,7 @@ def _check_segments(text: str, label: Any) -> list[dict[str, Any]]:  # noqa: ANN
         if 0 < end < len(text) - 3:
             head = text[: end + 3]
     return [
-        {"text": f"Verify {head}", "style": None},
+        {"text": f"{verb}{head}", "style": None},
         {"text": text[len(head) :], "style": "mono"},
     ]
 

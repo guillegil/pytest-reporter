@@ -2264,6 +2264,8 @@ function renderNode(node, depth, generic) {
     excEl.textContent = node.exc.type + ': ' + node.exc.msg;
     row.appendChild(excEl);
   }
+  const eachValues = renderEachValues(node.each);
+  if (eachValues) row.appendChild(eachValues);
   if (hasKids) {
     const nextDepth = depth < 3 ? depth + 1 : 3;
     const kids = el('div', {className: 'procedure-substeps'});
@@ -2273,6 +2275,36 @@ function renderNode(node, depth, generic) {
     row.appendChild(kids);
   }
   return row;
+}
+
+// The values of a check made once per item (pytest-verifier's all_satisfy,
+// which stepdoc folds into one "for each w in waveforms, ..." line): a closed
+// list of what each item's check got, the failed items marked. Text is set
+// via textContent only.
+function renderEachValues(each) {
+  if (!each || !Array.isArray(each.values) || each.values.length === 0) return null;
+  const count = each.count, shown = each.values.length;
+  const failed = {};
+  (each.failed_items || []).forEach(function(i) { failed[i] = true; });
+  const box = el('details', {className: 'procedure-each'});
+  const what = each.items ? 'Values of ' + each.items : 'Values';
+  box.appendChild(el('summary', {}, what + ' (' + count + (count === 1 ? ' item)' : ' items)')));
+  const list = el('div', {className: 'procedure-each-values'});
+  const half = Math.floor(shown / 2);
+  each.values.forEach(function(value, pos) {
+    // A cut list holds the first and the last half: positions count from the end there.
+    const index = (each.values_cut && pos >= half) ? count - (shown - pos) : pos;
+    if (each.values_cut && pos === half) {
+      list.appendChild(el('span', {className: 'procedure-each-gap'}, '\u2026'));
+    }
+    const cell = el('span', {className: 'procedure-each-value' + (failed[index] ? ' failed' : '')},
+      el('span', {className: 'procedure-each-index'}, '[' + index + ']'),
+      el('span', {className: 'proc-mono'}, String(value)));
+    if (failed[index]) cell.setAttribute('title', 'Failed');
+    list.appendChild(cell);
+  });
+  box.appendChild(list);
+  return box;
 }
 
 // A node of the Generic view: the procedure as the test is written, for any
@@ -2291,7 +2323,7 @@ function renderGenericNode(node, depth) {
     descSpan.appendChild(el('span', {className: 'procedure-check-note'}, ' (' + node.note + ')'));
   }
   const hasKids = node.substeps && node.substeps.length > 0;
-  const numText = (depth === 1 || hasKids) ? node.number + '.' : node.number;
+  const numText = (depth === 1 || (hasKids && !node.each)) ? node.number + '.' : node.number;
   const header = el('div', {className: 'procedure-step-header'},
     el('span', {className: 'procedure-step-number'}, numText), descSpan);
   if (node.generic_result) {
@@ -2299,7 +2331,8 @@ function renderGenericNode(node, depth) {
   }
   row.appendChild(header);
   if (node.note && !inlineNote) row.appendChild(el('div', {className: 'procedure-note'}, node.note));
-  if (hasKids) {
+  // The failed items of a folded check belong to this run, not to the procedure.
+  if (hasKids && !node.each) {
     const kids = el('div', {className: 'procedure-substeps'});
     node.substeps.forEach(function(child) {
       kids.appendChild(renderGenericNode(child, depth < 3 ? depth + 1 : 3));
