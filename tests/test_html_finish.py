@@ -23,7 +23,8 @@ def test_every_counter_card_has_a_second_line() -> None:
 
 
 def test_run_count_is_pluralised() -> None:
-    assert "agg.total_runs === 1 ? ' run' : ' runs'" in JS
+    # One run has no count beside the name; several say "N runs".
+    assert "String(agg.total_runs)), ' runs')" in JS
     assert "' entry' : ' entries'" in JS
 
 

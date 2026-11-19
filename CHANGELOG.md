@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keyboard shortcuts in the report: `/` goes to the test search, and `j` / `k` open the next and
+  the previous test of the list. Escape in the search box returns to the list.
+- The address of the report follows what is open: `report.html#test=<node ID>` opens that test
+  and `#tab=<name>` that tab, so a link to one failure can be shared. The page title carries the
+  result and the time of the run (`Test Report · 52 failed · 2026-11-19 10:20`).
+- A verification card says how far the value was from its limit: a **Margin** row for the
+  ordering checks and `between` (`3.41% below the limit`), a **Deviation** row for `approx`.
+  It is arithmetic on the numbers of the record; pass or fail stays pytest-verifier's.
+- A skipped test shows the reason of the skip under its name.
+- Feature bars on the Summary show failed, error and skipped runs as parts of the bar.
+- Printing a test shows its three phase logs, and printing the Summary every failure row.
+
 - The Failures list on the Summary is grouped by file, most failures first. Runs of one test
   that failed for the same reason share a row, and a retried run says how its tries went:
   `failed 3/3`. Below the list, a link counts the runs that passed only on a retry and opens
@@ -114,6 +126,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- No text in the report is smaller than 12px (it was 11px in badges, counters, log lines and
+  check values). The type scale is 12, 13, 14, 16, 20, 26 and 38px.
+- On a desktop the Tests tab fills the window: the list and the test's detail scroll on their
+  own, the page does not, and the sub-tabs stay in view while a long log scrolls. Phase logs
+  are no longer a 400px box with a scrollbar of its own.
+- The Summary's top card holds the pass rate, the time spent in tests, the ratio bar and the
+  counters; the legend that repeated the counters is gone.
+- A test with one run says its outcome, retries and duration once, beside its name. The run's
+  Summary no longer repeats them, and the lone run pill and the one-outcome run filter are
+  hidden. The Procedure, Checks and Artifacts sub-tabs are offered only when they have content.
+- Verification cards put the units on each number (`86.59%`, `90%`) instead of in a row of
+  their own, show the result in their header, and no longer use a coloured side stripe. The
+  Procedure tab's results carry the units too (`got 86.59%`).
+- Durations of runs, phases, steps and retries read one way: `0.3ms`, `20ms`, `1.25s`,
+  `1m 15s`. Totals of the suite and of a group keep whole seconds (`4s`, `<1s`).
+- The tree's outcome filters list only the outcomes the run has.
+
 - Status colours mean one thing each. The ↻ retried pill is blue like the Retried counter,
   not Skipped's amber. Skipped dots are rings and Error dots squares, so they differ from
   each other by shape as well as colour. The pass rate is green when nothing failed and
@@ -152,6 +181,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of every property.
 
 ### Fixed
+
+- Opening another test left the detail pane scrolled where the last one was, sometimes past the
+  new test's name. Each test now opens at its top.
+- "No tests match" appeared at the bottom of the list panel, far from the search box. It now
+  takes the list's place.
+- Integers past 2**53 (a pytest-strategies seed) were rounded in the page; they keep every
+  digit.
+- A retry card could not be opened from the keyboard; its header is a button now, and the
+  phase tabs inside it are a real tab set.
+- The retry badge on a run pill was below the 4.5:1 contrast of WCAG AA in the light theme.
+- On a phone, a verification card cut long values off; log messages get the full width.
+- "Show traceback" scrolled smoothly even with reduced motion asked for.
 
 - A failed retry attempt no longer shows a Procedure with only passed steps. Its checks went
   into the first attempt's steps (fixed in stepdoc, which now places a rerun's checks in its

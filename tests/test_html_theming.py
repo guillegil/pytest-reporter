@@ -124,18 +124,18 @@ def test_light_theme_follows_os_toggle_and_print(pytester: Pytester) -> None:
     assert "localStorage.setItem('pytest-reporter-theme'" in html
 
 
-def test_type_scale_has_an_11px_floor() -> None:
+def test_type_scale_has_a_12px_floor() -> None:
     from pytest_reporter._html_builder._js import JS
 
     scale = dict(re.findall(r"--fs-([\w]+):\s*(\d+)px;", CSS))
     assert scale == {
-        "xs": "11",
-        "sm": "12",
-        "md": "13",
-        "lg": "15",
-        "xl": "18",
-        "2xl": "24",
-        "3xl": "36",
+        "xs": "12",
+        "sm": "13",
+        "md": "14",
+        "lg": "16",
+        "xl": "20",
+        "2xl": "26",
+        "3xl": "38",
     }
     # Every size in the rules and the inline JS styles comes from the scale.
     body = CSS[CSS.index("Reset & base") :]

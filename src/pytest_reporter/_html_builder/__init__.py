@@ -38,6 +38,33 @@ def _safe_default(o: object) -> str:
         return f"<unserializable {type_name}>"
 
 
+#: The largest integer a JavaScript number holds exactly (2**53 - 1).
+_JS_SAFE_INT = 9007199254740991
+
+
+def _js_safe(value: Any) -> Any:  # noqa: ANN401
+    """Give integers a JavaScript number cannot hold exactly as their digits.
+
+    The page reads the data with ``JSON.parse``, which rounds an integer past
+    2**53: a 64-bit seed would show with its last digits wrong, and a seed
+    copied from the report would not reproduce the row. As text every digit
+    survives.
+
+    Args:
+        value: Report data: dicts, lists and scalars.
+
+    Returns:
+        The same structure, with each too-large ``int`` as a ``str``.
+    """
+    if isinstance(value, dict):
+        return {key: _js_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_js_safe(item) for item in value]
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > _JS_SAFE_INT:
+        return str(value)
+    return value
+
+
 def _script_escape(s: str) -> str:
     """Escape ``</`` to prevent script-tag breakout in an inline ``<script>`` block.
 
@@ -136,7 +163,7 @@ def build_html_report(data: dict[str, Any]) -> str:
     # H1: robust serialisation with skipkeys + fallback default
     try:
         data_json = json.dumps(
-            data,
+            _js_safe(data),
             indent=None,
             separators=(",", ":"),
             ensure_ascii=True,

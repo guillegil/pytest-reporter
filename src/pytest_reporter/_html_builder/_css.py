@@ -113,21 +113,21 @@ CSS: str = (
   --shadow-md: 0 4px 12px rgba(var(--shadow-color),calc(0.25 * var(--shadow-alpha)));
   --shadow-lg: 0 8px 30px rgba(var(--shadow-color),calc(0.35 * var(--shadow-alpha)));
 
-  /* Type roles: one step per job, 11px floor.
-     xs  11  badges, counts, uppercase labels, timestamps
-     sm  12  secondary text, meta, controls
-     md  13  body and log text (the dense default)
-     lg  15  section and app titles
-     xl  18  page titles (test name, Failures)
-     2xl 24  figures (counters, total time)
-     3xl 36  the pass-rate hero */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 13px;
-  --fs-lg: 15px;
-  --fs-xl: 18px;
-  --fs-2xl: 24px;
-  --fs-3xl: 36px;
+  /* Type roles: one step per job, 12px floor (read at a bench, at arm's length).
+     xs  12  badges, counts, uppercase labels, timestamps
+     sm  13  secondary text, meta, controls
+     md  14  body, data and log text (the dense default)
+     lg  16  section and app titles
+     xl  20  page titles (test name, Failures)
+     2xl 26  figures (counters, total time)
+     3xl 38  the pass-rate hero */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --fs-3xl: 38px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Cascadia Mono', 'JetBrains Mono',
@@ -319,12 +319,6 @@ button { font-family: inherit; }
   margin: 4px 0;
 }
 .summary-hero-body { flex: 1; min-width: 0; }
-.summary-hero-body h2 {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  color: var(--c-text);
-  margin-bottom: 12px;
-}
 .summary-hero-dur {
   display: flex;
   flex-direction: column;
@@ -349,7 +343,6 @@ button { font-family: inherit; }
 }
 
 /* Ratio bar */
-.ratio-bar-wrap { width: 100%; }
 .ratio-bar {
   display: flex;
   width: 100%;
@@ -367,106 +360,62 @@ button { font-family: inherit; }
 .ratio-bar-seg.failed { background: var(--c-failed); }
 .ratio-bar-seg.skipped { background: var(--c-skipped); }
 .ratio-bar-seg.error { background: var(--c-error); }
-.ratio-bar-legend {
-  display: flex;
-  gap: 6px 16px;
-  margin-top: 10px;
-  flex-wrap: wrap;
+
+/* Counters: the bar's legend, and buttons into the Tests tab. One row under
+   the bar, not a band of cards of their own. */
+.counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 4px;
+  margin: 12px -10px -8px;
 }
-.ratio-bar-legend-item {
+.counter-card {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  text-align: left;
+  min-width: 0;
+  cursor: default;
+  transition: var(--t-control);
+  /* A button centres its content; the cards of a row start on one line. */
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+}
+.counter-card .label {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--c-text2);
-  font-weight: 500;
-}
-.ratio-bar-legend-item strong {
-  color: var(--c-text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   font-weight: 700;
-  font-family: var(--font-mono);
-}
-
-/* Counter cards */
-.counters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-  margin-bottom: 28px;
-}
-.counter-card {
-  background: var(--c-surface);
-  border-radius: var(--radius-lg);
-  padding: 18px 16px;
-  text-align: center;
-  border: 1px solid var(--c-border);
-  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
-  cursor: default;
-  position: relative;
-  overflow: hidden;
-}
-.counter-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  opacity: 0.8;
-}
-.counter-card:hover {
-  box-shadow: var(--shadow-md);
 }
 .counter-card .value {
   font-size: var(--fs-2xl);
   font-weight: 700;
   font-family: var(--font-mono);
   letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-.counter-card .label {
-  font-size: var(--fs-xs);
-  color: var(--c-text3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-  margin-top: 4px;
+  line-height: 1.2;
+  margin-top: 2px;
+  color: var(--c-text);
 }
 .counter-card .counter-pct {
   font-size: var(--fs-xs);
-  color: var(--c-text3);
-  font-family: var(--font-mono);
+  color: var(--c-text2);
   font-weight: 500;
-  margin-top: 2px;
 }
-
-.counter-card.passed { border-color: color-mix(in srgb, var(--c-passed) 20%, transparent); }
-.counter-card.passed::before { background: var(--c-passed); }
 .counter-card.passed .value { color: var(--c-passed-ink); }
-.counter-card.passed:hover { border-color: color-mix(in srgb, var(--c-passed) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-passed) 10%, transparent); }
-
-.counter-card.failed { border-color: color-mix(in srgb, var(--c-failed) 20%, transparent); }
-.counter-card.failed::before { background: var(--c-failed); }
 .counter-card.failed .value { color: var(--c-failed-ink); }
-.counter-card.failed:hover { border-color: color-mix(in srgb, var(--c-failed) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-failed) 10%, transparent); }
-
-.counter-card.skipped { border-color: color-mix(in srgb, var(--c-skipped) 20%, transparent); }
-.counter-card.skipped::before { background: var(--c-skipped); }
 .counter-card.skipped .value { color: var(--c-skipped-ink); }
-.counter-card.skipped:hover { border-color: color-mix(in srgb, var(--c-skipped) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-skipped) 10%, transparent); }
-
-.counter-card.error { border-color: color-mix(in srgb, var(--c-error) 20%, transparent); }
-.counter-card.error::before { background: var(--c-error); }
 .counter-card.error .value { color: var(--c-error-ink); }
-.counter-card.error:hover { border-color: color-mix(in srgb, var(--c-error) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-error) 10%, transparent); }
-
-.counter-card.retried { border-color: color-mix(in srgb, var(--c-accent) 20%, transparent); }
-.counter-card.retried::before { background: var(--c-accent); }
 .counter-card.retried .value { color: var(--c-accent-ink); }
-.counter-card.retried:hover { border-color: color-mix(in srgb, var(--c-accent) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-accent) 10%, transparent); }
-
-.counter-card.total { border-color: color-mix(in srgb, var(--c-accent) 20%, transparent); }
-.counter-card.total::before { background: var(--c-accent); }
-.counter-card.total .value { color: var(--c-accent-ink); }
-.counter-card.total:hover { border-color: color-mix(in srgb, var(--c-accent) 35%, transparent); box-shadow: 0 4px 20px color-mix(in srgb, var(--c-accent) 10%, transparent); }
+/* Nothing behind it: said quietly */
+.counter-card.none .value { color: var(--c-text3); }
 
 /* Charts */
 .charts-section { margin-bottom: 28px; }
@@ -606,12 +555,16 @@ button { font-family: inherit; }
   overflow: hidden;
   position: relative;
 }
+.pass-rate-bar-track { display: flex; }
 .pass-rate-bar-fill {
   height: 100%;
-  border-radius: 5px;
   background: var(--c-passed);
   transition: width 0.3s var(--ease-out);
 }
+.pass-rate-bar-part { height: 100%; }
+.pass-rate-bar-part.failed { background: var(--c-failed); }
+.pass-rate-bar-part.error { background: var(--c-error); }
+.pass-rate-bar-part.skipped { background: var(--c-skipped); }
 .pass-rate-bar-stats {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -642,6 +595,22 @@ button { font-family: inherit; }
   gap: 0;
   height: calc(100vh - 112px);
 }
+/* The Tests tab is one screen tall: the list and the detail scroll, the page
+   does not, so find-in-page and scrollIntoView never shift the shell. */
+@media screen and (min-width: 769px) {
+  body[data-tab="tests"] {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  body[data-tab="tests"] > .header,
+  body[data-tab="tests"] > .tabs { flex-shrink: 0; }
+  body[data-tab="tests"] > main { flex: 1; min-height: 0; }
+  body[data-tab="tests"] #tab-tests,
+  body[data-tab="tests"] .tests-layout { height: 100%; }
+}
 .tree-panel {
   width: 380px;
   min-width: 300px;
@@ -651,11 +620,17 @@ button { font-family: inherit; }
   flex-direction: column;
   flex-shrink: 0;
 }
+/* Positioned for the same reason as .tree-content: screen-reader labels stay
+   inside the scroller. */
 .detail-panel {
+  position: relative;
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   background: var(--c-bg);
   padding: 28px 32px;
+  /* Focus and jumps land below the sticky sub-tabs */
+  scroll-padding-top: 52px;
 }
 
 /* Search & Filters */
@@ -689,6 +664,35 @@ button { font-family: inherit; }
   transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
 }
 .search-input::placeholder { color: var(--c-text3); }
+/* Keys: the shortcut's own key cap in the search box, and a line under the list */
+kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--c-border2);
+  border-radius: 4px;
+  background: var(--c-surface2);
+  color: var(--c-text2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+  text-align: center;
+}
+.search-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.search-input:focus ~ .search-key, .search-input:not(:placeholder-shown) ~ .search-key { display: none; }
+.tree-keys {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 16px;
+  border-top: 1px solid var(--c-border);
+  color: var(--c-text2);
+  font-size: var(--fs-xs);
+}
+.tree-keys-gap { width: 10px; }
+/* No keyboard to press them on */
+@media (max-width: 768px), (pointer: coarse) { .tree-keys, .search-key { display: none; } }
 .search-input:focus {
   outline: 2px solid var(--c-accent);
   outline-offset: 1px;
@@ -835,10 +839,13 @@ button { font-family: inherit; }
   border-radius: 4px;
   vertical-align: middle;
 }
+/* The test's class, on a line of its own above the name */
 .detail-eyebrow {
-  font-size: 0.85em;
+  flex-basis: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
   color: var(--c-text2);
-  margin-bottom: 0.15em;
+  margin-bottom: -4px;
 }
 @media (prefers-reduced-motion: reduce) {
   .tree-icon { transition: none; }
@@ -880,8 +887,18 @@ button { font-family: inherit; }
 }
 .detail-header-top {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.detail-header-top .retry-chip { margin-left: 0; }
+/* Where the test lives, how many runs and how long: one quiet line */
+.detail-header-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 6px;
 }
 .detail-header-outcome {
   display: inline-flex;
@@ -894,7 +911,6 @@ button { font-family: inherit; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
   flex-shrink: 0;
-  margin-top: 2px;
 }
 .detail-header-outcome.passed { background: var(--c-passed-dim); color: var(--c-passed-ink); }
 .detail-header-outcome.failed { background: var(--c-failed-dim); color: var(--c-failed-ink); }
@@ -908,6 +924,8 @@ button { font-family: inherit; }
   overflow-wrap: anywhere;
 }
 .detail-xfail strong { color: var(--c-text); font-weight: 600; }
+.tree-empty.session-log-nomatch { padding-left: 0; }
+.session-log-nomatch[hidden] { display: none; }
 .detail-header h2 {
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -917,9 +935,9 @@ button { font-family: inherit; }
 }
 .detail-header .file-path {
   font-size: var(--fs-sm);
-  color: var(--c-text3);
+  color: var(--c-text2);
   font-family: var(--font-mono);
-  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 .detail-cmd {
   display: inline-flex;
@@ -969,8 +987,8 @@ button { font-family: inherit; }
 .detail-header-stats {
   display: flex;
   gap: 16px;
-  margin-top: 12px;
   font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
   color: var(--c-text2);
 }
 .detail-header-stat {
@@ -995,6 +1013,7 @@ button { font-family: inherit; }
 
 /* Run pills */
 .run-filters { margin-bottom: 10px; }
+.run-filters[hidden], .run-pills[hidden] { display: none; }
 .run-pills {
   display: flex;
   flex-wrap: wrap;
@@ -1037,6 +1056,10 @@ button { font-family: inherit; }
   display: flex;
   gap: 2px;
   margin-bottom: 20px;
+  /* Stays in reach while a long log or procedure scrolls under it */
+  position: sticky;
+  top: -28px;  /* the pane's top padding: flush with its edge, nothing shows above */
+  z-index: 5;
   background: var(--c-surface);
   border-radius: var(--radius-md);
   padding: 3px;
@@ -1245,17 +1268,19 @@ button { font-family: inherit; }
   border-top: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   background: var(--c-bg);
-  max-height: 400px;
-  overflow-y: auto;
+  /* As tall as its log: the detail pane is the one scroller, so the wheel is
+     never caught in a box inside it. */
+  overflow-x: auto;
 }
 .phase-tab-panel.active { display: block; }
+.phase-tabs-note { margin-bottom: 8px; font-size: var(--fs-sm); color: var(--c-text2); }
 .phase-tab-body {
   padding: 14px;
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.65;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
   color: var(--c-text2);
 }
 .phase-tab-empty {
@@ -1370,7 +1395,12 @@ button { font-family: inherit; }
 /* ================================================================
    Log Entries (structured logger)
    ================================================================ */
-.log-entries { display: flex; flex-direction: column; gap: 2px; }
+.log-entries { display: flex; flex-direction: column; gap: 2px; container-type: inline-size; }
+/* A narrow log (tablet, retry card) gives the message a line of its own */
+@container (max-width: 520px) {
+  .log-entry { grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 8px; }
+  .log-entry-msg { grid-column: 1 / -1; }
+}
 .log-entry {
   display: grid;
   grid-template-columns: auto auto auto 1fr;
@@ -1399,7 +1429,12 @@ button { font-family: inherit; }
 .log-entry-level.ERROR { background: var(--c-failed-dim); color: var(--c-failed-ink); }
 .log-entry-level.CRITICAL { background: var(--c-failed-strong-dim); color: var(--c-failed-ink); }
 .log-entry-source { color: var(--c-text2); font-size: var(--fs-xs); }
-.log-entry-msg { color: var(--c-text); word-break: break-word; }
+.log-entry-msg { color: var(--c-text); min-width: 0; overflow-wrap: break-word; }
+/* Narrow panes: the message takes a line of its own under time, level and source */
+@media (max-width: 640px) {
+  .log-entry { grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 8px; }
+  .log-entry-msg { grid-column: 1 / -1; }
+}
 .log-entry-data {
   grid-column: 1 / -1;
   margin-left: 24px;
@@ -1676,15 +1711,14 @@ button { font-family: inherit; }
   transition: max-height 0.3s var(--ease-out);
   overflow: hidden;
 }
+/* A passed check is quiet (its dot says so); a failed one takes the tint. */
 .check-card.passed {
-  background: var(--c-passed-dim);
-  border-color: color-mix(in srgb, var(--c-passed) 25%, transparent);
-  border-left: 3px solid var(--c-passed);
+  background: var(--c-surface2);
+  border-color: var(--c-border);
 }
 .check-card.failed {
   background: var(--c-failed-dim);
-  border-color: color-mix(in srgb, var(--c-failed) 25%, transparent);
-  border-left: 3px solid var(--c-failed);
+  border-color: var(--c-failed-line);
 }
 .check-card-header {
   display: flex;
@@ -1716,15 +1750,15 @@ button { font-family: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The judge's line in the header: data, in the data face */
+.check-card-header .check-result { font-family: var(--font-mono); color: var(--c-text); }
+.check-card.failed .check-card-header .check-result { color: var(--c-failed-ink); }
+/* pytest-verifier's check_type: an identifier, set as one */
 .check-card-header .check-type-badge {
   margin-left: auto;
-  padding: 1px 8px;
-  border-radius: 10px;
+  padding-left: 8px;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: var(--c-surface3);
   color: var(--c-text2);
   flex-shrink: 0;
 }
@@ -1746,19 +1780,24 @@ button { font-family: inherit; }
 .check-card-header:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; border-radius: 4px; }
 .check-card-detail {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 14px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 16px;
+  align-items: baseline;
   font-size: var(--fs-sm);
 }
 .check-card-detail .label {
-  color: var(--c-text3);
+  color: var(--c-text2);
   font-weight: 500;
 }
 .check-card-detail .value {
   font-family: var(--font-mono);
   color: var(--c-text);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
 }
+/* What the judge said: the line the rest of the card explains */
+.check-card-detail .value.result { font-size: var(--fs-md); font-weight: 600; }
+.check-card.failed .check-card-detail .value.result { color: var(--c-failed-ink); }
 /* The checked value's name (pytest-verifier's actual_name=) beside a check
    that has a label of its own: code, as this run spells it. */
 .check-operand {
@@ -1890,14 +1929,26 @@ button { font-family: inherit; }
 /* ================================================================
    Retry Cards
    ================================================================ */
+/* An embedded artifact's file name, as it is on disk */
+.artifact-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--c-text2);
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+/* A sub-tab with nothing in it says so in one quiet line */
+.tab-empty { color: var(--c-text2); font-size: var(--fs-md); padding: 8px 0; }
 .retry-section { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
 .retry-original {
   background: var(--c-failed-dim);
-  border: 1px solid color-mix(in srgb, var(--c-failed) 30%, transparent);
-  border-left: 3px solid var(--c-failed);
+  border: 1px solid var(--c-failed-line);
   border-radius: var(--radius-md);
   padding: 16px;
 }
+.retry-original-meta { font-size: var(--fs-sm); color: var(--c-text2); margin-top: 8px; }
+.retry-subhead { margin-top: 16px; margin-bottom: 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--c-text2); }
 .retry-original-header {
   display: flex;
   align-items: center;
@@ -1917,12 +1968,22 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 12px 16px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   font-size: var(--fs-md);
   font-weight: 600;
   transition: background 0.15s var(--ease-out);
 }
+.retry-card-header:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+.retry-card-outcome { margin-left: auto; font-size: var(--fs-sm); font-weight: 500; color: var(--c-text2); }
+.retry-card-chevron { flex-shrink: 0; color: var(--c-text3); transition: transform 0.2s var(--ease-out); }
+.retry-card.expanded > .retry-card-header .retry-card-chevron { transform: rotate(90deg); }
 .retry-card-header:hover { background: var(--c-surface3); }
 .retry-card-body {
   padding: 0 16px 16px;
@@ -1936,7 +1997,6 @@ button { font-family: inherit; }
   font-size: var(--fs-xs);
   font-weight: 700;
   margin-left: 4px;
-  opacity: 0.8;
 }
 
 /* ================================================================
@@ -1970,7 +2030,6 @@ button { font-family: inherit; }
   border: 1px solid var(--c-border);
   background: var(--c-surface2);
   color: var(--c-text);
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   transition: border-color 0.15s var(--ease-out);
 }
@@ -2192,7 +2251,7 @@ button { font-family: inherit; }
   padding: 1px 5px;
   background: var(--c-surface3, var(--c-surface));
   border-radius: 8px;
-  font-size: 0.85em;
+  font-size: inherit;
   color: var(--c-text2);
 }
 /* Empty-state for no distributed plugins (Slice E) */
@@ -2222,6 +2281,7 @@ button.counter-card {
   width: 100%;
   cursor: pointer;
 }
+button.counter-card:hover { background: var(--c-surface2); }
 button.counter-card:focus-visible {
   outline: 2px solid var(--c-accent);
   outline-offset: 2px;
@@ -2329,7 +2389,8 @@ button.counter-card:focus-visible {
   padding: 10px 10px 6px;
   cursor: pointer;
 }
-.failures-more:hover { color: var(--c-text); }
+.failures-more { color: var(--c-accent-ink); }
+.failures-more:hover { text-decoration: underline; }
 .failures-group + .failures-group { margin-top: 14px; }
 .failures-group-head {
   display: flex;
@@ -2514,6 +2575,16 @@ main:focus { outline: none; }
   gap: 12px;
 }
 .tree-empty[hidden] { display: none; }
+/* No match: the message takes the list's place, right under the search box */
+.tree-panel.is-empty .tree-content { display: none; }
+.tree-panel.is-empty .tree-keys { margin-top: auto; }
+
+/* A narrow phase bar (a retry card on a tablet) keeps its three labels whole */
+.phase-tabs-bar { container-type: inline-size; }
+@container (max-width: 330px) {
+  .phase-tab-btn { padding-left: 6px; padding-right: 6px; text-transform: none; letter-spacing: 0; }
+  .phase-tab-label { gap: 6px; }
+}
 
 @media (forced-colors: active) {
   .status-dot { forced-color-adjust: none; }
@@ -2525,8 +2596,7 @@ main:focus { outline: none; }
    Responsive
    ================================================================ */
 @media (max-width: 768px) {
-  .counters { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }
-  .counter-card { padding: 14px 12px; }
+  .counters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .charts-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
   .header { padding: 0 16px; }
   .tabs { padding: 0 16px; }
@@ -2595,6 +2665,8 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .detail-panel { display: none; overflow: visible; padding: 12px 16px 32px; }
   .tests-layout.show-detail .tree-panel { display: none; }
   .tests-layout.show-detail .detail-panel { display: block; }
+  /* The page scrolls here, under the sticky header: the sub-tabs stay in flow */
+  .sub-tabs { position: static; }
   .detail-back {
     display: inline-flex;
     align-items: center;
@@ -2625,7 +2697,8 @@ h1, h2, h3, h4 { text-wrap: balance; }
     min-height: 44px;
   }
   .filter-btn, .filter-chip, .session-log-level-btn { padding-left: 14px; padding-right: 14px; }
-  .tree-row, .session-log-section-header, .retry-card-header, .pass-rate-bar { min-height: 44px; }
+  .tree-row, .session-log-section-header, .retry-card-header, .pass-rate-bar,
+  .check-card-header { min-height: 44px; }
   .tree-expand-btn, .theme-toggle { min-width: 44px; min-height: 44px; }
   .filter-toggles, .session-log-level-filters { gap: 8px; }
   .run-pills { gap: 8px; }
@@ -2663,7 +2736,18 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .strategy-rows-wrap .show-more-btn { display: none; }
   .skip-link, .tabs, .theme-toggle, .tree-panel,
   .detail-cmd-hint, .artifact-expand, .strip-btn, .session-log-search,
-  .session-log-actions { display: none !important; }
+  .session-log-actions, .sub-tabs, .run-filters, .failures-foot, .detail-back,
+  .phase-tabs-note { display: none !important; }
+  /* Paper has no "show more": every failure row, and the three phase logs */
+  .failures-group[hidden] { display: block; }
+  .failures-list li[hidden] { display: list-item; }
+  .failure-row-reason { display: block; -webkit-line-clamp: none; overflow: visible; }
+  .phase-tabs-bar { display: none; }
+  .phase-tab-panel { display: block; border: none; }
+  .phase-tab-panel::before {
+    content: attr(data-phase); display: block; margin-top: 8px;
+    font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; color: var(--c-text2);
+  }
   .header { position: static; background: none; margin-bottom: 16px; }
   .tests-layout { display: block; height: auto; }
   .detail-panel { overflow: visible; padding: 0; }
