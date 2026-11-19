@@ -27,7 +27,7 @@ def _html_of(content: object) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, os.PathLike):
-        return Path(content).read_text(encoding="utf-8")
+        return Path(content).read_text(encoding="utf-8", errors="replace")
     to_html = getattr(content, "_repr_html_", None)
     if callable(to_html):
         html = to_html()
@@ -84,7 +84,8 @@ class ReportTabs:
                 Strategy, Artifacts, Retries) nor of a tab this test already
                 has (compared without case).
             content: The HTML as a ``str`` (a whole document or a fragment),
-                the path of an HTML file (read now, as UTF-8), or an object
+                the path of an HTML file (read now, as UTF-8; bytes that
+                are not UTF-8 are replaced), or an object
                 with ``_repr_html_()`` such as a pandas ``Styler``.
             scripts: Let the tab's JavaScript run (an interactive plot, say).
                 Off by default. The frame stays isolated from the report

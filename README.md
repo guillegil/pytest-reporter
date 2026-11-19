@@ -303,8 +303,9 @@ def pytest_reporter_test_tabs(item, tabs):
         tabs.add("Bench log", bench.log_html())
 ```
 
-The hook runs once per test, after the test body and before its fixtures are torn down. An
-exception raised in it becomes a warning and never changes the test's outcome.
+The hook runs once per test, after the test body and before its fixtures are torn down. Each
+implementation is called on its own: one that raises (`pytest.skip()` and `pytest.fail()`
+included) becomes a warning, costs only its own tabs and never changes the test's outcome.
 
 A single test (or a fixture) can add its own with the `report_tabs` fixture:
 
@@ -323,7 +324,7 @@ def test_scope(report_tabs, scope):
 | `title` | The tab's name: at most 40 characters, not the name of one of the report's tabs, and not repeated in the same test (a `ValueError` otherwise). |
 | `content` | A whole HTML document or a fragment. A fragment is shown in the report's font and colors, in light and dark; a whole document is shown as written. |
 | `scripts` | JavaScript in the tab is blocked unless this is `True`. |
-| `height` | The frame's height in pixels. By default the frame is as tall as its content. |
+| `height` | The frame's height in pixels. By default the frame is as tall as its content; a page sized from its window (`height: 100vh`) has no height of its own and gets 480 pixels, so give it one. |
 
 Each tab is shown in a sandboxed frame, so its HTML cannot read or change the report, with or
 without scripts. The HTML is embedded in `report.html`, which stays one file; anything the tab
@@ -333,7 +334,8 @@ is opened, so inline it for a report that works offline.
 The tabs are also saved in the run folder as they are added, as `tabs/01_<title>.html` files
 and a `tabs/tabs.json` list, next to the run's `artifacts/`. Each retry attempt has its own,
 shown in its card on the Retries tab. Without `--report-dir` the arguments are still checked
-and nothing is saved.
+and nothing is saved. The same goes for tests run in pytest-xdist workers (`-n`), where the
+reporter is not active: their tabs are not saved and the hook is not called.
 
 ---
 

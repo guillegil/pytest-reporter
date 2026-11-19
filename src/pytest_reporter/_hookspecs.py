@@ -21,9 +21,11 @@ class ReporterSpec:
         Called once per test attempt (retries included) with ``--report-dir``,
         when the test body has ended and before its fixtures are torn down, so
         ``item.funcargs`` still holds live fixture values. Each tab added with
-        ``tabs.add(title, html)`` is shown after the report's own tabs. An
-        exception raised here becomes a warning; the test's outcome is never
-        changed.
+        ``tabs.add(title, html)`` is shown after the report's own tabs. Each
+        implementation is called on its own: an exception raised in one
+        (``pytest.skip()`` and ``pytest.fail()`` included) becomes a warning,
+        costs only its own tabs and never changes the test's outcome. Not
+        called in pytest-xdist workers, where the reporter is not active.
 
         Example (conftest.py)::
 

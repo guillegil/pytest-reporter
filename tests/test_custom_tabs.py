@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -226,7 +228,9 @@ def test_a_raising_hook_is_a_warning(pytester: Pytester) -> None:
     pytester.makepyfile("def test_one(): pass")
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
-    result.stdout.fnmatch_lines(["*pytest_reporter_test_tabs failed and was skipped: ValueError*"])
+    result.stdout.fnmatch_lines(
+        ["*pytest_reporter_test_tabs of * failed and was skipped: ValueError*"]
+    )
     assert _runs(pytester)["test_a_raising_hook_is_a_warning.py::test_one"]["tabs"] == []
 
 
@@ -261,6 +265,95 @@ def test_parametrized_runs_keep_their_tabs_apart(pytester: Pytester) -> None:
     assert [r["tabs"][0]["html"] for r in _runs(pytester).values()] == ["<p>1</p>", "<p>2</p>"]
 
 
+def test_one_raising_implementation_costs_only_its_own_tabs(pytester: Pytester) -> None:
+    pytester.makeconftest(
+        """
+        class Other:
+            def pytest_reporter_test_tabs(self, tabs):
+                tabs.add("Summary", "<p></p>")
+
+        def pytest_configure(config):
+            config.pluginmanager.register(Other(), "other")
+
+        def pytest_reporter_test_tabs(item, tabs):
+            tabs.add("Mine", "<p>mine</p>")
+        """
+    )
+    pytester.makepyfile("def test_one(): pass")
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1)
+    result.stdout.fnmatch_lines(["*pytest_reporter_test_tabs of other failed*ValueError*"])
+    tabs = _runs(pytester)["test_one_raising_implementation_costs_only_its_own_tabs.py::test_one"]
+    assert [t["title"] for t in tabs["tabs"]] == ["Mine"]
+
+
+@pytest.mark.parametrize("call", ["pytest.skip('no tabs')", "pytest.fail('bad tab')"])
+def test_skip_or_fail_in_the_hook_never_reaches_the_test(pytester: Pytester, call: str) -> None:
+    pytester.makeconftest(
+        f"""
+        import pytest
+
+        @pytest.fixture
+        def res():
+            yield 1
+
+        def pytest_reporter_test_tabs(item, tabs):
+            if item.name == "test_a":
+                {call}
+        """
+    )
+    pytester.makepyfile(
+        """
+        def test_a(res): pass
+        def test_b(res): pass
+        """
+    )
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=2)
+    result.stdout.fnmatch_lines(["*pytest_reporter_test_tabs of * failed and was skipped*"])
+
+
+def test_a_file_that_is_not_utf8_is_still_a_tab(tmp_path: Path) -> None:
+    source = tmp_path / "latin.html"
+    source.write_bytes("<p>é</p>".encode("latin-1"))
+    tabs = ReportTabs(tmp_path / "tabs")
+    tabs.add("File", source)
+    assert collect_tabs(tmp_path / "tabs")[0]["html"] == "<p>\ufffd</p>"
+
+
+def test_a_rerun_by_another_plugin_starts_without_tabs(pytester: Pytester) -> None:
+    pytester.makeconftest(
+        """
+        import pytest
+        from _pytest.runner import runtestprotocol
+
+        @pytest.hookimpl(tryfirst=True)
+        def pytest_runtest_protocol(item, nextitem):
+            item.ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
+            runtestprotocol(item, nextitem=nextitem, log=False)
+            for report in runtestprotocol(item, nextitem=nextitem, log=False):
+                item.ihook.pytest_runtest_logreport(report=report)
+            item.ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
+            return True
+        """
+    )
+    pytester.makepyfile(
+        """
+        calls = []
+
+        def test_y(report_tabs):
+            calls.append(1)
+            if len(calls) == 1:
+                report_tabs.add("First only", "<p>stale</p>")
+        """
+    )
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+    assert (
+        _runs(pytester)["test_a_rerun_by_another_plugin_starts_without_tabs.py::test_y"]["tabs"]
+        == []
+    )
+
+
 # --- The report's script ------------------------------------------------
 
 
@@ -275,3 +368,86 @@ def test_frames_are_sandboxed() -> None:
 def test_custom_tabs_come_after_the_reports_own() -> None:
     body = JS[JS.index("function subTabNames") : JS.index("function customTabs")]
     assert body.index("'Retries'") < body.index("customTabs(run).forEach")
+
+
+def test_the_height_script_comes_before_the_tabs_markup() -> None:
+    body = JS[JS.index("function customTabDoc") : JS.index("function renderCustomTab")]
+    assert "script + '</head><body>' + html" in body
+
+
+requires_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+
+
+def _function(name: str) -> str:
+    start = JS.index(f"function {name}(")
+    return JS[start : JS.index("\nfunction ", start + 1)]
+
+
+def _node(script: str, *functions: str) -> Any:  # noqa: ANN401
+    out = subprocess.run(
+        ["node", "-"],
+        input="\n".join([*(_function(n) for n in functions), script]),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+@requires_node
+def test_a_whole_document_is_told_from_a_fragment() -> None:
+    cases = [
+        "<!doctype html><p>x</p>",
+        "<html><body></body></html>",
+        "\n <!-- c -->\n<HTML lang=en>",
+        "<p>x</p>",
+        "<pre>&lt;x&gt;</pre><script>const s = '<!DOCTYPE html><html>';</script>",
+        "<p>write <html> first</p>",
+        "",
+    ]
+    got = _node(
+        f"console.log(JSON.stringify({json.dumps(cases)}.map(customTabIsWhole)));",
+        "customTabIsWhole",
+    )
+    assert got == [True, True, True, False, False, False, False]
+
+
+@requires_node
+def test_custom_tabs_skip_bad_and_reserved_titles() -> None:
+    tabs = [
+        {"title": "Wave"},
+        {"title": "summary"},
+        {"title": "wave"},
+        {"title": ""},
+        {"title": 3},
+        None,
+        {"title": "Plot"},
+    ]
+    got = _node(
+        f"console.log(JSON.stringify([customTabs({{tabs: {json.dumps(tabs)}}}).map(t => t.title),"
+        " customTabs({}), customTabs(null)]));",
+        "customTabs",
+    )
+    assert got == [["Wave", "Plot"], [], []]
+
+
+@requires_node
+def test_frame_height_stops_following_a_document_that_follows_it() -> None:
+    script = """
+    let t = 0;
+    globalThis.performance = {now: () => t};
+    const CUSTOM_TAB_DEFAULT_PX = 480, CUSTOM_TAB_MAX_PX = 20000;
+    const loop = {style: {height: '480px'}, offsetHeight: 0, clientHeight: 0};
+    for (let i = 1; i <= 40; i++) { t += 16; customTabHeight(loop, 480 + 16 * i); }
+    // content that grows now and then (images loading) is still followed
+    const slow = {style: {height: '480px'}, offsetHeight: 0, clientHeight: 0};
+    for (let i = 1; i <= 40; i++) { t += 500; customTabHeight(slow, 480 + 16 * i); }
+    // the frame's own border is part of its height
+    const edged = {style: {height: '480px'}, offsetHeight: 102, clientHeight: 100};
+    customTabHeight(edged, 300);
+    console.log(JSON.stringify([loop.style.height, slow.style.height, edged.style.height]));
+    """
+    assert _node(script, "customTabHeight") == ["480px", "1120px", "302px"]

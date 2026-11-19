@@ -427,9 +427,13 @@ else donut grid.
 
 - `ReportTabs.add(title, content, *, scripts=False, height=None)` (`_tabs.py`): from the
   `report_tabs` fixture, or from `pytest_reporter_test_tabs(item, tabs)` implementations, which
-  `Reporter.pytest_runtest_teardown` (tryfirst, guarded) calls before fixtures are torn down.
-  `Reporter.tabs_for(nodeid)` gives both the same object; it is dropped at each attempt's
-  setup, so a retry starts empty and writes to `retries/XX/tabs/`.
+  `Reporter.pytest_runtest_teardown` (tryfirst) calls before fixtures are torn down, one
+  implementation at a time (`_ask_for_tabs`: `impl.function`, wrappers skipped), turning
+  anything raised into a warning, outcome exceptions too: a `pytest.skip()` leaving this
+  hook would stop pytest's own teardown. `Reporter.tabs_for(nodeid)` gives both the same
+  object; at each attempt's setup it is dropped and the attempt's `tabs/` folder removed
+  (another plugin's rerun writes to the same folder), so a retry starts empty and writes
+  to `retries/XX/tabs/`.
 - Titles: stripped, at most 40 characters, not a built-in tab's name (`RESERVED`), not
   repeated in the test (casefold); usage errors raise from `add()`, also without
   `--report-dir` (where nothing is saved).
@@ -438,8 +442,13 @@ else donut grid.
 - JS: `customTabs(run)` (after every built-in tab, Retries included), `renderCustomTab`.
   The HTML goes only into an iframe's `srcdoc`: `sandbox="allow-same-origin"` without
   scripts (inert, so the report measures its height), `sandbox="allow-scripts"` with them
-  (its own origin; height by `postMessage`). Never both tokens. A fragment is wrapped in a
-  page with the report's font and colors (`customTabDoc`).
+  (its own origin; height by `postMessage` from a script of ours placed in the head, before
+  the tab's markup). Never both tokens. A fragment (`customTabIsWhole`: no leading doctype
+  or `<html>`) is wrapped in a page with the report's font and colors (`customTabCss`,
+  system colors in print; no hex colors in the JS), which `restyleCustomTabs` rewrites on a
+  theme change. `customTabHeight` adds the frame's border and stops following a document
+  that follows its viewport (8 same-direction changes under 300 ms apart: default height).
+  A retry card's frames are created when the card opens (a hidden frame has no size).
 
 ## Artifact System (§9)
 
