@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Copy lines that run tests again **with the same vectors** (pytest-strategies). A test
+  with strategy rows has two labelled lines in its header, **This vector** (the run on
+  screen) and **All vectors of this test**; each row of the Strategy sub-tab has a copy
+  button for its test item; the Summary and Report tabs have **Run again with the same
+  vectors**, with the folder to run it from. With pytest-strategies 4.4+ the commands are
+  the `rerun` arguments of its run export (the seed, the options that shape the rows and
+  the other options the run was started with, such as a project option the strategies
+  read), and a `note` of the export shows under the line; in the Strategy sub-tab the rows
+  a note applies to are marked and the note is written once under the table. With 4.3, or
+  without an export, they are built from the node IDs, the recorded command line and
+  `--rng-seed=<seed>`. A test without strategy rows keeps its one line; in a run with a 4.4
+  export that line carries the export's options too, so an item that only exists under
+  them (`[NOTSET]` with `--vector-name`) is found. A test the run deselected as a whole
+  has no **All vectors of this test** line. A run without strategy rows has no **Run
+  again** line, also when pytest-strategies is installed and writes its export.
+
 - Custom HTML tabs in a test's detail. A `conftest.py` adds them for every test with the new
   `pytest_reporter_test_tabs(item, tabs)` hook, and a test or fixture adds its own with the
   new `report_tabs` fixture: `tabs.add("Bench log", html)`. The content is HTML as a string, the
@@ -104,6 +120,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Failures panel's **Copy rerun command** adds what brings the same pytest-strategies
+  rows back: the options of the run export (4.4+), else `--rng-seed=<seed>`, in a run that
+  has strategy rows. Without such rows the command is unchanged.
+- The report quotes command arguments with one helper: plain words stay bare, the rest
+  goes in double quotes (read alike by POSIX shells, `cmd` and PowerShell), and an argument
+  with `$`, `` ` ``, `"`, `!` or a backslash that would escape gets POSIX single quotes.
+  Node IDs the report adds itself are always quoted, as before; the arguments of a
+  pytest-strategies export follow the rule above (`pytest test_rw.py::test_rw --rng-seed=7`).
 - A test opens on its first failed run instead of run 01, and a run's phase logs open
   on the phase that failed (or was skipped) instead of Setup.
 - When the run has failures, the Tests tab starts on them: only failed tests shown,
@@ -138,6 +162,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A pytest-strategies seed past 2**53 shows exactly in a run's **Row seed** (it was rounded
+  to the nearest number JavaScript can hold).
+- The copy commands of a run that was started below the rootdir (`cd tests/unit && pytest`)
+  name each test file from that folder: `pytest "test_x.py::test_a"` and
+  `pytest "../test_top.py::test_b"`, where the node ID (`tests/unit/test_x.py::test_a`,
+  relative to the rootdir) named no file. This applies to every command the report builds
+  from a node ID: a test's single line, **Copy rerun command**, and the lines of a
+  pytest-strategies run without a 4.4 export.
 - The test tree of the HTML report was empty when every test was in one file (or one
   class): the Tests tab said "No tests match the search and filters". The file is now the
   tree's top row.

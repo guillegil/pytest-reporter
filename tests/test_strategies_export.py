@@ -599,6 +599,16 @@ _STRATEGY_FUNCTIONS = (
     "samplesEl",
     "strategyOrigin",
     "strategyItemEl",
+    # Each row's copy button (the commands are in test_html_rerun_commands.py)
+    "shellQuote",
+    "quoteArgs",
+    "nodeCommand",
+    "testCommand",
+    "vectorOptions",
+    "exportItem",
+    "commandNodeid",
+    "vectorCommand",
+    "copyButton",
     "renderStrategyRows",
     "renderStrategy",
     "renderStrategies",
@@ -689,6 +699,7 @@ def test_strategy_rows_past_the_first_hundred_are_hidden() -> None:
     ]
     test = {"strategies": [{"name": "many", "rows": rows}], "runs": []}
     got = _node(
+        "const DATA = {};\n"
         f"const test = {json.dumps(test)};\n"
         "const tab = renderStrategyRows(test.strategies[0], test, {nodeid: 't[r120]'});\n"
         "const rows = findAll(tab, 'tr').slice(1);\n"

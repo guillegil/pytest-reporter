@@ -15,6 +15,12 @@ respected, and its two files are copied into the run folder. At session end
 report shows each test's strategies and rows on a Strategy tab. The
 ``report_strategies`` ini setting turns all of this off.
 
+pytest-strategies 4.4 adds ``rerun`` objects to the export: the arguments of
+the pytest commands that run the whole session, one test's rows or one row's
+item again with the same vectors. :func:`rerun_data` gives them to the report,
+which quotes them for a shell; without them (4.3) the report builds the
+commands from the node IDs and the seed.
+
 Without pytest-strategies, or with a version before 4.3, the hook is never
 called and nothing is read.
 """
@@ -242,6 +248,83 @@ def html_data(
     return session, by_test
 
 
+def seed_text(seed: Any) -> str | None:  # noqa: ANN401
+    """A seed as the text ``--rng-seed=`` takes, or ``None``.
+
+    Seeds are 64-bit: the report's JavaScript must never hold one as a number,
+    so commands are built from this text.
+    """
+    if isinstance(seed, bool) or not isinstance(seed, (int, str)):
+        return None
+    text = str(seed).strip()
+    return text or None
+
+
+def _args(value: Any) -> list[str] | None:  # noqa: ANN401
+    """An argument list of the export as text (integers written exactly), or ``None``."""
+    if not isinstance(value, list):
+        return None
+    out: list[str] = []
+    for arg in value:
+        if isinstance(arg, bool) or not isinstance(arg, (str, int)):
+            return None
+        out.append(str(arg))
+    return out
+
+
+def _rerun(value: Any, *keys: str) -> dict[str, Any] | None:  # noqa: ANN401
+    """A ``rerun`` object of the export: the argument lists in ``keys``, ``cwd`` and ``note``.
+
+    Returns:
+        ``None`` when ``value`` is not a ``rerun`` object or holds no usable
+        argument list (an export of pytest-strategies 4.3 has none).
+    """
+    if not isinstance(value, dict):
+        return None
+    out: dict[str, Any] = {}
+    for key in keys:
+        args = _args(value.get(key))
+        if args:
+            out[key] = args
+    if not out:
+        return None
+    for key in ("cwd", "note"):
+        text = value.get(key)
+        if isinstance(text, str) and text.strip():
+            out[key] = text.strip()
+    return out
+
+
+def rerun_data(document: dict[str, Any] | None) -> dict[str, Any]:
+    """What the export says about running the session again with the same vectors.
+
+    Args:
+        document: ``strategies.vectors.json``, or ``None``.
+
+    Returns:
+        ``run``: the top-level ``rerun`` object (``args`` of the whole run,
+        ``options`` that follow chosen node IDs, ``cwd``, ``note``) or
+        ``None``; ``tests``: each test's ``rerun`` object (``args``, ``note``)
+        by its node ID; ``seed``: the export's seed as text, or ``None``. Every
+        argument is a ``str``. The ``rerun`` object of a row's item stays on
+        the item (see :func:`html_data`).
+    """
+    if document is None:
+        return {"run": None, "tests": {}, "seed": None}
+    tests: dict[str, dict[str, Any]] = {}
+    for test in _list(document.get("tests")):
+        if not isinstance(test, dict) or not isinstance(test.get("nodeid"), str):
+            continue
+        rerun = _rerun(test.get("rerun"), "args")
+        if rerun is not None:
+            tests.setdefault(test["nodeid"], rerun)
+    return {
+        "run": _rerun(document.get("rerun"), "args", "options"),
+        "tests": tests,
+        "seed": seed_text(document.get("seed")),
+    }
+
+
 def _strategy(strategy: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {key: _js_safe(strategy.get(key)) for key in _STRATEGY_KEYS}
     out["rows"] = [_row(r) for r in _list(strategy.get("rows")) if isinstance(r, dict)]
@@ -250,9 +333,13 @@ def _strategy(strategy: dict[str, Any]) -> dict[str, Any]:
 
 def _row(row: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {key: _js_safe(row.get(key)) for key in _ROW_KEYS}
-    out["items"] = [
-        {"nodeid": item.get("nodeid"), "outcome": item.get("outcome")}
-        for item in _list(row.get("items"))
-        if isinstance(item, dict)
-    ]
+    out["items"] = [_item(item) for item in _list(row.get("items")) if isinstance(item, dict)]
+    return out
+
+
+def _item(item: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"nodeid": item.get("nodeid"), "outcome": item.get("outcome")}
+    rerun = _rerun(item.get("rerun"), "args")  # pytest-strategies 4.4+
+    if rerun is not None:
+        out["rerun"] = rerun
     return out

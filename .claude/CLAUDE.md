@@ -382,6 +382,53 @@ node may hold `substeps` of the same shape.
   row's outcome is the report's own for an item that is one of the test's runs.
 - The `report_strategies` ini setting (default true) turns the integration off.
 
+### Rerun commands (same vectors)
+
+- pytest-strategies 4.4 adds `rerun` objects to the export (schema still 1): top level
+  `{"cwd", "args", "options"}` (`args`: the whole run; `options`: what follows chosen node
+  IDs: `--rng-seed=<seed>`, the generation options, then the run's other options as given,
+  without its paths, `-k`/`-m`/`--deselect`, `--lf`/`--sw`, `--collect-only` and
+  `--strategy-export`), each test entry `{"args"}` (the rows this run selected) and each
+  row item `{"args"}`; any may carry a `note` (the top-level one for `--lf`/`--sw`). All are
+  UNQUOTED argument lists. `_strategies.rerun_data` reads them (`_rerun`: every argument
+  to `str`, another shape ignored); a row item's stays on the item (`html_data`).
+- `DATA.rerun` (`_report_builder`): the top-level object plus `seed` (the export's, else
+  the rows' `VectorInfo` seed, as text: `seed_text`) and `cwd` (the export's, else the
+  folder pytest was started in); `None` when neither is known, and for a run without
+  strategy rows (`has_strategy_rows`: no test of the export has a strategy and no
+  `RunInfo.strategy`), since pytest-strategies writes its export, with a seed, for every
+  session. Each test has `rerun`
+  (`None` without one). Seeds are 64-bit: they are strings end to end, and
+  `_js_strategy` embeds a run's `strategy.seed` past 2**53 as text. Never build a command
+  from `DATA.strategies.seed` (a `{"$repr"}` object for a large seed).
+- `_js.py`: `shellQuote(arg, always)` / `quoteArgs` / `nodeCommand` quote for a shell
+  (bare safe words; double quotes, which cmd and PowerShell read too; POSIX single quotes
+  for `$`, `` ` ``, `"`, `!` and an escaping backslash; node IDs the report adds are always
+  quoted). `vectorCommand(test, run)` (the item's `rerun.args`; else node ID +
+  `vectorOptions`: the export's `options`, else `--rng-seed=<seed>`; for a run that is no
+  strategy row `testCommand`, the node ID + `plainOptions`: the export's `options` or nothing, so a `[NOTSET]`
+  item of `--vector-name` is found), `allVectorsCommand(test)` (the test's `rerun.args`,
+  else `base_nodeid` + options; `null` for a test without rows, and for one the export
+  does not list although there is an export: the run deselected it), `runAgainCommand()` (top-level
+  `args`, else `DATA.cmdline` + the seed unless it has `--rng-seed`; `null` when nothing
+  is known), `failuresCommand(runs)`.
+- Commands run from the folder pytest was started in, node IDs are relative to the
+  rootdir: `_collector.command_nodeid(item)` writes the item's file from the invocation
+  folder (`RunInfo.command_nodeid`, `""` when it is the node ID), embedded as a run's
+  `cmd_nodeid` only when it differs. `commandNodeid(run)` / `commandBaseNodeid(test)`
+  give it to every command the report builds from a node ID; the export's `args` are
+  relative to that folder already and are never rewritten.
+- `commandLine({label, ariaLabel, id, command})` builds a copy line (`.cmd-line`: label,
+  the `.detail-cmd` box, `.cmd-hints` with `Run from <cwd>` and the note);
+  `setCommandLine` updates it (`showRunDetail` does for `detailCmdLine`). A test with rows
+  (`hasVectors`) gets **This vector** (`#detail-cmd`) and **All vectors of this test**
+  (`#detail-cmd-all`); other tests keep one unlabelled line. The Summary and Report tabs
+  show **Run again with the same vectors**; rows of the Strategy sub-tab get a
+  `copyButton` per item, and an item's `note` is a `*` mark (`.strategy-note-mark`) with
+  the text once under the table (`.strategy-rows-note`). Notes are shown capitalized
+  (`capitalize`): the export's text is the terminal's. In `@media print` the copy lines'
+  rules stand before the `display: none` list, never inside its selectors. Tests: `tests/test_html_rerun_commands.py` (hand-built exports).
+
 ## HTML Report (§7)
 
 ### Requirements:

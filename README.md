@@ -372,8 +372,8 @@ Behavior:
 
 The `report.html` is a single self-contained file with four tabs:
 
-1. **Summary** — pass-rate hero and ratio bar; when anything failed, a **Failures** list with the reason for each failed run and a **Copy rerun command** button; status counters that open the Tests tab filtered to that status; and configurable donut/bar chart groups.
-2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, **Checks** (for tests with pytest-verifier checks) and **Strategy** (for tests that use a pytest-strategies strategy).
+1. **Summary** — pass-rate hero and ratio bar; when anything failed, a **Failures** list with the reason for each failed run and a **Copy rerun command** button; in a run with pytest-strategies rows, a **Run again with the same vectors** copy line; status counters that open the Tests tab filtered to that status; and configurable donut/bar chart groups.
+2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test (for a test with pytest-strategies rows: **This vector** and **All vectors of this test**, each with the seed), plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, **Checks** (for tests with pytest-verifier checks) and **Strategy** (for tests that use a pytest-strategies strategy).
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
 4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 
@@ -445,6 +445,58 @@ and never imports it.
 ```bash
 pip install "pytest-reporter[strategies]"
 ```
+
+### Running again with the same vectors
+
+A random row (`rand-2`) only has the same values again when pytest draws from
+the same seed, so the report's copy lines carry it. Click a line (or focus it
+and press Enter or Space) to copy the command:
+
+| Where | Line | Command |
+|-------|------|---------|
+| A test's header | **This vector** | The run on screen: `pytest "test_rw.py::test_rw[rand-2]" --rng-seed=7 --nsamples=4` |
+| A test's header | **All vectors of this test** | Every row of the test that this run selected (no such line for a test the run deselected as a whole) |
+| Strategy sub-tab | the copy button of a row | That row's test item |
+| Summary and Report tabs | **Run again with the same vectors** | The whole run, with the folder to run it from |
+| Summary tab, Failures | **Copy rerun command** | The failed runs |
+
+With pytest-strategies 4.4+ the commands are the ones its run export gives
+(`rerun`): the seed, the options that shape the rows (`--nsamples`,
+`--vector-mode`, constraints turned off, ...) and then the other options the
+run was started with, as you gave them. An option of your own that the
+strategies read (`--board=rev-b`), or one the collection needs
+(`--import-mode=importlib`), decides what a row holds, so a line without it
+would run other values. The run's paths, `-k`, `-m`, `--deselect`, `--lf` and
+`--sw` are not repeated: each line names its tests. In such a run the single
+line of a test without strategy rows, and **Copy rerun command**, carry the
+same options: under them the test is collected as this run collected it (an
+item pytest named `[NOTSET]` because `--vector-name` left its strategy without
+rows only exists with that option).
+
+A note of the export is shown under the line: a command that is known not to
+bring a row back, or a **Run again** command with `--lf` or `--sw`, which
+selects by what pytest's cache holds when you run it. In the Strategy sub-tab
+the rows a note applies to are marked `*` and the note is written once, under
+the table.
+
+With 4.3, or with no export, the lines are built from the node IDs, the
+recorded command line and `--rng-seed=<seed>`: give the other options you ran
+with yourself. There, a test without strategy rows keeps its single
+`pytest "<nodeid>"` line. A run without strategy rows has no **Run again** line
+and its commands carry no seed, also when pytest-strategies is installed (it
+writes its export for every session).
+
+Every command is meant to be run from the folder pytest was started in, which
+the **Run again** line names. A test file is written from that folder
+(`pytest "test_x.py::test_a"` after `cd tests/unit && pytest`), not as in its
+node ID, which is relative to the rootdir. **Copy rerun command** lists the
+failed runs by node ID; for a test file outside the rootdir, which pytest
+cannot name that way with the same vectors, use the test's own lines.
+
+Arguments are quoted for a POSIX shell: plain words stay bare, anything else
+goes in double quotes (which `cmd` and PowerShell read the same way), and only
+an argument with `$`, `` ` ``, `"`, `!` or a trailing backslash gets POSIX
+single quotes.
 
 ### The run export (pytest-strategies 4.3+)
 

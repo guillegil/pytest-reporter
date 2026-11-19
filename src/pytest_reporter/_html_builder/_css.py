@@ -950,6 +950,52 @@ button { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .detail-cmd { transition: none; }
 }
+/* Copy lines: a command box, with a label when there are several (a test
+   with pytest-strategies rows: this vector / all vectors of this test) */
+.detail-cmds { margin-top: 8px; }
+.cmd-line { max-width: 100%; min-width: 0; }
+.cmd-line .detail-cmd { margin-top: 0; }
+.cmd-line.labeled,
+.detail-cmds.labeled {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+}
+.detail-cmds.labeled .cmd-line { display: contents; }
+.cmd-line.labeled .detail-cmd { justify-self: start; }
+.cmd-line.labeled .detail-cmd-code { white-space: normal; overflow-wrap: anywhere; }
+.cmd-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-text2);
+}
+.cmd-hints {
+  grid-column: 2;
+  margin-top: -2px;
+  font-size: var(--fs-sm);
+  color: var(--c-text2);
+  overflow-wrap: anywhere;
+}
+.cmd-hints[hidden] { display: none; }
+.cmd-cwd-path { font-family: var(--font-mono); }
+.cmd-note { font-size: var(--fs-sm); color: var(--c-text2); }
+.run-again {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  padding: 12px 20px;
+  margin-bottom: 28px;
+}
+.report-section-body > .cmd-line { margin-top: 12px; }
+.report-section-body > .cmd-line:first-child { margin-top: 0; }
+@media (max-width: 640px) {
+  .cmd-line.labeled, .detail-cmds.labeled { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .detail-cmds.labeled .cmd-line + .cmd-line .cmd-label { margin-top: 6px; }
+  .cmd-hints { grid-column: 1; margin-top: 0; }
+}
 .detail-header-stats {
   display: flex;
   gap: 16px;
@@ -1168,6 +1214,26 @@ button { font-family: inherit; }
 .strategy-item-link:hover { background: var(--c-surface3); }
 .strategy-item-link:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
 .strategy-item-run { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text3); }
+.strategy-outcomes { align-items: center; }
+.strategy-outcome { display: inline-flex; align-items: center; gap: 8px; }
+.strategy-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--c-text3);
+  cursor: pointer;
+}
+.strategy-copy:hover { background: var(--c-surface3); color: var(--c-text); }
+.strategy-copy:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.strategy-copy.copied { color: var(--c-passed-ink); }
+.strategy-note-mark { color: var(--c-text2); font-weight: 600; cursor: help; }
+.strategy-rows-note { margin-top: 8px; max-width: 72ch; }
 .strategy-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .strategy-chip {
   padding: 2px 10px;
@@ -2544,9 +2610,10 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .tab-btn, .sub-tab-btn, .phase-tab-btn, .run-pill, .filter-btn, .filter-chip,
   .strip-btn, .failures-more, .session-log-level-btn, .session-log-action-btn,
   .detail-back, .search-input, .session-log-search, .detail-cmd, .procedure-view-btn,
-  .strategy-item-link, .strategy-rows-wrap .show-more-btn {
+  .strategy-item-link, .strategy-rows-wrap .show-more-btn, .strategy-copy {
     min-height: 44px;
   }
+  .strategy-copy { min-width: 44px; }
   .filter-btn, .filter-chip, .session-log-level-btn { padding-left: 14px; padding-right: 14px; }
   .tree-row, .session-log-section-header, .retry-card-header, .pass-rate-bar { min-height: 44px; }
   .tree-expand-btn, .theme-toggle { min-width: 44px; min-height: 44px; }
@@ -2584,8 +2651,10 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .strategy-rows th, .strategy-rows td { white-space: normal; overflow-wrap: anywhere; }
   .strategy-rows tr[hidden] { display: table-row; }
   .strategy-rows-wrap .show-more-btn { display: none; }
+  .detail-cmd-code { white-space: normal; overflow-wrap: anywhere; }
+  .run-again { break-inside: avoid; }
   .skip-link, .tabs, .theme-toggle, .tree-panel,
-  .detail-cmd-hint, .artifact-expand, .strip-btn, .session-log-search,
+  .detail-cmd-hint, .strategy-copy, .artifact-expand, .strip-btn, .session-log-search,
   .session-log-actions { display: none !important; }
   .header { position: static; background: none; margin-bottom: 16px; }
   .tests-layout { display: block; height: auto; }

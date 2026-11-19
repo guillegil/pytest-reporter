@@ -2,7 +2,8 @@
 
 When a test is selected in the Tests tab, the detail header shows the exact
 pytest command to run that single test (``pytest "<nodeid>"``) below the file
-path.  Clicking (or Enter/Space) copies it to the clipboard.
+path.  Clicking (or Enter/Space) copies it to the clipboard.  The lines of a
+test with pytest-strategies rows are in ``test_html_rerun_commands.py``.
 
 All assertions work against the inline JS/CSS source embedded in report.html
 and against the embedded DATA JSON.  No DOM execution — we inspect the source
@@ -51,7 +52,13 @@ def test_copy_helpers_present(pytester: Pytester) -> None:
     assert "navigator.clipboard" in js, "must use the modern clipboard API"
     assert "document.execCommand('copy')" in js, "must provide an execCommand fallback"
     assert "function testCommand(" in js, "testCommand builder must be defined"
-    assert "'pytest \"'" in js, 'command must be built as: pytest "<nodeid>"'
+    # pytest "<nodeid>": the node ID always quoted, through the shell-quoting helper
+    assert "function shellQuote(" in js, "shellQuote helper must be defined"
+    # (plainOptions is empty without a pytest-strategies 4.4 export)
+    assert "return nodeCommand([nodeid], plainOptions());" in js, (
+        'command must be built as: pytest "<nodeid>"'
+    )
+    assert "nodeids.map(n => shellQuote(n, true))" in js, "node IDs must always be quoted"
 
 
 def test_command_uses_run_nodeid(pytester: Pytester) -> None:
@@ -69,7 +76,12 @@ def test_command_uses_run_nodeid(pytester: Pytester) -> None:
     assert "detail-cmd" in js, "detail-cmd command box must be rendered in the header"
     assert "detail-cmd-code" in js, "command text element must have class detail-cmd-code"
     # built from the selected run's nodeid, updated in showRunDetail
-    assert "testCommand(run.nodeid)" in js, "command must update from the selected run's nodeid"
+    # (vectorCommand is testCommand(commandNodeid(run)) for a test without pytest-strategies
+    # rows: the run's nodeid, written from the folder pytest was started in)
+    assert "testCommand(commandNodeid(run))" in js, "command must be built from the run's nodeid"
+    assert "setCommandLine(detailCmdLine, vectorCommand(selectedTest, run))" in js, (
+        "command must update from the selected run"
+    )
 
 
 def test_command_box_is_accessible(pytester: Pytester) -> None:
