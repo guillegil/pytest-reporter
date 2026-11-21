@@ -232,6 +232,7 @@ Same as phase file but `phase: "session"`, no `outcome` or `longrepr`.
   "function_name": "test_bar",
   "file": "tests/Module/test_foo.py",
   "total_runs": 5, "passed": 3, "failed": 1, "skipped": 1, "errors": 0,
+  "xfailed": 0, "xpassed": 0,     // subsets of skipped / passed (runs marked xfail)
   "total_duration_seconds": 12.34,
   "runs": [
     { "run_id": "01", "outcome": "passed", "duration_seconds": 2.1 },
@@ -243,6 +244,10 @@ Same as phase file but `phase: "session"`, no `outcome` or `longrepr`.
 ```
 
 **Aggregate counter rule:** Final outcome counts. Failed-then-passed-on-retry = counted as `passed`.
+
+**Pass rate** (`passRate` in the JS; hero, donut counts, pass-rate bars, group labels):
+`passed / (passed + failed + error + xfailed)`. Skipped runs are left out; `passed` holds
+non-strict xpasses, a strict xpass is `failed`. No counted run → `—`.
 
 ### parameters.json (§4)
 
