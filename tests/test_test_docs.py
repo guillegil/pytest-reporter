@@ -321,7 +321,7 @@ function shape(n) {
 
 def _function(name: str) -> str:
     start = JS.index(f"function {name}(")
-    end = JS.index("\nfunction ", start + 1)
+    end = JS.index("\n}\n", start) + 2  # a top-level function ends at column 0
     return JS[start:end]
 
 

@@ -263,8 +263,9 @@ def test_cmd_fifo_fill(esm_dev, channel, verify):
   (`1.`, `1)`); lists show as lists and keep your numbers. Text between backticks is shown
   in monospace.
 - stepdoc reads the docstring (only the test function's own) and the reporter shows what
-  stepdoc gives it: a test without a docstring, a run without stepdoc, or
-  `report_stepdoc = false` shows nothing new. The parts are also in `procedure.json` as
+  stepdoc gives it: a test without a docstring, a run without stepdoc, or one where stepdoc
+  does not record (`report_stepdoc = false` and no stepdoc option of your own) shows nothing
+  new. The parts are also in `procedure.json` as
   `doc` (`description`, `objective`, `acceptance`).
 
 How it works: stepdoc only records when one of its output options is given. When

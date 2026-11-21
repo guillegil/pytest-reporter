@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heading), then **Objective** and **Acceptance criteria** (also `Pass criteria:`), each a
   paragraph or a list as written, numbered lists keeping their numbers and backtick text in
   monospace. The reporter implements stepdoc's `pytest_stepdoc_test_doc` hook and never
-  parses docstrings itself, so a test without a docstring, a run without stepdoc or
-  `report_stepdoc = false` shows nothing new. `procedure.json` gets the parsed parts as `doc`
+  parses docstrings itself, so a test without a docstring, a run without stepdoc, or one where
+  stepdoc does not record (`report_stepdoc = false` and no stepdoc option of your own) shows
+  nothing new. `procedure.json` gets the parsed parts as `doc`
   (`description`, `objective`, `acceptance`) next to `steps`, in every retry attempt too.
 
 - A check made once per item (pytest-verifier's `all_satisfy`) is one line in the Procedure

@@ -2192,9 +2192,6 @@ function _appendCheckInline(row, check) {
   }
 }
 
-// renderFormattedDesc \u2014 returns a DocumentFragment (segments present) or a
-// plain TextNode (fallback for no-markup descriptions). Uses textContent only;
-// NEVER innerHTML. XSS-safe: segment text is always assigned via textContent.
 // "About this test": the test function's docstring, as stepdoc parsed it
 // (description, Objective, Acceptance criteria). Absent without one.
 function renderTestDoc(doc) {
@@ -2239,6 +2236,9 @@ function renderDocBlock(block) {
   return el('p', {className:'test-doc-p'}, text(items[0]));
 }
 
+// renderFormattedDesc \u2014 returns a DocumentFragment (segments present) or a
+// plain TextNode (fallback for no-markup descriptions). Uses textContent only;
+// NEVER innerHTML. XSS-safe: segment text is always assigned via textContent.
 function renderFormattedDesc(node, generic) {
   // The Generic view reads a node's text without this run's values, when
   // stepdoc gave one; other nodes (steps, loops) read the same in both views.
