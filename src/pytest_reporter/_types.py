@@ -240,7 +240,6 @@ class RunInfo:
     function_name: str  # FROZEN: full Class::method or bare name — used for folder paths
     file_path: str
     module_parts: list[str]
-    docstring: str | None = None
     markers: list[str] = field(default_factory=list)
     # Presentation-only: populated by register_items; never affects folder paths.
     class_name: str | None = None  # class containing the test method, or None

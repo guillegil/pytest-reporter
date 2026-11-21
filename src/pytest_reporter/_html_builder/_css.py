@@ -1065,6 +1065,38 @@ button { font-family: inherit; }
   letter-spacing: 0.04em;
 }
 .info-value { color: var(--c-text); }
+/* About this test: the test function's docstring, above the run's facts */
+.test-doc {
+  margin: 0 0 20px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--c-border);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+.test-doc-section { max-width: 76ch; }
+.test-doc-section + .test-doc-section { margin-top: 14px; }
+/* The summary line leads; the description's other paragraphs read as body */
+.test-doc-description > .test-doc-p:first-child {
+  font-size: var(--fs-lg); font-weight: 500; line-height: 1.45;
+}
+.test-doc-description > :not(:first-child) { color: var(--c-text2); }
+.test-doc-label {
+  margin: 0 0 4px;
+  color: var(--c-text3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.test-doc-p { margin: 0; }
+.test-doc-p + .test-doc-p, .test-doc-p + .test-doc-list, .test-doc-list + .test-doc-p,
+.test-doc-list + .test-doc-list { margin-top: 8px; }
+.test-doc-list { margin: 0; padding-left: 24px; }
+.test-doc-list li + li { margin-top: 4px; }
+.test-doc-list li::marker { color: var(--c-text2); font-variant-numeric: tabular-nums; }
+.test-doc .proc-mono { overflow-wrap: anywhere; }
 .params-table {
   width: 100%;
   border-collapse: collapse;
@@ -2609,7 +2641,7 @@ h1, h2, h3, h4 { text-wrap: balance; }
   .detail-panel { overflow: visible; padding: 0; }
   pre, .phase-log, [class*="longrepr"] { max-height: none !important; overflow: visible !important; white-space: pre-wrap; }
   .counter-card, .chart-card, .check-card, .failure-strip, .failures-panel, .procedure-step,
-  .retry-card, .log-entry { break-inside: avoid; }
+  .retry-card, .log-entry, .test-doc-section { break-inside: avoid; }
   .procedure-tabs .phase-tabs-bar { display: none; }
   .procedure-view-switch { display: none; }
   .procedure-tab-panel { display: block; border: none; }

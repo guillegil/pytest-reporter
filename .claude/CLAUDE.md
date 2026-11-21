@@ -20,6 +20,8 @@ pytest-reporter (this plugin)
 │                                                             │
 │  OPTIONAL INTEGRATIONS (never imported):                    │
 │  stepdoc          → pytest_stepdoc_step_* hooks → procedures│
+│                     pytest_stepdoc_test_doc → "About this   │
+│                     test" (docstring) + procedure.json doc  │
 │  pytest-verifier  → report.verify_checks → check cards      │
 │  pytest-strategies→ `strategy` mark (VectorInfo) → row/seed │
 │                     pytest_strategies_export_dir hook +     │
@@ -41,7 +43,7 @@ pytest-reporter (this plugin)
 
 - **The reporter observes, never judges.** It never raises exceptions to determine test outcomes. It hooks into `pytest_runtest_makereport` to observe what happened and records it. Pass/fail for checks is determined by `pytest-verifier`.
 - **Fixtures are the public API.** `log`, `session_log`, `report_artifacts` are pytest fixtures (no import). The package exports only `Logger`/`ReportLogger`. There is no step API: tests use `from stepdoc import step`.
-- **Integrations stay optional.** Never import stepdoc, pytest-verifier or pytest-strategies. Read what they publish: stepdoc's `pytest_stepdoc_step_started/finished` hooks (`optionalhook=True`), `report.verify_checks`, the `strategy` mark's `VectorInfo.to_dict()`, and pytest-strategies' run export (its `pytest_strategies_export_dir` hook, `optionalhook=True`, and the files it writes). CI runs the suite with and without them.
+- **Integrations stay optional.** Never import stepdoc, pytest-verifier or pytest-strategies. Read what they publish: stepdoc's `pytest_stepdoc_step_started/finished` and `pytest_stepdoc_test_doc` hooks (`optionalhook=True`), `report.verify_checks`, the `strategy` mark's `VectorInfo.to_dict()`, and pytest-strategies' run export (its `pytest_strategies_export_dir` hook, `optionalhook=True`, and the files it writes). CI runs the suite with and without them.
 - **Single self-contained HTML report.** `report.html` must be one file with inline HTML, CSS, JS. Artifacts are base64-encoded as data URIs. No external CDN dependencies.
 - **Flat serialization with source paths.** The logger uses a tree API in memory but serializes to flat arrays with `source` path arrays. Never nest on disk.
 
@@ -330,6 +332,12 @@ node may hold `substeps` of the same shape.
   `Verify item [3]: <code>`. JS: `renderEachValues` (a closed `<details>` of every item's
   value, failed ones marked; positions of a cut list count from the end); the Generic view
   shows the line without items or values.
+- `doc` (top level, next to `steps`, only when present): the test's docstring as stepdoc
+  parsed it, `{"description", "objective", "acceptance"}` (only the keys with text; list
+  markers and backticks kept). From stepdoc's `pytest_stepdoc_test_doc(item, doc)` hook
+  (called once per test before it runs; `StepCollector.test_doc`, kept per node ID for every
+  retry attempt). The reporter never parses docstrings: no stepdoc (or `report_stepdoc =
+  false`), no `doc`.
 - 0.2 files (no `kind`, optional `description_segments`, `check`) still render.
 - stepdoc records only with one of its options: `_stepdoc.activate()` (from the
   `tryfirst` `pytest_configure`) sets `--stepdoc-record=<run>/stepdoc.json` when the user
@@ -406,7 +414,10 @@ node may hold `substeps` of the same shape.
 4. **Report** — Run metadata, versions, platform, command line args, full `pytest.log` viewer.
 
 ### Test detail sub-tabs:
-- **Summary:** Duration, outcome, parameters table, phase logs as horizontal tabs (Setup/Call/Teardown).
+- **Summary:** "About this test" block first (run data `doc`: sections from
+  `_stepdoc.doc_html_data`, blocks `p`/`ul`/`ol` from `doc_blocks`, numbered items keep their
+  `number`, backtick spans as `mono` segments; JS `renderTestDoc`/`renderDocBlock`, `.test-doc`;
+  absent without a doc), then duration, outcome, parameters table, phase logs as horizontal tabs (Setup/Call/Teardown).
 - **Procedure:** Numbered outline from `procedure.json` in Setup / Call / Teardown tabs (by each step's `section`), opening on the failed phase, else Call; actions and checks show their result. Printing shows all three.
 - **Artifacts:** HTML = sandboxed iframes, Images = thumbnail grid + lightbox, Others = file cards.
 - **Strategy:** (tests that use a pytest-strategies strategy, with its 4.3+ run export) each strategy's origin, `@strategy` arguments, sample count and source (`pinned` badge), arguments, constraints and the rows the test ran with their outcomes; the current run's row is highlighted.

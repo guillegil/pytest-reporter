@@ -1569,6 +1569,8 @@ function showSubTab(tab, run) {
   content.innerHTML = '';
 
   if (tab === 'summary') {
+    const about = renderTestDoc(run.doc);
+    if (about) content.appendChild(about);
     const grid = el('div', {className:'info-grid'});
     const addRow = (label, value) => {
       grid.appendChild(el('span', {className:'info-label'}, label));
@@ -2188,6 +2190,50 @@ function _appendCheckInline(row, check) {
   if (desc) {
     row.appendChild(el('span', {className:'procedure-check-desc'}, '\u2014 ' + desc));
   }
+}
+
+// "About this test": the test function's docstring, as stepdoc parsed it
+// (description, Objective, Acceptance criteria). Absent without one.
+function renderTestDoc(doc) {
+  if (!Array.isArray(doc)) return null;
+  const keys = ['description', 'objective', 'acceptance'];
+  const sections = doc.filter(s => s && keys.includes(s.key) && Array.isArray(s.blocks) && s.blocks.length);
+  if (sections.length === 0) return null;
+  const box = el('section', {className:'test-doc', 'aria-label':'About this test'});
+  sections.forEach(sec => {
+    const part = el('div', {className:'test-doc-section test-doc-' + sec.key});
+    if (typeof sec.title === 'string' && sec.title) {
+      part.appendChild(el('h3', {className:'test-doc-label'}, sec.title));
+    }
+    sec.blocks.forEach(b => { const node = renderDocBlock(b); if (node) part.appendChild(node); });
+    box.appendChild(part);
+  });
+  return box;
+}
+
+// One paragraph or list of a docstring section. A numbered list keeps the
+// author's numbers: its first as the list's start, any other out of order
+// as the item's value.
+function renderDocBlock(block) {
+  const items = block && Array.isArray(block.items) ? block.items : [];
+  if (items.length === 0) return null;
+  const text = item => renderFormattedDesc({description_segments: item && item.segments, description: ''});
+  if (block.kind === 'ul' || block.kind === 'ol') {
+    const list = el(block.kind, {className:'test-doc-list'});
+    let next = null;
+    items.forEach((item, i) => {
+      const li = el('li', null, text(item));
+      const n = item && Number.isInteger(item.number) ? item.number : null;
+      if (block.kind === 'ol' && n !== null) {
+        if (i === 0) { if (n !== 1) list.start = n; }
+        else if (n !== next) li.value = n;
+        next = n + 1;
+      }
+      list.appendChild(li);
+    });
+    return list;
+  }
+  return el('p', {className:'test-doc-p'}, text(items[0]));
 }
 
 // renderFormattedDesc \u2014 returns a DocumentFragment (segments present) or a
