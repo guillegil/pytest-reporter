@@ -28,6 +28,19 @@ if TYPE_CHECKING:
 requires_stepdoc = pytest.mark.skipif(
     importlib.util.find_spec("stepdoc") is None, reason="stepdoc is not installed"
 )
+
+
+def _stepdoc_has_doc_hook() -> bool:
+    """Newer stepdocs call ``pytest_stepdoc_test_doc``; 0.2 and earlier never do."""
+    if importlib.util.find_spec("stepdoc") is None:
+        return False
+    hookspecs = importlib.import_module("stepdoc.hookspecs")
+    return hasattr(hookspecs, "pytest_stepdoc_test_doc")
+
+
+requires_doc_hook = pytest.mark.skipif(
+    not _stepdoc_has_doc_hook(), reason="stepdoc does not call pytest_stepdoc_test_doc"
+)
 requires_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 _DATA_BLOCK = '<script type="application/json" id="report-data">'
@@ -208,7 +221,7 @@ def test_doc_html_data_orders_sections_and_titles_them() -> None:
 # ----------------------------------------------------------------------
 
 
-@requires_stepdoc
+@requires_doc_hook
 def test_doc_reaches_procedure_json_and_html_data(pytester: Pytester) -> None:
     pytester.makepyfile(test_fifo=_FIFO)
     pytester.runpytest("--report-dir=reports").assert_outcomes(passed=4)
@@ -269,7 +282,53 @@ def test_no_doc_without_stepdoc_hook(pytester: Pytester) -> None:
     assert all(run["doc"] is None for run in _runs(_data(pytester)).values())
 
 
-@requires_stepdoc
+_FAKE_STEPDOC = """
+import pytest
+
+
+class _Spec:
+    @pytest.hookspec
+    def pytest_stepdoc_test_doc(self, item, doc):
+        pass
+
+
+def pytest_addhooks(pluginmanager):
+    pluginmanager.add_hookspecs(_Spec)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    if item.function.__doc__:
+        item.ihook.pytest_stepdoc_test_doc(
+            item=item, doc={"description": "Fake.", "acceptance": "1. One.\\n2. Two."}
+        )
+    return (yield)
+"""
+
+
+def test_doc_from_the_hook_alone(pytester: Pytester) -> None:
+    """The hook's contract, with a stand-in for stepdoc (runs with any stepdoc)."""
+    pytester.makeconftest(_FAKE_STEPDOC)
+    pytester.makepyfile(
+        test_fake='''
+        def test_a():
+            """Documented."""
+
+        def test_b():
+            pass
+        '''
+    )
+    pytester.runpytest("--report-dir=reports", "-p", "no:stepdoc").assert_outcomes(passed=2)
+    doc = {"description": "Fake.", "acceptance": "1. One.\n2. Two."}
+    assert _procedure(pytester, "test_fake", "test_a", "default")["doc"] == doc
+    assert "doc" not in _procedure(pytester, "test_fake", "test_b", "default")
+    runs = _runs(_data(pytester))
+    assert [s["key"] for s in runs["test_fake.py::test_a"]["doc"]] == ["description", "acceptance"]
+    assert runs["test_fake.py::test_a"]["doc"][1]["blocks"][0]["kind"] == "ol"
+    assert runs["test_fake.py::test_b"]["doc"] is None
+
+
+@requires_doc_hook
 def test_retries_keep_the_doc(pytester: Pytester) -> None:
     pytester.makepyfile(
         test_retry='''
@@ -295,7 +354,7 @@ def test_retries_keep_the_doc(pytester: Pytester) -> None:
     assert run["retry_attempts"][0]["procedure"]["doc"] == doc
 
 
-@requires_stepdoc
+@requires_doc_hook
 def test_hostile_doc_text_stays_data(pytester: Pytester) -> None:
     pytester.makepyfile(
         test_xss='''
