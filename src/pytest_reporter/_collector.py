@@ -92,11 +92,6 @@ class DataCollector:
                 m.name for m in item.iter_markers() if m.name not in ("parametrize", "strategy")
             ]
 
-            # Extract docstring
-            docstring: str | None = None
-            if hasattr(item, "function"):
-                docstring = getattr(item.function, "__doc__", None)
-
             run_info = RunInfo(
                 run_id=run_id,
                 base_nodeid=base,
@@ -105,7 +100,6 @@ class DataCollector:
                 function_name=func_name,
                 file_path=path_part,
                 module_parts=path_part.split("/"),
-                docstring=docstring,
                 markers=markers,
                 class_name=class_name_val,
                 display_name=display_name_val,

@@ -184,6 +184,11 @@ class Reporter:
         """stepdoc hook: a step ended."""
         guard_void("pytest_stepdoc_step_finished", lambda: self.steps.finished(item, step))
 
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_stepdoc_test_doc(self, item: Item, doc: dict[str, str]) -> None:
+        """stepdoc hook: the test's docstring, parsed (once, before it runs)."""
+        guard_void("pytest_stepdoc_test_doc", lambda: self.steps.test_doc(item, doc))
+
     @pytest.hookimpl(hookwrapper=True, optionalhook=True)
     def pytest_strategies_export_dir(self, config: Config) -> Generator[None, Any, None]:  # noqa: ARG002
         """pytest-strategies hook (4.3+): the folder of its run export.

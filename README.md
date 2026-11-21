@@ -30,7 +30,7 @@ A pytest plugin that turns every test run into a self-contained, structured repo
 | 🖥 **Self-contained HTML dashboard** | Single `report.html` file — no CDNs, no external assets. Summary, Tests, Session Logs, and Report tabs. |
 | 🪵 **Hierarchical structured logging** | `log.info(...)`, `log.child("psu").debug(...)` — flat serialization with `source` paths. |
 | 📊 **Inline tables** | `log.table(df, name="readings")` — pandas DataFrames, `list[dict]`, or `dict[str, list]` rendered inline and saved as HTML artifacts. |
-| 🪜 **Procedures from stepdoc** | Steps written with [stepdoc](https://github.com/guillegil/stepdoc)'s `step()` appear with timing, outcome, actions and checks. |
+| 🪜 **Procedures from stepdoc** | Steps written with [stepdoc](https://github.com/guillegil/stepdoc)'s `step()` appear with timing, outcome, actions and checks; a test's docstring becomes its description, objective and acceptance criteria. |
 | 🔁 **Built-in retries** | `--report-retries=N` re-runs failed tests with separate logs per attempt. |
 | 📎 **Artifacts** | `report_artifacts` fixture for screenshots, CSVs, HTML — embedded as data URIs in the report. |
 | 🔌 **pytest-verifier and pytest-strategies** | Verification cards for every check, with the names you give its operands; each test's strategy, the rows it ran and their outcomes. |
@@ -238,6 +238,36 @@ def test_voltage_sweep(log, verify, psu):
 - Actions recorded by stepdoc bridges (`stepdoc.record_action(...)`) appear as lines of the step (`dac.code = 12`, `Measure dmm.voltage → 1.65 V`).
 - With `--report-retries`, each attempt has its own procedure.
 
+### Test descriptions
+
+A test function's docstring describes the test. With stepdoc installed, the run's
+**Summary** sub-tab opens with an **About this test** block:
+
+```python
+def test_cmd_fifo_fill(esm_dev, channel, verify):
+    """Fill the CMD FIFO until the TX flag sets.
+
+    Objective:
+        Confirm the FIFO accepts its full depth before it reports full.
+
+    Acceptance criteria:
+        1. The TX flag sets after exactly 500 writes.
+        2. No write is lost or reported as an error.
+    """
+```
+
+- The text before the first heading is the description. `Objective:` and
+  `Acceptance criteria:` (also `Pass criteria:`) start the other two parts, on a line of
+  their own or followed by the text (`Objective: Show that ...`).
+- Acceptance criteria can be a sentence, a bullet list (`-`, `*`) or a numbered list
+  (`1.`, `1)`); lists show as lists and keep your numbers. Text between backticks is shown
+  in monospace.
+- stepdoc reads the docstring (only the test function's own) and the reporter shows what
+  stepdoc gives it: a test without a docstring, a run without stepdoc, or one where stepdoc
+  does not record (`report_stepdoc = false` and no stepdoc option of your own) shows nothing
+  new. The parts are also in `procedure.json` as
+  `doc` (`description`, `objective`, `acceptance`).
+
 How it works: stepdoc only records when one of its output options is given. When
 `--report-dir` is active and you passed none, pytest-reporter sets
 `--stepdoc-record=<run>/stepdoc.json`, so stepdoc records and its run record is
@@ -374,7 +404,7 @@ Behavior:
 The `report.html` is a single self-contained file with four tabs:
 
 1. **Summary** — pass-rate hero and ratio bar (the pass rate leaves skipped tests out: passed ÷ (passed + failed + error + expected fails), where a non-strict unexpected pass counts as passed); when anything failed, a **Failures** list with the reason for each failed run and a **Copy rerun command** button; status counters that open the Tests tab filtered to that status; and configurable donut/bar chart groups.
-2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, **Checks** (for tests with pytest-verifier checks) and **Strategy** (for tests that use a pytest-strategies strategy).
+2. **Tests** — collapsible test tree with status badges and a flaky-`↻` pill on tests that passed only after a retry. When the run has failures the tree starts on them, with the first one open. A test opens on its failing run, and a failed run starts with a strip naming the phase that failed, why, and its failed checks. The per-test detail panel shows a one-click **copy command** to run that single test, plus sub-tabs for **Summary** (the test's description from its docstring, parameters, phase logs), **Procedure**, **Artifacts**, **Retries**, **Checks** (for tests with pytest-verifier checks) and **Strategy** (for tests that use a pytest-strategies strategy).
 3. **Session Logs** — hierarchical session-scoped logger entries with search and level filters.
 4. **Report** — run metadata (human-readable timestamp, duration, exit code, Python/pytest versions, RNG seed, custom metadata, active plugins, command line, full `pytest.log`).
 

@@ -10,6 +10,9 @@ public hooks (``pytest_stepdoc_step_started`` / ``pytest_stepdoc_step_finished``
 implemented with ``optionalhook=True`` on the ``Reporter``) and reads the
 attributes of the ``stepdoc.Step``/``Action``/``Check`` objects it is handed.
 Without stepdoc installed the hooks never fire and every procedure is empty.
+stepdoc also parses each test function's docstring once and hands it to
+``pytest_stepdoc_test_doc``: it becomes ``procedure.json``'s ``doc`` and the
+"About this test" block of the run's Summary sub-tab (:func:`doc_html_data`).
 
 stepdoc only records (and calls its hooks) when one of its output options is
 given. When ``--report-dir`` is active and the user gave none, :func:`activate`
@@ -52,6 +55,16 @@ _TOKEN = re.compile(r"<[^<>\s]+>|\w+(?:\.\w+)*|\s+|.")
 # A check text's parts: ``'<name>': `` (a name given beside the checked
 # expression), then the expression, the operator and the expected side.
 _OPERATOR = re.compile(r" (?:==|!=|>=|<=|>|<|∈|∉|is not|is) ")
+# A test's docstring as stepdoc parsed it (pytest_stepdoc_test_doc): its
+# sections, in the order shown, with the label each one has in the report.
+DOC_SECTIONS = (
+    ("description", None),
+    ("objective", "Objective"),
+    ("acceptance", "Acceptance criteria"),
+)
+# List items of a docstring section: ``- item`` / ``* item``, ``1. item`` / ``1) item``.
+_BULLET = re.compile(r"([-*])\s+(.*)")
+_NUMBER = re.compile(r"(\d+)([.)])\s+(.*)")
 
 
 def title_segments(title: str) -> list[dict[str, Any]] | None:
@@ -95,6 +108,109 @@ def title_segments(title: str) -> list[dict[str, Any]] | None:
             add(title[m.start() : close.end()], False)
         pos = close.end()
     return out if any(seg["style"] == "mono" for seg in out) else None
+
+
+def clean_doc(doc: Any) -> dict[str, str] | None:  # noqa: ANN401
+    """The sections of a ``pytest_stepdoc_test_doc`` dict that have text.
+
+    Args:
+        doc: The dict stepdoc passed (``description``, ``objective``,
+            ``acceptance``; each a str).
+
+    Returns:
+        A copy with only the known keys whose value is non-blank text, or
+        ``None`` when nothing is left.
+    """
+    if not isinstance(doc, Mapping):
+        return None
+    out = {key: doc[key] for key, _ in DOC_SECTIONS if isinstance(doc.get(key), str)}
+    out = {key: text for key, text in out.items() if text.strip()}
+    return out or None
+
+
+def doc_blocks(text: str) -> list[dict[str, Any]]:
+    """Paragraphs and lists of one docstring section, for the HTML report.
+
+    Follows stepdoc's own reading of a section (``stepdoc.renderers.common.
+    doc_blocks``): lines of a paragraph are joined by a space and a blank line
+    ends it; ``-``/``*`` items make a bullet list and ``1.``/``1)`` items a
+    numbered one that keeps the author's numbers, indented or not; a line
+    under an item (indented past its marker, or right after it and not left of
+    it) joins that item; a numbered line right after paragraph text starts a
+    list only at 1.
+
+    Args:
+        text: One section's text, as stepdoc gave it.
+
+    Returns:
+        Blocks ``{"kind": "p" | "ul" | "ol", "items": [...]}``; each item has
+        ``segments`` (backtick spans as ``mono``, see :func:`title_segments`)
+        and, in a numbered list, its ``number``.
+    """
+    blocks: list[dict[str, Any]] = []
+    marker = -1  # indent of the open list item's marker; -1: no open item
+    gap = False  # a blank line since the last text
+    for line in text.split("\n"):
+        body = line.lstrip()
+        if not body:
+            gap = True
+            continue
+        indent = len(line) - len(body)
+        bullet, number = _BULLET.fullmatch(body), _NUMBER.fullmatch(body)
+        last = blocks[-1] if blocks else None
+        # As in CommonMark, a numbered line right after paragraph text starts a
+        # list only at 1 ("... reaches\n512. Then" is one paragraph).
+        if number and last is not None and last["kind"] == "p" and not gap:
+            if int(number.group(1)) != 1:
+                number = None
+        if bullet or number:
+            kind = "ul" if bullet else "ol"
+            if last is None or last["kind"] != kind:
+                last = {"kind": kind, "items": []}
+                blocks.append(last)
+            item: dict[str, Any]
+            if number:
+                item = {"text": number.group(3).strip(), "number": int(number.group(1))}
+            else:
+                assert bullet is not None
+                item = {"text": bullet.group(2).strip()}
+            last["items"].append(item)
+            marker = indent
+        elif last is not None and (
+            (marker >= 0 and (indent > marker or (not gap and indent >= marker)))
+            or (last["kind"] == "p" and not gap)
+        ):
+            last["items"][-1]["text"] += " " + body
+        else:
+            blocks.append({"kind": "p", "items": [{"text": body}]})
+            marker = -1
+        gap = False
+    for block in blocks:
+        for item in block["items"]:
+            text_ = item.pop("text")
+            item["segments"] = title_segments(text_) or [{"text": text_, "style": None}]
+    return blocks
+
+
+def doc_html_data(doc: Mapping[str, str] | None) -> list[dict[str, Any]] | None:
+    """A test's docstring for the HTML report's "About this test" block.
+
+    Args:
+        doc: The parsed docstring (:func:`clean_doc`), or ``None``.
+
+    Returns:
+        The sections with text, in order: ``{"key", "title", "blocks"}``
+        (``title`` is ``None`` for the description); ``None`` without a doc.
+    """
+    if not doc:
+        return None
+    out = []
+    for key, title in DOC_SECTIONS:
+        text = doc.get(key)
+        blocks = doc_blocks(text) if isinstance(text, str) else []
+        if blocks:
+            out.append({"key": key, "title": title, "blocks": blocks})
+    return out or None
 
 
 def activate(config: pytest.Config, run_dir: Path) -> str | None:
@@ -141,6 +257,9 @@ class StepCollector:
 
     def __init__(self) -> None:
         self._steps: dict[str, list[Any]] = {}
+        # nodeid -> the test's parsed docstring (pytest_stepdoc_test_doc). Given
+        # once, before any attempt runs, so it is kept for every attempt.
+        self._docs: dict[str, dict[str, str]] = {}
         # id(step) -> (step, wall start, wall end); the step is kept so its id
         # is not reused while the entry lives.
         self._times: dict[int, tuple[Any, float, float | None]] = {}
@@ -163,11 +282,27 @@ class StepCollector:
         start = entry[1] if entry is not None else time.time()
         self._times[id(step)] = (step, start, time.time())
 
+    def test_doc(self, item: pytest.Item, doc: Any) -> None:  # noqa: ANN401
+        """``pytest_stepdoc_test_doc``: keep the test's parsed docstring."""
+        cleaned = clean_doc(doc)
+        if cleaned:
+            self._docs[item.nodeid] = cleaned
+
+    def doc(self, nodeid: str) -> dict[str, str] | None:
+        """The parsed docstring of ``nodeid``, when stepdoc gave one."""
+        return self._docs.get(nodeid)
+
     def procedure(self, nodeid: str) -> dict[str, Any]:
-        """The ``procedure.json`` document of the current attempt of ``nodeid``."""
+        """The ``procedure.json`` document of the current attempt of ``nodeid``.
+
+        ``doc`` (the test's docstring sections) is added next to ``steps`` only
+        when the test has one.
+        """
         steps = self._steps.get(nodeid, [])
+        doc = self._docs.get(nodeid)
+        extra: dict[str, Any] = {"doc": dict(doc)} if doc else {}
         if not steps:
-            return {"steps": []}
+            return {"steps": [], **extra}
         counters: dict[str, int] = {}
         nodes = []
         for step in steps:
@@ -175,7 +310,7 @@ class StepCollector:
             counters[section] = counters.get(section, 0) + 1
             prefix = {"setup": "S", "teardown": "T"}.get(section, "")
             nodes.append(self._step(step, f"{prefix}{counters[section]}"))
-        return {"steps": nodes, "source": "stepdoc"}
+        return {"steps": nodes, "source": "stepdoc", **extra}
 
     def discard(self, nodeid: str) -> None:
         """Drop what is kept for ``nodeid`` once its files are written."""

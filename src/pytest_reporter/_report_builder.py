@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from ._dashboard_config import normalize_dashboard
+from ._stepdoc import doc_html_data
 from ._strategies import html_data as strategies_html_data
 from ._tabs import collect_tabs
 
@@ -218,6 +219,9 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
             # Collect procedure (stepdoc steps of the first attempt)
             procedure = reporter._procedures.get(nodeid, {"steps": []})
 
+            # The test's docstring, as stepdoc parsed it ("About this test")
+            doc = doc_html_data(reporter.steps.doc(nodeid))
+
             # Collect retry data
             retry_data = reporter.collector.get_retry_data(nodeid)
             retries_info = None
@@ -298,6 +302,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                     "duration": round(reporter.collector.get_duration(nodeid), 4),
                     "phases": phases,
                     "procedure": procedure,
+                    "doc": doc,
                     "artifacts": artifacts,
                     "tabs": collect_tabs(run_dir / "tabs"),
                     "retries": retries_info,
