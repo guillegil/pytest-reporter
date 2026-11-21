@@ -147,7 +147,10 @@ class ProcedureNodeJson(TypedDict, total=False):
     or a ``check`` (a ``Verify ...`` line: an assert, a pytest-verifier check,
     ``step(..., check=...)``), or a ``repeat`` (a loop stepdoc collapsed: one
     pass as ``substeps``, the number of passes in ``result``). Steps carry
-    timing, ``section`` (``setup``, ``procedure`` or ``teardown``) and ``exc``;
+    timing, ``section`` (``precondition``, ``setup``, ``procedure`` or
+    ``teardown``) and ``exc``; a pre-condition (``stepdoc.precondition()``) this
+    test found already established has no ``substeps`` and names the test that
+    applied it as ``applied_in``;
     actions and checks may carry a
     ``result`` (``got 1024``), and checks a ``detail``. A step made by a titled
     ``stepdoc.repeat()`` reads ``Fill (repeat until full)`` with the passes in
@@ -171,6 +174,7 @@ class ProcedureNodeJson(TypedDict, total=False):
     exc: dict[str, str] | None
     check: dict[str, Any] | None
     section: str
+    applied_in: str
     result: str
     detail: str
     note: str

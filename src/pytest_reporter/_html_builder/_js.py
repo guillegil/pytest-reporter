@@ -2437,9 +2437,81 @@ function renderProcedure(proc, run) {
   return holder;
 }
 
+// A run of the report by its node ID, with its test: {test, run}, or null.
+function findRunByNodeid(nodeid) {
+  for (const test of DATA.tests) {
+    const run = (test.runs || []).find(r => r.nodeid === nodeid);
+    if (run) return {test: test, run: run};
+  }
+  return null;
+}
+
+// A pre-condition this test did not apply itself (stepdoc PRE-3): a shared
+// fixture applied it for an earlier test, and this one found it established.
+// One line: its status, number and title, then where it was applied. The test
+// ID opens that test's procedure when the report has it. In a retry attempt
+// the pre-condition may have been applied by an earlier attempt of the same
+// test. Text is set via textContent only.
+function renderEstablished(node, generic) {
+  const row = el('div', {className: 'procedure-step proc-kind-step proc-established'
+    + (generic ? ' proc-generic' : '')});
+  const descSpan = el('span', {className: 'procedure-step-desc'});
+  descSpan.appendChild(renderFormattedDesc(node, generic));
+  const header = el('div', {className: 'procedure-step-header'});
+  if (!generic) header.appendChild(el('span', {className: `status-dot ${node.outcome || 'unknown'}`}));
+  header.appendChild(el('span', {className: 'procedure-step-number'}, node.number + '.'));
+  header.appendChild(descSpan);
+  // stepdoc's words: a pre-condition that failed where it was applied was never there.
+  const failed = node.outcome === 'failed' || node.outcome === 'error';
+  const where = el('span', {className: 'procedure-established'},
+    failed ? 'not established, failed in ' : 'already established, applied in ');
+  const target = findRunByNodeid(node.applied_in);
+  const here = selectedRun && selectedRun.nodeid === node.applied_in;
+  if (here) {
+    where.appendChild(document.createTextNode('an earlier attempt of this test'));
+  } else if (target) {
+    const link = el('button', {className: 'procedure-established-link', type: 'button',
+      title: 'Open the procedure of this test'}, node.applied_in);
+    link.addEventListener('click', function() {
+      openRunInTests(target.test, target.run);
+      showRunDetail(target.run, 'Procedure');
+    });
+    where.appendChild(link);
+  } else {
+    where.appendChild(el('span', {className: 'procedure-established-id'}, node.applied_in));
+  }
+  header.appendChild(where);
+  row.appendChild(header);
+  if (node.note) row.appendChild(el('div', {className: 'procedure-note'}, node.note));
+  return row;
+}
+
+// The Pre-conditions group (stepdoc.precondition(), numbered P1…): the states
+// the system must be in before the test, above the phase tabs because they
+// hold whichever phase is on screen. The ones this test applied show their
+// steps, actions and checks; the ones it found established are one line each.
+function renderPreconditions(steps, generic) {
+  const group = el('section', {className: 'procedure-pre', 'aria-label': 'Pre-conditions'});
+  const title = el('h3', {className: 'procedure-section procedure-pre-title'});
+  const outcome = procOutcome(steps);
+  if (outcome && !generic) {
+    title.appendChild(el('span', {className: 'status-dot ' + outcome, 'aria-hidden': 'true'}));
+  }
+  title.appendChild(document.createTextNode('Pre-conditions'));
+  if (outcome && !generic) title.appendChild(srText(', ' + (LABELS[outcome] || outcome)));
+  group.appendChild(title);
+  const list = el('div', {className: 'procedure-list'});
+  steps.forEach(function(s) {
+    list.appendChild(s.applied_in ? renderEstablished(s, generic) : renderNode(s, 1, generic));
+  });
+  group.appendChild(list);
+  return group;
+}
+
 function renderProcedurePhases(proc, run, generic) {
   const steps = proc.steps || [];
   const sectionOf = s => s.section || 'procedure';
+  const preconditions = steps.filter(s => sectionOf(s) === 'precondition');
   const bySection = {};
   PROC_SECTIONS.forEach(function(p) { bySection[p[0]] = steps.filter(s => sectionOf(s) === p[0]); });
 
@@ -2447,8 +2519,10 @@ function renderProcedurePhases(proc, run, generic) {
   let active = PROC_SECTIONS.findIndex(p => p[2] === interest && bySection[p[0]].length > 0);
   if (active < 0) active = bySection.procedure.length > 0 ? 1
     : PROC_SECTIONS.findIndex(p => bySection[p[0]].length > 0);
+  if (active < 0) active = 1;  // only pre-conditions: Call says it has no steps
 
   const wrap = el('div', {className:'procedure-tabs'});
+  if (preconditions.length > 0) wrap.appendChild(renderPreconditions(preconditions, generic));
   const bar = el('div', {className:'phase-tabs-bar', role:'tablist', 'aria-label':'Procedure phases'});
   const panels = [];
   PROC_SECTIONS.forEach(function(pair, idx) {

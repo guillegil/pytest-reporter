@@ -46,6 +46,8 @@ _OUTCOME = {
     "not_run": "skipped",
     "unknown": "unknown",
 }
+# Number prefix of a section's top-level steps (the procedure's own have none).
+_PREFIX = {"precondition": "P", "setup": "S", "teardown": "T"}
 _ASSIGN_OPS = {"write", "set"}
 _BARE_OPS = {"request"}
 _MAX_VALUE = 200
@@ -303,13 +305,22 @@ class StepCollector:
         extra: dict[str, Any] = {"doc": dict(doc)} if doc else {}
         if not steps:
             return {"steps": [], **extra}
+        # Pre-conditions (stepdoc.precondition) open the procedure. stepdoc calls
+        # the hooks for the ones a shared fixture established for an earlier
+        # test at the end of setup, after the ones this attempt applied itself:
+        # they are listed first, as in stepdoc's own documents.
+        pre = [s for s in steps if _section(s) == "precondition"]
+        ordered = [
+            *(s for s in pre if _applied_in(s) is not None),
+            *(s for s in pre if _applied_in(s) is None),
+            *(s for s in steps if _section(s) != "precondition"),
+        ]
         counters: dict[str, int] = {}
         nodes = []
-        for step in steps:
-            section = str(getattr(step, "section", "procedure") or "procedure")
+        for step in ordered:
+            section = _section(step)
             counters[section] = counters.get(section, 0) + 1
-            prefix = {"setup": "S", "teardown": "T"}.get(section, "")
-            nodes.append(self._step(step, f"{prefix}{counters[section]}"))
+            nodes.append(self._step(step, f"{_PREFIX.get(section, '')}{counters[section]}"))
         return {"steps": nodes, "source": "stepdoc", **extra}
 
     def discard(self, nodeid: str) -> None:
@@ -347,8 +358,14 @@ class StepCollector:
             "end_time": _iso(end),
             "duration_seconds": round(end - start, 6),
             "exc": _exc(getattr(step, "error", None)),
-            "section": str(getattr(step, "section", "procedure") or "procedure"),
+            "section": _section(step),
         }
+        applied_in = _applied_in(step)
+        if applied_in is not None:
+            # Not run in this attempt: the status is the one it got when applied.
+            node["applied_in"] = applied_in
+            node["end_time"] = node["start_time"]
+            node["duration_seconds"] = 0.0
         loop = getattr(step, "loop", None)
         if loop is not None:  # a titled stepdoc.repeat(): its entries are one pass
             node["description"] += f" ({_loop_words(loop)})"
@@ -402,6 +419,23 @@ class StepCollector:
         if children:
             node["substeps"] = children
         return node
+
+
+def _section(step: Any) -> str:  # noqa: ANN401
+    """``precondition``, ``setup``, ``procedure`` or ``teardown``."""
+    return str(getattr(step, "section", "procedure") or "procedure")
+
+
+def _applied_in(step: Any) -> str | None:  # noqa: ANN401
+    """The test that applied a pre-condition this attempt found established.
+
+    stepdoc sets ``Step.applied_in`` on the entry it adds to a test that uses a
+    shared fixture (session, module or class scope) whose pre-condition an
+    earlier test applied. ``None`` for every other step, and with a stepdoc
+    that has no pre-conditions.
+    """
+    value = getattr(step, "applied_in", None)
+    return value if isinstance(value, str) and value else None
 
 
 def _loop_words(loop: Any) -> str:  # noqa: ANN401
