@@ -116,10 +116,14 @@ class TestLogJson(_TestLogJsonRequired, total=False):
       class_name   — class containing the test method, or None for plain functions.
       display_name — bare method name without class prefix (equals function_name
                      for plain functions).
+      xfailed      — runs marked xfail that failed as expected (also in ``skipped``).
+      xpassed      — runs marked xfail that passed, non-strict (also in ``passed``).
     """
 
     class_name: str | None
     display_name: str
+    xfailed: int
+    xpassed: int
 
 
 # --- parameters.json schema (§4) ---
@@ -260,6 +264,8 @@ class PhaseData:
     start_time: str = ""
     end_time: str = ""
     entries: list[dict[str, Any]] = field(default_factory=list)
+    #: ``report.wasxfail`` of an xfail-marked phase (the mark's reason), else ``None``
+    wasxfail: str | None = None
 
 
 @dataclass

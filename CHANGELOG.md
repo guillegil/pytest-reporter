@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The pass rate no longer counts skipped tests against the suite. It is passed ÷ (passed +
+  failed + error + expected fails): a test marked `xfail` that failed as expected counts as
+  not passed, one that passed anyway (non-strict) as passed, and a strict unexpected pass is
+  already a failure. The hero, the donut counts, the pass-rate bars and the groups' spoken
+  labels all use it; a group where every test was skipped shows `—` instead of `0%`.
+  `test.log.json` gets `xfailed` and `xpassed` counters (part of `skipped` and `passed`).
+
 ### Added
 
 - A check made once per item (pytest-verifier's `all_satisfy`) is one line in the Procedure

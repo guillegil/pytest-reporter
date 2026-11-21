@@ -146,9 +146,27 @@ function copyCommandRow(rowEl) {
 
 // ─── Aggregate helpers ───────────────────────────────────────────────
 function aggTests(tests) {
-  let p=0,f=0,s=0,e=0;
-  tests.forEach(t => { p+=t.aggregate.passed; f+=t.aggregate.failed; s+=t.aggregate.skipped; e+=t.aggregate.errors; });
-  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e};
+  let p=0,f=0,s=0,e=0,xf=0,xp=0;
+  tests.forEach(t => {
+    p+=t.aggregate.passed; f+=t.aggregate.failed; s+=t.aggregate.skipped; e+=t.aggregate.errors;
+    xf+=t.aggregate.xfailed || 0; xp+=t.aggregate.xpassed || 0;
+  });
+  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e,xfailed:xf,xpassed:xp};
+}
+
+// Pass rate in percent (rounded), or null when no run counts. Skipped runs are
+// left out; a run marked xfail counts: an expected fail (in `skipped`) as not
+// passed, an unexpected non-strict pass (in `passed`) as passed. A strict
+// xpass is already a failure.
+//   counted = passed + failed + error + xfailed;  rate = passed / counted
+function passRate(a) {
+  const xfailed = a.xfailed || 0;
+  const counted = a.passed + a.failed + a.error + xfailed;
+  return counted > 0 ? Math.round((a.passed / counted) * 100) : null;
+}
+
+function rateText(rate) {
+  return rate === null ? '—' : rate + '%';
 }
 
 function buildTree(tests) {
@@ -175,18 +193,21 @@ function buildTree(tests) {
 }
 
 function nodeAgg(node) {
-  let p=0,f=0,s=0,e=0,dur=0,retr=0;
+  let p=0,f=0,s=0,e=0,dur=0,retr=0,xf=0,xp=0;
   node.tests.forEach(t => {
     p+=t.aggregate.passed; f+=t.aggregate.failed;
     s+=t.aggregate.skipped; e+=t.aggregate.errors;
+    xf+=t.aggregate.xfailed || 0; xp+=t.aggregate.xpassed || 0;
     dur += t.aggregate.total_duration_seconds || 0;
     retr += t.runs.filter(r => r.retries && r.retries.attempts > 0).length;
   });
   Object.values(node.children).forEach(c => {
     const a = nodeAgg(c);
     p+=a.passed; f+=a.failed; s+=a.skipped; e+=a.error; dur+=a.duration; retr+=a.retried;
+    xf+=a.xfailed; xp+=a.xpassed;
   });
-  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e,duration:dur,retried:retr};
+  return {passed:p,failed:f,skipped:s,error:e,total:p+f+s+e,duration:dur,retried:retr,
+    xfailed:xf,xpassed:xp};
 }
 
 // ─── Tree compaction transform (pure — never mutates input) ──────────────
@@ -346,14 +367,13 @@ function legendEl(counts) {
 // Accessible numeric counts below a donut (WCAG SC 1.4.1 — not color alone).
 // Shows: ✓N ✕N ⊘N ⚠N  ·  NN% pass
 function donutCountsEl(counts) {
-  const total = counts.passed + counts.failed + counts.skipped + counts.error;
-  const rate = total > 0 ? Math.round((counts.passed / total) * 100) : 0;
+  const rate = passRate(counts);
   return el('div', {className:'donut-counts'},
     el('span', {className:'dc-passed', 'aria-label':'passed'}, '✓' + counts.passed),
     el('span', {className:'dc-failed', 'aria-label':'failed'}, '✕' + counts.failed),
     el('span', {className:'dc-skipped', 'aria-label':'skipped'}, '⊘' + counts.skipped),
     el('span', {className:'dc-error', 'aria-label':'error'}, '⚠' + counts.error),
-    el('span', {className:'dc-rate', 'aria-label':'pass rate'}, '· ' + rate + '%')
+    el('span', {className:'dc-rate', 'aria-label':'pass rate'}, '· ' + rateText(rate))
   );
 }
 
@@ -382,8 +402,8 @@ function collectAtDepth(node, depth, pathSoFar) {
 // Render a donut grid section for an array of {node, path, label} entries.
 // Spoken name of a dashboard group control: counts in words, not glyphs.
 function groupSummary(label, a) {
-  const total = a.total || 1;
-  const parts = [Math.round((a.passed / total) * 100) + '% passed'];
+  const rate = passRate(a);
+  const parts = rate === null ? [] : [rate + '% passed'];
   STATUSES.forEach(st => { if (a[st]) parts.push(a[st] + ' ' + LABELS[st].toLowerCase()); });
   return label + ': ' + parts.join(', ') + '. Show in Tests';
 }
@@ -423,9 +443,8 @@ function renderBarsGroup(entries, sectionLabel) {
   if (entries.length === 0) return null;
   const rows = entries.map(({node, path, label}) => {
     const a = nodeAgg(node);
-    const total = a.total || 1;
-    const rate = Math.round((a.passed / total) * 100);
-    const fillPct = rate.toFixed(1) + '%';
+    const rate = passRate(a);
+    const fillPct = (rate || 0).toFixed(1) + '%';
     const bar = el('div', {className:'pass-rate-bar', onClick:()=>navigateToGroup(path), role:'button', tabindex:'0',
       'aria-label': groupSummary(label, a)},
       el('span', {className:'pass-rate-bar-name', title:label}, label),
@@ -433,7 +452,7 @@ function renderBarsGroup(entries, sectionLabel) {
         el('div', {className:'pass-rate-bar-fill', style:'width:' + fillPct})
       ),
       el('div', {className:'pass-rate-bar-stats'},
-        el('span', {className:'prs-rate'}, rate + '%'),
+        el('span', {className:'prs-rate'}, rateText(rate)),
         ' ',
         el('span', {className:'prs-passed', 'aria-label':'passed'}, '✓' + a.passed),
         ' ',
@@ -533,7 +552,7 @@ function renderSummary() {
   const container = el('div', {className:'summary-container'});
   const agg = aggTests(DATA.tests);
   const total = agg.total || 1;
-  const passRate = Math.round((agg.passed / total) * 100);
+  const rate = passRate(agg);
 
   // Count retried tests
   let retriedCount = 0;
@@ -543,8 +562,8 @@ function renderSummary() {
   const suiteDuration = DATA.tests.reduce((a, t) => a + (t.aggregate.total_duration_seconds || 0), 0);
   const hero = el('div', {className:'summary-hero'});
   const rateSection = el('div', {className:'summary-hero-rate'});
-  const rateClass = passRate >= 90 ? 'good' : passRate >= 70 ? 'warn' : 'bad';
-  rateSection.appendChild(el('div', {className:'summary-hero-pct ' + rateClass}, passRate + '%'));
+  const rateClass = rate === null ? '' : rate >= 90 ? 'good' : rate >= 70 ? 'warn' : 'bad';
+  rateSection.appendChild(el('div', {className:'summary-hero-pct ' + rateClass}, rateText(rate)));
   rateSection.appendChild(el('div', {className:'summary-hero-pct-label'}, 'Pass rate'));
   hero.appendChild(rateSection);
 

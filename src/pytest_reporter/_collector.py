@@ -143,6 +143,9 @@ class DataCollector:
             end_time=end_time,
             entries=entries or [],
         )
+        wasxfail = getattr(report, "wasxfail", None)
+        if isinstance(wasxfail, str):
+            phase.wasxfail = wasxfail
         self._phases[(report.nodeid, report.when)] = phase
 
     def get_phase(self, nodeid: str, when: str) -> PhaseData | None:
@@ -176,6 +179,22 @@ class DataCollector:
             return "skipped"
         return call.outcome
 
+    def get_xfail_outcome(self, nodeid: str) -> str | None:
+        """``"xfailed"`` or ``"xpassed"`` for a run marked xfail, else ``None``.
+
+        pytest reports an expected failure as skipped and a non-strict unexpected
+        pass as passed, each with ``wasxfail``; a strict one fails without it.
+        """
+        outcome = self.get_outcome(nodeid)
+        for when in ("setup", "call"):
+            phase = self.get_phase(nodeid, when)
+            if phase is not None and phase.wasxfail is not None:
+                if outcome == "skipped":
+                    return "xfailed"
+                if outcome == "passed":
+                    return "xpassed"
+        return None
+
     def get_duration(self, nodeid: str) -> float:
         """Get total duration for a test run across all phases."""
         total = 0.0
@@ -208,7 +227,7 @@ class DataCollector:
         """Build the test.log.json aggregate for a test function."""
         nodeids = self._function_runs.get(base_nodeid, [])
         runs: list[RunEntry] = []
-        passed = failed = skipped = errors = 0
+        passed = failed = skipped = errors = xfailed = xpassed = 0
         total_duration = 0.0
 
         for nid in nodeids:
@@ -224,6 +243,11 @@ class DataCollector:
                 skipped += 1
             else:
                 errors += 1
+            xfail = self.get_xfail_outcome(nid)
+            if xfail == "xfailed":
+                xfailed += 1
+            elif xfail == "xpassed":
+                xpassed += 1
 
             total_duration += duration
 
@@ -262,6 +286,8 @@ class DataCollector:
         # Populate presentation-only fields (class_name is None for plain functions).
         aggregate["class_name"] = first.class_name
         aggregate["display_name"] = first.display_name
+        aggregate["xfailed"] = xfailed
+        aggregate["xpassed"] = xpassed
         return aggregate
 
     def all_nodeids(self) -> list[str]:
