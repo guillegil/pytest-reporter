@@ -134,8 +134,10 @@ def doc_blocks(text: str) -> list[dict[str, Any]]:
     Follows stepdoc's own reading of a section (``stepdoc.renderers.common.
     doc_blocks``): lines of a paragraph are joined by a space and a blank line
     ends it; ``-``/``*`` items make a bullet list and ``1.``/``1)`` items a
-    numbered one that keeps the author's numbers; a line under an item
-    (indented, or right after it) joins that item.
+    numbered one that keeps the author's numbers, indented or not; a line
+    under an item (indented past its marker, or right after it and not left of
+    it) joins that item; a numbered line right after paragraph text starts a
+    list only at 1.
 
     Args:
         text: One section's text, as stepdoc gave it.
@@ -146,15 +148,21 @@ def doc_blocks(text: str) -> list[dict[str, Any]]:
         and, in a numbered list, its ``number``.
     """
     blocks: list[dict[str, Any]] = []
-    open_item = False  # the last line belongs to a list item
+    marker = -1  # indent of the open list item's marker; -1: no open item
     gap = False  # a blank line since the last text
     for line in text.split("\n"):
-        if not line.strip():
+        body = line.lstrip()
+        if not body:
             gap = True
             continue
-        indented = line[:1].isspace()
-        bullet, number = _BULLET.fullmatch(line), _NUMBER.fullmatch(line)
+        indent = len(line) - len(body)
+        bullet, number = _BULLET.fullmatch(body), _NUMBER.fullmatch(body)
         last = blocks[-1] if blocks else None
+        # As in CommonMark, a numbered line right after paragraph text starts a
+        # list only at 1 ("... reaches\n512. Then" is one paragraph).
+        if number and last is not None and last["kind"] == "p" and not gap:
+            if int(number.group(1)) != 1:
+                number = None
         if bullet or number:
             kind = "ul" if bullet else "ol"
             if last is None or last["kind"] != kind:
@@ -167,15 +175,15 @@ def doc_blocks(text: str) -> list[dict[str, Any]]:
                 assert bullet is not None
                 item = {"text": bullet.group(2).strip()}
             last["items"].append(item)
-            open_item = True
+            marker = indent
         elif last is not None and (
-            (last["kind"] != "p" and open_item and (indented or not gap))
+            (marker >= 0 and (indent > marker or (not gap and indent >= marker)))
             or (last["kind"] == "p" and not gap)
         ):
-            last["items"][-1]["text"] += " " + line.strip()
+            last["items"][-1]["text"] += " " + body
         else:
-            blocks.append({"kind": "p", "items": [{"text": line.strip()}]})
-            open_item = False
+            blocks.append({"kind": "p", "items": [{"text": body}]})
+            marker = -1
         gap = False
     for block in blocks:
         for item in block["items"]:

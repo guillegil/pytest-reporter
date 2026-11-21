@@ -158,6 +158,39 @@ def test_doc_blocks_sentence_is_a_paragraph_and_backticks_are_mono() -> None:
     ]
 
 
+def _shape(text: str) -> list[tuple[str, list[str], list[int]]]:
+    return [
+        (
+            b["kind"],
+            ["".join(seg["text"] for seg in i["segments"]) for i in b["items"]],
+            [i["number"] for i in b["items"] if "number" in i],
+        )
+        for b in doc_blocks(text)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "shape"),
+    [
+        (
+            "The device passes when:\n\n  - a\n  - b\nNotes: x",
+            [
+                ("p", ["The device passes when:"], []),
+                ("ul", ["a", "b"], []),
+                ("p", ["Notes: x"], []),
+            ],
+        ),
+        ("Intro:\n  1. a\n  2. b", [("p", ["Intro:"], []), ("ol", ["a", "b"], [1, 2])]),
+        (" 9. nine\n10. ten", [("ol", ["nine", "ten"], [9, 10])]),
+        ("It reaches\n512. Then stops.", [("p", ["It reaches 512. Then stops."], [])]),
+    ],
+)
+def test_doc_blocks_indented_lists_read_like_stepdoc(
+    text: str, shape: list[tuple[str, list[str], list[int]]]
+) -> None:
+    assert _shape(text) == shape
+
+
 def test_doc_html_data_orders_sections_and_titles_them() -> None:
     data = doc_html_data({"acceptance": "- a", "description": "D", "objective": "O"})
     assert data is not None
