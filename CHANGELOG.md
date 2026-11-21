@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing new. `procedure.json` gets the parsed parts as `doc`
   (`description`, `objective`, `acceptance`) next to `steps`, in every retry attempt too.
 
+- Pre-conditions from stepdoc (`stepdoc.precondition("System Mode A")`, as a block or a
+  decorator) have their own **Pre-conditions** group on the Procedure tab, above the Setup /
+  Call / Teardown tabs and in both views. They are numbered `P1`, `P2`, … (entries `P1.1`, …)
+  whichever phase they ran in. A pre-condition the test applied shows its steps, actions and
+  checks. One that a shared fixture applied for an earlier test is one line with the status it
+  got then, `P1. System Mode A  already established, applied in tests/test_modes.py::test_one`
+  (`not established, failed in …` when it failed there),
+  listed before the test's own; the test ID opens that test's procedure when the report has
+  it. With `--report-retries`, every attempt lists its pre-conditions. In `procedure.json` a
+  step's `section` may be `precondition`, and such a reference has `applied_in` (the test ID)
+  and no `substeps`. Tests without pre-conditions, and reports made with a stepdoc that has
+  none, are unchanged.
+
 - A check made once per item (pytest-verifier's `all_satisfy`) is one line in the Procedure
   tab, not one line per item. With a stepdoc that folds these checks (`Check.each`) the line
   reads `Verify 'Index error clear': for each w in waveforms, w & INDEX_ERROR_BIT == 0` and

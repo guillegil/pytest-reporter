@@ -1599,6 +1599,38 @@ button { font-family: inherit; }
   text-transform: uppercase;
   color: var(--c-text3);
 }
+/* Pre-conditions (stepdoc.precondition): a group above the phase tabs. */
+.procedure-pre { margin-bottom: 14px; }
+.procedure-pre-title { display: flex; align-items: center; gap: 6px; margin: 0; }
+.procedure-pre .procedure-list { padding: 6px 0 0; }
+/* One found already established: a single line that wraps on a narrow screen. */
+.proc-established .procedure-step-header { flex-wrap: wrap; row-gap: 2px; }
+.proc-established .procedure-step-desc { flex: 0 1 auto; }
+.procedure-established {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--c-text2);
+  font-size: var(--fs-sm);
+}
+.procedure-established-link, .procedure-established-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.procedure-established-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--c-accent-ink);
+  text-align: left;
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  /* Under the title, in line with the note. */
+  .procedure-established { flex-basis: 100%; margin-left: calc(2.4 * var(--fs-xs)); }
+}
+.procedure-established-link:hover { text-decoration: underline; }
+.procedure-established-link:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; border-radius: 2px; }
 .procedure-result {
   color: var(--c-text2);
   font-family: var(--font-mono);

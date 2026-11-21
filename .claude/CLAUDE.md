@@ -286,6 +286,17 @@ node may hold `substeps` of the same shape.
 - Numbers are renumbered per attempt (stepdoc numbers continue across the reporter's
   retries, which run inside one stepdoc protocol): `S1…` setup, `1…` procedure, `T1…`
   teardown; entries (steps, actions, checks) share the child numbering, as in stepdoc.
+- Pre-conditions (`stepdoc.precondition()`, a stepdoc with that API): a step's `section`
+  is `precondition`, `setup`, `procedure` or `teardown`. Pre-conditions are numbered `P1…`
+  (entries `P1.1…`) whichever phase they ran in and come first in `steps`. One a shared
+  fixture applied for an earlier test (stepdoc's `Step.applied_in`, read with `getattr`) is
+  a reference: `"applied_in": "<test id>"`, no `substeps`, the outcome it got when applied,
+  `duration_seconds` 0. References come before the attempt's own pre-conditions
+  (`StepCollector.procedure`; stepdoc calls the hooks for them at the end of setup, and
+  again on every retry attempt). The Procedure tab shows a **Pre-conditions** group above
+  the phase tabs (`renderPreconditions`, a reference by `renderEstablished`: "already
+  established, applied in <test id>", the ID opening that run with `openRunInTests`), only
+  when the procedure has pre-conditions.
 - A check with stepdoc's `symbolic_text` (an expected value given by name) gets
   `_stepdoc.with_values`: the symbolic text with this run's value after each name,
   `Verify 'R' == <wdata> (243)`.
