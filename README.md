@@ -279,6 +279,22 @@ off. The reporter follows the steps through stepdoc's `pytest_stepdoc_step_*`
 hooks and never imports stepdoc, so without it installed tests simply have no
 procedure.
 
+### Test order
+
+When a test fails only after another one ran (state left in a fixture, a module or the
+bench), look at what ran before it. Each run's **Summary** sub-tab shows:
+
+- **Order**: where the run started in the session, `7 of 42`.
+- **Previous test**: the test that ran right before it,
+  `tests/bench/test_power.py::test_power_off`. It names the test function, not a
+  parametrized run: the runs of a parametrized test that ran back to back all show the test
+  that ran before the first of them. When it was parametrized, `run 03` says which of its
+  runs ran last; the test ID opens that run. The first test shows `None, it ran first`.
+
+Retries and reruns of a test run right after it, so they do not change the order.
+`test.log.json` has the same for each run: `order`, `previous_test` (the test's ID) and
+`previous_nodeid` (the run's).
+
 ### Moving from `pytest_reporter.step` (0.2)
 
 `step`, `substep`, `fmt` and `FormattedText` were removed in 0.3.0; importing

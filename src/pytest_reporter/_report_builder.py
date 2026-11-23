@@ -288,6 +288,9 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
             # Verification checks from pytest-verifier (first attempt)
             check_results = reporter._check_results.get(nodeid, [])
 
+            # Execution order: position, the test that ran before, xdist worker
+            order = reporter.collector.get_order(nodeid)
+
             runs.append(
                 {
                     "run_id": run_info.run_id,
@@ -308,6 +311,9 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
                     "retries": retries_info,
                     "retry_attempts": retry_attempts,
                     "check_results": check_results,
+                    "order": order.position if order else None,
+                    "previous": order.previous if order else None,
+                    "worker": order.worker if order else None,
                 }
             )
         tests.append(
@@ -428,6 +434,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
         "plugins": plugin_list,
         "cmdline": [str(a) for a in cmdline],
         "tests": tests,
+        "started_runs": reporter.collector.started_runs(),
         "session_log": session_log_data,
         "retries_enabled": reporter.max_retries > 0,
         "max_retries": reporter.max_retries,
