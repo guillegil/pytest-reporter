@@ -83,7 +83,7 @@ That single flag produces:
 
 ```
 reports/
-├── 01_latest/                      # Hard copy of the most recent run
+├── 01_latest/                      # Copy of the most recent run (hard links where possible)
 └── runs/
     └── 2026_04_27_18_30_45/
         ├── report.html             # Open in any browser

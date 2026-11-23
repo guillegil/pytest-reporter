@@ -20,8 +20,14 @@ from ._types import (
 
 def _write_json(path: Path, data: Any) -> None:  # noqa: ANN401
     """Write a JSON file, creating parent directories as needed."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    text = json.dumps(data, indent=2, default=str)
+    try:
+        path.write_text(text, encoding="utf-8")
+    except FileNotFoundError:
+        # Most writes go to a folder an earlier write made: create it only when
+        # it is missing, instead of asking the file system on every write.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
 
 
 def write_phase_log(path: Path, phase: PhaseData) -> None:

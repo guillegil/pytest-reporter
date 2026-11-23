@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Less time spent writing the run folder. A test's folder path is built once instead of for
+  every file and log line, JSON files are written without asking the file system for their
+  folder first (it is created only when missing), and `01_latest/` is made of hard links to
+  the run's files instead of copies, so refreshing it no longer reads and writes the whole run
+  again (a file system without hard links, or another device, still gets copies). On a run of
+  4,100 tests written to memory (tmpfs) the reporter's own time fell by about a tenth, more
+  where writing to disk is slow; the files are the same.
+
 ### Fixed
 
 - The pass rate no longer counts skipped tests against the suite. It is passed ÷ (passed +
