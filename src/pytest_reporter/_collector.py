@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,23 @@ def strategy_row(item: pytest.Item) -> dict[str, Any] | None:
     return None
 
 
+@dataclass(frozen=True)
+class RunOrder:
+    """Where a run stands in the session's execution order.
+
+    Attributes:
+        position: 1 for the first run that started, then 2, 3, ...
+        previous: Node ID of the last run of another test function that ran
+            before this one (on the same xdist worker), or ``None`` when no
+            other test ran before it there.
+        worker: The xdist worker that ran it (``gw0``), or ``None`` without xdist.
+    """
+
+    position: int
+    previous: str | None
+    worker: str | None
+
+
 class DataCollector:
     """Collects and indexes test data during the pytest run."""
 
@@ -50,6 +68,11 @@ class DataCollector:
         self._phases: dict[tuple[str, str], PhaseData] = {}
         # nodeid -> RetryData (only for tests that were retried)
         self._retries: dict[str, RetryData] = {}
+        # Execution order: nodeid -> RunOrder, in the order the runs started
+        self._order: dict[str, RunOrder] = {}
+        # Per xdist worker (None without xdist): the base nodeid of the test
+        # running now, the run that ran before it began, and the last run
+        self._streams: dict[str | None, tuple[str, str | None, str]] = {}
 
     def register_items(self, items: list[pytest.Item]) -> None:
         """Index all collected items and assign run IDs."""
@@ -141,6 +164,41 @@ class DataCollector:
         if isinstance(wasxfail, str):
             phase.wasxfail = wasxfail
         self._phases[(report.nodeid, report.when)] = phase
+
+    def record_start(self, nodeid: str, worker: str | None = None) -> None:
+        """Note that a run started, for the execution order.
+
+        Only the first start of a run counts: a rerun (pytest-rerunfailures, or
+        the reporter's own retries) runs right after it, so it changes nothing.
+        The previous test is the last run of *another* test function: the runs
+        of a parametrized test that ran back to back share the test that ran
+        before the first of them. Under pytest-xdist each worker has its own
+        order, since only the tests on the same worker share its process.
+
+        Args:
+            nodeid: The run's node ID.
+            worker: The xdist worker that ran it, or ``None``.
+        """
+        if nodeid in self._order or nodeid not in self._run_map:
+            return
+        base = self._run_map[nodeid].base_nodeid
+        stream = self._streams.get(worker)
+        if stream is None:
+            previous = None
+        elif stream[0] == base:
+            previous = stream[1]
+        else:
+            previous = stream[2]
+        self._streams[worker] = (base, previous, nodeid)
+        self._order[nodeid] = RunOrder(len(self._order) + 1, previous, worker)
+
+    def get_order(self, nodeid: str) -> RunOrder | None:
+        """The run's place in the execution order, or ``None`` if it never started."""
+        return self._order.get(nodeid)
+
+    def started_runs(self) -> int:
+        """How many runs started (the last position of the execution order)."""
+        return len(self._order)
 
     def get_phase(self, nodeid: str, when: str) -> PhaseData | None:
         """Get phase data for a specific nodeid and phase."""
@@ -250,6 +308,19 @@ class DataCollector:
                 outcome=outcome,
                 duration_seconds=round(duration, 4),
             )
+
+            # Execution order: the run's position and the test that ran before it
+            order = self._order.get(nid)
+            if order is not None:
+                entry["order"] = order.position
+                entry["previous_test"] = (
+                    self._run_map[order.previous].base_nodeid
+                    if order.previous in self._run_map
+                    else None
+                )
+                entry["previous_nodeid"] = order.previous
+                if order.worker is not None:
+                    entry["worker"] = order.worker
 
             # Add retries info if present
             retry = self._retries.get(nid)

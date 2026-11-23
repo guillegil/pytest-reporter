@@ -1617,6 +1617,13 @@ function showSubTab(tab, run) {
       const used = testStrategies(selectedTest).find(u => u.name === st.strategy);
       if (used && used.nsamples) addRow('Samples', samplesEl(used.nsamples, 'info-value'));
     }
+    if (run.order) {
+      // Where it ran in the session, and the test that ran right before it
+      let order = run.order + ' of ' + (DATA.started_runs || run.order);
+      if (run.worker) order += ' \u00b7 worker ' + run.worker;
+      addRow('Order', order);
+      addRow('Previous test', previousTestEl(run));
+    }
     content.appendChild(grid);
 
     // Parameters table
@@ -2463,6 +2470,39 @@ function findRunByNodeid(nodeid) {
     if (run) return {test: test, run: run};
   }
   return null;
+}
+
+// The test that ran right before this run, in the same process (its xdist
+// worker): the last run of another test function, so the runs of a
+// parametrized test that ran back to back share it. Where an order-dependent
+// failure starts looking. The test ID opens the run of it that ran then;
+// "run 03" says which one when it is parametrized. Text via textContent only.
+function previousTestEl(run) {
+  const value = el('span', {className: 'info-value run-previous'});
+  if (!run.previous) {
+    value.appendChild(el('span', {className: 'run-previous-none'},
+      run.worker ? 'None, it ran first on ' + run.worker : 'None, it ran first'));
+    return value;
+  }
+  const target = findRunByNodeid(run.previous);
+  if (!target) {
+    value.appendChild(el('span', {className: 'run-previous-id'}, run.previous.split('[')[0]));
+    return value;
+  }
+  const link = el('button', {className: 'run-previous-link', type: 'button',
+    title: 'Open the test that ran before this one'}, target.test.base_nodeid);
+  link.addEventListener('click', function() {
+    openRunInTests(target.test, target.run);
+    // The link is gone with the detail it was in: the focus goes to the test's title
+    const title = document.querySelector('.detail-panel .detail-header h2');
+    if (title) title.focus({preventScroll: true});
+  });
+  value.appendChild(link);
+  if (target.run.run_id !== 'default') {
+    value.appendChild(el('span', {className: 'run-previous-run',
+      title: target.run.parametrize_id || ''}, 'run ' + target.run.run_id));
+  }
+  return value;
 }
 
 // A pre-condition this test did not apply itself (stepdoc PRE-3): a shared

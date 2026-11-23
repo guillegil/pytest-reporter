@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The report shows which test ran before each test, to find failures that depend on the
+  order (state one test leaves for the next). A run's Summary sub-tab has **Order**
+  (`7 of 42`) and **Previous test**: the last other test function that ran before it, so the
+  runs of a parametrized test that ran back to back share the test that ran before the
+  first of them. The test ID opens the run of it that ran then (`run 03` when it is
+  parametrized). Retries and reruns do not change the order. `test.log.json` runs get
+  `order`, `previous_test` and `previous_nodeid`; the report's run data `order`, `previous`
+  and `worker` (a pytest-xdist worker's runs are ordered among themselves).
+
 - A test's docstring describes it in the report. With stepdoc installed, the run's Summary
   sub-tab opens with an "About this test" block: the description (the text before the first
   heading), then **Objective** and **Acceptance criteria** (also `Pass criteria:`), each a

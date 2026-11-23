@@ -235,7 +235,9 @@ Same as phase file but `phase: "session"`, no `outcome` or `longrepr`.
   "xfailed": 0, "xpassed": 0,     // subsets of skipped / passed (runs marked xfail)
   "total_duration_seconds": 12.34,
   "runs": [
-    { "run_id": "01", "outcome": "passed", "duration_seconds": 2.1 },
+    { "run_id": "01", "outcome": "passed", "duration_seconds": 2.1,
+      "order": 3, "previous_test": "tests/Module/test_foo.py::test_baz",
+      "previous_nodeid": "tests/Module/test_foo.py::test_baz[02]" },
     { "run_id": "02", "outcome": "passed", "duration_seconds": 8.2,
       "retries": { "attempts": 2, "original_outcome": "failed",
                    "history": ["failed", "failed", "passed"] } }
@@ -434,6 +436,13 @@ node may hold `substeps` of the same shape.
   `_stepdoc.doc_html_data`, blocks `p`/`ul`/`ol` from `doc_blocks`, numbered items keep their
   `number`, backtick spans as `mono` segments; JS `renderTestDoc`/`renderDocBlock`, `.test-doc`;
   absent without a doc), then duration, outcome, parameters table, phase logs as horizontal tabs (Setup/Call/Teardown).
+  **Order** (`7 of 42`) and **Previous test** (`previousTestEl`): from
+  `DataCollector.record_start`, called on each run's first setup report (reruns ignored).
+  The previous test is the last run of another base nodeid before it on the same xdist
+  worker (`_streams`: base, block-previous, last), so back-to-back runs of a parametrized
+  test share it. Run data `order`/`previous` (nodeid)/`worker`, `DATA.started_runs`;
+  `test.log.json` runs `order`/`previous_test`/`previous_nodeid`/`worker`. The ID opens the
+  run (`openRunInTests`).
 - **Procedure:** Numbered outline from `procedure.json` in Setup / Call / Teardown tabs (by each step's `section`), opening on the failed phase, else Call; actions and checks show their result. Printing shows all three.
 - **Artifacts:** HTML = sandboxed iframes, Images = thumbnail grid + lightbox, Others = file cards.
 - **Strategy:** (tests that use a pytest-strategies strategy, with its 4.3+ run export) each strategy's origin, `@strategy` arguments, sample count and source (`pinned` badge), arguments, constraints and the rows the test ran with their outcomes; the current run's row is highlighted.

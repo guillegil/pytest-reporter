@@ -283,6 +283,11 @@ class Reporter:
         nodeid = report.nodeid
         if nodeid not in self.collector._run_map:
             return
+        if report.when == "setup":
+            # Every run reports its setup first, also from an xdist worker
+            # (which names itself) and after the reporter's own retries
+            worker = getattr(report, "worker_id", None)
+            self.collector.record_start(nodeid, worker if isinstance(worker, str) else None)
         if nodeid in self._finished_runs:
             return
         capture_phase_logs(self, report)

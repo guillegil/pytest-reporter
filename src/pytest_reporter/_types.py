@@ -88,6 +88,10 @@ class RunEntry(TypedDict, total=False):
     run_id: str
     outcome: str
     duration_seconds: float
+    order: int  # position in the session's execution order (1 = first)
+    previous_test: str | None  # base node ID of the test that ran before it
+    previous_nodeid: str | None  # node ID of that test's run
+    worker: str  # pytest-xdist worker (only under xdist)
     retries: RetriesInfo
 
 

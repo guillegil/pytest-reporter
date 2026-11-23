@@ -1065,6 +1065,24 @@ button { font-family: inherit; }
   letter-spacing: 0.04em;
 }
 .info-value { color: var(--c-text); }
+/* Previous test: the test ID, which opens it, and which of its runs */
+.run-previous { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.run-previous-link, .run-previous-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.run-previous-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--c-accent-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.run-previous-link:hover { text-decoration: underline; }
+.run-previous-link:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; border-radius: 2px; }
+.run-previous-run, .run-previous-none { color: var(--c-text2); font-size: var(--fs-sm); }
 /* About this test: the test function's docstring, above the run's facts */
 .test-doc {
   margin: 0 0 20px;
