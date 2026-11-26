@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("migrations")
 
 
 # ---------------------------------------------------------------------------
@@ -36,31 +39,31 @@ COLUMN_MIGRATIONS = [
     MIGRATIONS,
     ids=[m[0] for m in MIGRATIONS],
 )
-def test_migration_apply_forward(log, version, description, sql):
+def test_migration_apply_forward(version, description, sql):
     """Apply a single forward migration and verify schema state."""
-    db = log.child("database")
-    mgr = log.child("migration")
+    db = log.getChild("database")
+    mgr = log.getChild("migration")
 
     with step(f"Apply migration {version}: {description}"):
-        mgr.info("Loading migration file", data={"version": version, "file": f"V{version}__{description.replace(' ', '_').lower()}.sql"})
-        mgr.debug("SQL preview", data={"sql": sql[:80]})
+        mgr.info("Loading migration file", extra={"version": version, "file": f"V{version}__{description.replace(' ', '_').lower()}.sql"})
+        mgr.debug("SQL preview", extra={"sql": sql[:80]})
         with step("Acquire advisory lock"):
             db.info("SELECT pg_advisory_lock(12345)")
-            db.debug("Lock acquired", data={"lock_id": 12345})
+            db.debug("Lock acquired", extra={"lock_id": 12345})
 
     with step("Execute migration in transaction"):
         db.info("BEGIN")
-        db.debug("Executing DDL", data={"statement": sql})
+        db.debug("Executing DDL", extra={"statement": sql})
         db.info("DDL executed successfully")
         with step("Update schema_version table"):
-            db.info("INSERT INTO schema_version (version, description, applied_at) VALUES (%s, %s, now())", data={"version": version})
+            db.info("INSERT INTO schema_version (version, description, applied_at) VALUES (%s, %s, now())", extra={"version": version})
             db.info("COMMIT")
 
     with step("Verify post-migration schema"):
         mgr.info("Running schema introspection")
         db.debug("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
         table_count = int(version)
-        mgr.info("Tables found", data={"count": table_count})
+        mgr.info("Tables found", extra={"count": table_count})
         with step("Release advisory lock"):
             db.info("SELECT pg_advisory_unlock(12345)")
             db.debug("Lock released")
@@ -68,14 +71,14 @@ def test_migration_apply_forward(log, version, description, sql):
     assert int(version) > 0
 
 
-def test_migration_full_chain(log):
+def test_migration_full_chain():
     """Apply all migrations in sequence, verifying cumulative state."""
-    db = log.child("database")
-    mgr = log.child("migration")
+    db = log.getChild("database")
+    mgr = log.getChild("migration")
 
     with step("Initialize empty database"):
         db.info("CREATE DATABASE migration_test TEMPLATE template0")
-        db.debug("Database created", data={"name": "migration_test", "encoding": "UTF8"})
+        db.debug("Database created", extra={"data": {"name": "migration_test", "encoding": "UTF8"}})
         with step("Install extensions"):
             db.info("CREATE EXTENSION IF NOT EXISTS pgcrypto")
             db.info("CREATE EXTENSION IF NOT EXISTS uuid-ossp")
@@ -84,13 +87,13 @@ def test_migration_full_chain(log):
         for version, description, sql in MIGRATIONS:
             mgr.info(f"Applying V{version}: {description}")
             db.debug("BEGIN; " + sql[:60] + "...; COMMIT")
-            mgr.debug("Migration applied", data={"version": version, "duration_ms": 12 + int(version) * 3})
+            mgr.debug("Migration applied", extra={"version": version, "duration_ms": 12 + int(version) * 3})
 
     with step("Final schema verification"):
         expected_tables = ["users", "orders", "products", "order_items"]
         for table in expected_tables:
-            db.info(f"Checking table '{table}'", data={"exists": True})
-        mgr.info("Schema version", data={"current": "005", "total_migrations": 5})
+            db.info(f"Checking table '{table}'", extra={"exists": True})
+        mgr.info("Schema version", extra={"current": "005", "total_migrations": 5})
         with step("Verify foreign key constraints"):
             db.debug("FK: orders.user_id -> users.id OK")
             db.debug("FK: order_items.order_id -> orders.id OK")
@@ -99,34 +102,34 @@ def test_migration_full_chain(log):
     assert True
 
 
-def test_migration_idempotency(log):
+def test_migration_idempotency():
     """Verify running the same migration twice is safe."""
-    mgr = log.child("migration")
-    db = log.child("database")
+    mgr = log.getChild("migration")
+    db = log.getChild("database")
 
     with step("Apply migration 001 -- first run"):
         mgr.info("Applying V001: Create users table")
         db.info("CREATE TABLE IF NOT EXISTS users ...")
-        db.debug("Table created", data={"new": True})
+        db.debug("Table created", extra={"new": True})
 
     with step("Apply migration 001 -- second run"):
         mgr.info("Applying V001 again")
         db.info("CREATE TABLE IF NOT EXISTS users ...")
-        db.debug("Table already exists -- no-op", data={"new": False})
+        db.debug("Table already exists -- no-op", extra={"new": False})
         with step("Verify schema unchanged"):
             db.info("Schema diff: none")
 
     with step("Validate schema_version table"):
         mgr.info("SELECT COUNT(*) FROM schema_version WHERE version = '001'")
-        mgr.debug("Count", data={"count": 1, "note": "no duplicate entry"})
+        mgr.debug("Count", extra={"count": 1, "note": "no duplicate entry"})
 
     assert True
 
 
-def test_migration_rollback(log):
+def test_migration_rollback():
     """Apply and then rollback a migration."""
-    mgr = log.child("migration")
-    db = log.child("database")
+    mgr = log.getChild("migration")
+    db = log.getChild("database")
 
     with step("Apply migration 004: Create products table"):
         db.info("BEGIN")
@@ -135,13 +138,13 @@ def test_migration_rollback(log):
         mgr.info("Migration 004 applied")
 
     with step("Rollback migration 004"):
-        mgr.info("Loading rollback script", data={"file": "V004__rollback.sql"})
+        mgr.info("Loading rollback script", extra={"file": "V004__rollback.sql"})
         db.info("BEGIN")
         db.debug("DROP TABLE IF EXISTS products CASCADE")
         db.info("COMMIT")
         with step("Update schema_version"):
             db.info("DELETE FROM schema_version WHERE version = '004'")
-            mgr.info("Rollback complete", data={"version_now": "003"})
+            mgr.info("Rollback complete", extra={"version_now": "003"})
 
     with step("Verify products table removed"):
         db.info("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'products')")
@@ -157,50 +160,50 @@ def test_migration_rollback(log):
     COLUMN_MIGRATIONS,
     ids=[m[0] for m in COLUMN_MIGRATIONS],
 )
-def test_migration_add_column(log, version, description, sql):
+def test_migration_add_column(version, description, sql):
     """Add a new column via ALTER TABLE migration."""
-    db = log.child("database")
-    mgr = log.child("migration")
+    db = log.getChild("database")
+    mgr = log.getChild("migration")
 
     with step(f"Apply column migration {version}"):
-        mgr.info("Migration", data={"version": version, "description": description})
+        mgr.info("Migration", extra={"version": version, "description": description})
         db.info("BEGIN")
-        db.debug("Executing", data={"sql": sql})
+        db.debug("Executing", extra={"sql": sql})
         db.info("Column added successfully")
         db.info("COMMIT")
 
     with step("Verify column exists"):
         col_name = sql.split("ADD COLUMN ")[-1].split(" ")[0]
         db.info(f"SELECT column_name FROM information_schema.columns WHERE column_name = '{col_name}'")
-        db.debug("Column found", data={"column": col_name, "table": sql.split("ALTER TABLE ")[-1].split(" ")[0]})
+        db.debug("Column found", extra={"column": col_name, "table": sql.split("ALTER TABLE ")[-1].split(" ")[0]})
         with step("Check default value"):
             if "DEFAULT" in sql:
                 default = sql.split("DEFAULT ")[-1]
-                db.debug("Default value", data={"default": default})
+                db.debug("Default value", extra={"default": default})
 
     assert True
 
 
-def test_migration_concurrent_safety(log):
+def test_migration_concurrent_safety():
     """Two migration runners must not conflict."""
-    runner1 = log.child("runner_1")
-    runner2 = log.child("runner_2")
-    lock = log.child("lock")
+    runner1 = log.getChild("runner_1")
+    runner2 = log.getChild("runner_2")
+    lock = log.getChild("lock")
 
     with step("Runner 1 acquires advisory lock"):
         runner1.info("Attempting pg_advisory_lock(99999)")
-        lock.info("Lock granted to runner 1", data={"lock_id": 99999})
+        lock.info("Lock granted to runner 1", extra={"lock_id": 99999})
 
     with step("Runner 2 attempts to acquire same lock"):
         runner2.info("Attempting pg_advisory_lock(99999)")
         runner2.warning("Lock held by another session -- waiting")
-        lock.debug("Lock queue", data={"waiting": 1, "holder": "runner_1"})
+        lock.debug("Lock queue", extra={"waiting": 1, "holder": "runner_1"})
 
     with step("Runner 1 completes and releases lock"):
         runner1.info("Migration applied, releasing lock")
         lock.info("Lock released by runner 1")
         with step("Runner 2 acquires lock"):
-            runner2.info("Lock acquired after wait", data={"wait_ms": 1200})
+            runner2.info("Lock acquired after wait", extra={"wait_ms": 1200})
             runner2.info("Checking if migration already applied")
             runner2.debug("Migration already at target version -- skipping")
 
@@ -212,28 +215,28 @@ def test_migration_concurrent_safety(log):
     assert True
 
 
-def test_migration_data_migration(log):
+def test_migration_data_migration():
     """Run a data migration that transforms existing rows."""
-    db = log.child("database")
-    data = log.child("data_migration")
+    db = log.getChild("database")
+    data = log.getChild("data_migration")
 
     with step("Analyze current data"):
         data.info("SELECT COUNT(*) FROM users WHERE phone_number IS NULL")
-        data.debug("Result", data={"null_count": 4521, "total_rows": 5000})
+        data.debug("Result", extra={"null_count": 4521, "total_rows": 5000})
 
     with step("Execute data transformation"):
         data.info("Backfilling phone_number from legacy_contacts table")
         db.info("BEGIN")
         db.debug("UPDATE users SET phone_number = lc.phone FROM legacy_contacts lc WHERE users.id = lc.user_id")
-        data.info("Rows updated", data={"updated": 3890, "skipped": 631, "duration_ms": 850})
+        data.info("Rows updated", extra={"updated": 3890, "skipped": 631, "duration_ms": 850})
         db.info("COMMIT")
 
     with step("Verify data integrity post-migration"):
         data.info("SELECT COUNT(*) FROM users WHERE phone_number IS NOT NULL")
-        data.debug("Non-null count", data={"count": 3890})
+        data.debug("Non-null count", extra={"count": 3890})
         with step("Check for format violations"):
             data.info("SELECT COUNT(*) FROM users WHERE phone_number !~ '^\\+[0-9]{10,15}$'")
-            data.debug("Invalid format count", data={"count": 0})
+            data.debug("Invalid format count", extra={"count": 0})
 
     assert True
 
@@ -243,51 +246,51 @@ def test_migration_data_migration(log):
 # ---------------------------------------------------------------------------
 
 
-def test_migration_lock_timeout_retry(log, flaky_service):
+def test_migration_lock_timeout_retry(flaky_service):
     """Advisory lock times out on first attempt, succeeds on retry."""
-    mgr = log.child("migration")
-    db = log.child("database")
+    mgr = log.getChild("migration")
+    db = log.getChild("database")
 
     with step("Attempt to acquire migration lock"):
         mgr.info("SELECT pg_try_advisory_lock(12345)")
         try:
             flaky_service("migration_lock_timeout")
         except ConnectionError:
-            mgr.error("Lock acquisition failed -- another migration in progress", data={"lock_id": 12345})
+            mgr.error("Lock acquisition failed -- another migration in progress", extra={"lock_id": 12345})
             with step("Wait and retry"):
                 mgr.info("Sleeping 2s before retry")
                 result = flaky_service("migration_lock_timeout")
-                mgr.info("Lock acquired on retry", data={"result": result})
+                mgr.info("Lock acquired on retry", extra={"result": result})
 
     with step("Apply migration with acquired lock"):
         db.info("BEGIN; CREATE TABLE temp_test (...); COMMIT")
-        mgr.debug("Migration applied", data={"version": "009"})
+        mgr.debug("Migration applied", extra={"version": "009"})
         with step("Release lock"):
             db.info("SELECT pg_advisory_unlock(12345)")
 
     assert True
 
 
-def test_migration_connection_drop_retry(log, flaky_service):
+def test_migration_connection_drop_retry(flaky_service):
     """Database connection drops mid-migration, reconnect and retry."""
-    db = log.child("database")
-    mgr = log.child("migration")
+    db = log.getChild("database")
+    mgr = log.getChild("migration")
 
     with step("Begin migration transaction"):
         db.info("Checking connection health")
         try:
             flaky_service("migration_conn_drop")
         except ConnectionError:
-            db.error("Connection reset by peer", data={"errno": "ECONNRESET"})
+            db.error("Connection reset by peer", extra={"errno": "ECONNRESET"})
             with step("Reconnect to database"):
-                db.info("Establishing new connection", data={"host": "db.internal", "port": 5432})
+                db.info("Establishing new connection", extra={"host": "db.internal", "port": 5432})
                 result = flaky_service("migration_conn_drop")
-                db.info("Reconnected", data={"result": result})
+                db.info("Reconnected", extra={"result": result})
 
     with step("Retry migration from scratch"):
         mgr.info("Verifying no partial state from failed attempt")
         db.debug("SELECT * FROM schema_version ORDER BY version DESC LIMIT 1")
-        db.debug("Last applied version", data={"version": "005"})
+        db.debug("Last applied version", extra={"version": "005"})
         mgr.info("Applying migration 006")
         db.info("BEGIN; ALTER TABLE users ADD COLUMN phone_number TEXT; COMMIT")
         mgr.info("Migration 006 applied successfully")
@@ -295,25 +298,25 @@ def test_migration_connection_drop_retry(log, flaky_service):
     assert True
 
 
-def test_migration_replication_lag_retry(log, flaky_service):
+def test_migration_replication_lag_retry(flaky_service):
     """Replica not caught up after migration, retry read."""
-    db = log.child("primary")
-    replica = log.child("replica")
+    db = log.getChild("primary")
+    replica = log.getChild("replica")
 
     with step("Apply migration on primary"):
-        db.info("Migration applied on primary", data={"version": "007"})
-        db.debug("WAL position", data={"lsn": "0/1A000060"})
+        db.info("Migration applied on primary", extra={"version": "007"})
+        db.debug("WAL position", extra={"lsn": "0/1A000060"})
 
     with step("Verify on replica"):
         replica.info("Checking schema on replica")
         try:
             flaky_service("migration_replica_lag")
         except ConnectionError:
-            replica.error("Replica not yet caught up", data={"primary_lsn": "0/1A000060", "replica_lsn": "0/19FFF000"})
+            replica.error("Replica not yet caught up", extra={"primary_lsn": "0/1A000060", "replica_lsn": "0/19FFF000"})
             with step("Wait for replication catch-up"):
                 replica.info("Polling replication lag...")
                 result = flaky_service("migration_replica_lag")
-                replica.info("Replica caught up", data={"result": result, "lag_bytes": 0})
+                replica.info("Replica caught up", extra={"result": result, "lag_bytes": 0})
 
     with step("Confirm schema consistent across nodes"):
         db.info("Primary schema version: 007")
@@ -328,9 +331,9 @@ def test_migration_replication_lag_retry(log, flaky_service):
 # ---------------------------------------------------------------------------
 
 
-def test_migration_foreign_key_violation(log):
+def test_migration_foreign_key_violation():
     """Insert violating FK constraint -- deliberately fails."""
-    db = log.child("database")
+    db = log.getChild("database")
 
     with step("Create parent and child tables"):
         db.info("CREATE TABLE departments (id SERIAL PRIMARY KEY, name TEXT)")
@@ -339,35 +342,35 @@ def test_migration_foreign_key_violation(log):
 
     with step("Insert into child without parent"):
         db.info("INSERT INTO employees (dept_id) VALUES (999)")
-        db.error("FK violation", data={"constraint": "employees_dept_id_fkey", "detail": "Key (dept_id)=(999) is not present in table departments"})
+        db.error("FK violation", extra={"constraint": "employees_dept_id_fkey", "detail": "Key (dept_id)=(999) is not present in table departments"})
 
     with step("Assert insertion succeeded"):
         inserted = False
-        db.info("Checking insertion result", data={"inserted": inserted})
+        db.info("Checking insertion result", extra={"inserted": inserted})
 
     assert inserted, "Insert should have succeeded but FK constraint was violated"
 
 
-def test_migration_duplicate_version_conflict(log):
+def test_migration_duplicate_version_conflict():
     """Applying a migration with duplicate version number -- deliberately fails."""
-    mgr = log.child("migration")
-    db = log.child("database")
+    mgr = log.getChild("migration")
+    db = log.getChild("database")
 
     with step("Apply migration V003"):
         mgr.info("Applying V003: Add index on orders.created_at")
         db.info("CREATE INDEX idx_orders_created ON orders(created_at)")
-        mgr.debug("Applied", data={"version": "003"})
+        mgr.debug("Applied", extra={"version": "003"})
 
     with step("Attempt to apply another V003"):
         mgr.warning("Version 003 already exists in schema_version")
         db.info("INSERT INTO schema_version (version) VALUES ('003')")
-        db.error("Unique constraint violation", data={"constraint": "schema_version_pkey"})
+        db.error("Unique constraint violation", extra={"constraint": "schema_version_pkey"})
 
     with step("Assert no duplicate versions"):
         versions = ["001", "002", "003", "003"]
         unique = len(set(versions))
         total = len(versions)
-        mgr.info("Version check", data={"total": total, "unique": unique})
+        mgr.info("Version check", extra={"total": total, "unique": unique})
 
     assert unique == total, f"Duplicate migration versions found: {total} total vs {unique} unique"
 
@@ -377,59 +380,59 @@ def test_migration_duplicate_version_conflict(log):
 # ---------------------------------------------------------------------------
 
 
-def test_migration_index_creation(log):
+def test_migration_index_creation():
     """Create and verify database indexes."""
-    db = log.child("database")
-    idx = log.child("index")
+    db = log.getChild("database")
+    idx = log.getChild("index")
 
     with step("Create composite index"):
         idx.info("Creating index on orders(user_id, created_at)")
         db.info("CREATE INDEX idx_orders_user_created ON orders(user_id, created_at)")
-        db.debug("Index created", data={"name": "idx_orders_user_created", "type": "btree", "columns": ["user_id", "created_at"]})
+        db.debug("Index created", extra={"data": {"name": "idx_orders_user_created", "type": "btree", "columns": ["user_id", "created_at"]}})
 
     with step("Analyze index statistics"):
         idx.info("Running ANALYZE on orders table")
         db.debug("ANALYZE orders")
-        idx.info("Index stats", data={"size_kb": 2048, "tuples": 50000, "pages": 256})
+        idx.info("Index stats", extra={"size_kb": 2048, "tuples": 50000, "pages": 256})
         with step("Verify index is used by planner"):
             db.info("EXPLAIN SELECT * FROM orders WHERE user_id = 1 ORDER BY created_at")
-            db.debug("Plan uses index scan", data={"index": "idx_orders_user_created", "scan_type": "Index Scan"})
+            db.debug("Plan uses index scan", extra={"index": "idx_orders_user_created", "scan_type": "Index Scan"})
 
     with step("Test partial index"):
         idx.info("CREATE INDEX idx_orders_pending ON orders(status) WHERE status = 'pending'")
-        db.debug("Partial index created", data={"name": "idx_orders_pending", "predicate": "status = 'pending'"})
+        db.debug("Partial index created", extra={"data": {"name": "idx_orders_pending", "predicate": "status = 'pending'"}})
 
     assert True
 
 
-def test_migration_constraint_validation(log):
+def test_migration_constraint_validation():
     """Validate CHECK and UNIQUE constraints after migration."""
-    db = log.child("database")
-    constraint = log.child("constraint")
+    db = log.getChild("database")
+    constraint = log.getChild("constraint")
 
     with step("Add CHECK constraint"):
         db.info("ALTER TABLE products ADD CONSTRAINT chk_price_positive CHECK (price > 0)")
-        constraint.debug("Constraint added", data={"name": "chk_price_positive", "type": "CHECK"})
+        constraint.debug("Constraint added", extra={"data": {"name": "chk_price_positive", "type": "CHECK"}})
 
     with step("Test constraint enforcement"):
         constraint.info("INSERT INTO products (sku, name, price) VALUES ('TEST', 'Test Product', 29.99)")
         constraint.debug("Insert succeeded -- price is positive")
         with step("Attempt negative price"):
             constraint.info("INSERT INTO products (sku, name, price) VALUES ('BAD', 'Bad Product', -5.00)")
-            constraint.warning("Constraint violation (simulated)", data={"constraint": "chk_price_positive"})
+            constraint.warning("Constraint violation (simulated)", extra={"constraint": "chk_price_positive"})
 
     with step("Verify UNIQUE constraint on sku"):
         constraint.info("INSERT INTO products (sku, name, price) VALUES ('TEST', 'Duplicate', 19.99)")
-        constraint.warning("Unique violation on sku='TEST'", data={"constraint": "products_sku_key"})
+        constraint.warning("Unique violation on sku='TEST'", extra={"constraint": "products_sku_key"})
         db.debug("Constraint correctly prevents duplicate")
 
     assert True
 
 
 @pytest.mark.skip(reason="Partition management requires PG 12+ features not in test harness")
-def test_migration_table_partitioning(log):
+def test_migration_table_partitioning():
     """Create range-partitioned table."""
-    db = log.child("database")
+    db = log.getChild("database")
 
     with step("Create partitioned orders table"):
         db.info("CREATE TABLE orders_partitioned (...) PARTITION BY RANGE (created_at)")
@@ -438,9 +441,9 @@ def test_migration_table_partitioning(log):
 
 
 @pytest.mark.skip(reason="Materialized view refresh test requires populated data")
-def test_migration_materialized_view(log):
+def test_migration_materialized_view():
     """Create and refresh a materialized view."""
-    db = log.child("database")
+    db = log.getChild("database")
 
     with step("CREATE MATERIALIZED VIEW monthly_sales AS ..."):
         db.info("View created")
@@ -448,65 +451,65 @@ def test_migration_materialized_view(log):
     assert True
 
 
-def test_migration_extension_install(log):
+def test_migration_extension_install():
     """Install and verify PostgreSQL extensions."""
-    db = log.child("database")
-    ext = log.child("extension")
+    db = log.getChild("database")
+    ext = log.getChild("extension")
 
     with step("Install required extensions"):
         extensions = ["pgcrypto", "pg_trgm", "uuid-ossp", "btree_gist"]
         for e in extensions:
             ext.info(f"CREATE EXTENSION IF NOT EXISTS {e}")
-            ext.debug(f"Extension '{e}' installed", data={"version": "1.3"})
+            ext.debug(f"Extension '{e}' installed", extra={"version": "1.3"})
 
     with step("Verify extension functions available"):
         ext.info("Testing pgcrypto: SELECT gen_random_uuid()")
-        ext.debug("Result", data={"uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"})
+        ext.debug("Result", extra={"uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"})
         with step("Test pg_trgm similarity"):
             ext.info("SELECT similarity('hello', 'helo')")
-            ext.debug("Similarity score", data={"score": 0.6})
+            ext.debug("Similarity score", extra={"score": 0.6})
 
     with step("List installed extensions"):
         db.info("SELECT extname, extversion FROM pg_extension")
         for e in extensions:
             db.debug(f"  {e}: installed")
-        ext.info("All extensions verified", data={"count": len(extensions)})
+        ext.info("All extensions verified", extra={"count": len(extensions)})
 
     assert True
 
 
-def test_migration_vacuum_analyze(log):
+def test_migration_vacuum_analyze():
     """Run VACUUM ANALYZE after bulk migration to update statistics."""
-    db = log.child("database")
-    maint = log.child("maintenance")
+    db = log.getChild("database")
+    maint = log.getChild("maintenance")
 
     with step("Check table bloat before vacuum"):
-        maint.info("Inspecting dead tuples", data={"table": "orders"})
+        maint.info("Inspecting dead tuples", extra={"table": "orders"})
         db.info("SELECT n_dead_tup, n_live_tup FROM pg_stat_user_tables WHERE relname = 'orders'")
-        maint.debug("Stats", data={"dead_tuples": 12500, "live_tuples": 50000, "bloat_pct": 25})
+        maint.debug("Stats", extra={"dead_tuples": 12500, "live_tuples": 50000, "bloat_pct": 25})
 
     with step("Run VACUUM ANALYZE"):
         db.info("VACUUM ANALYZE orders")
-        maint.info("Vacuum in progress", data={"pages_scanned": 2048, "pages_removed": 512})
-        maint.debug("Vacuum complete", data={"duration_ms": 340, "dead_tuples_removed": 12500})
+        maint.info("Vacuum in progress", extra={"pages_scanned": 2048, "pages_removed": 512})
+        maint.debug("Vacuum complete", extra={"duration_ms": 340, "dead_tuples_removed": 12500})
         with step("Update planner statistics"):
-            maint.info("Statistics refreshed", data={"table": "orders", "columns_analyzed": 6})
+            maint.info("Statistics refreshed", extra={"table": "orders", "columns_analyzed": 6})
 
     with step("Verify improved stats"):
         db.info("SELECT n_dead_tup FROM pg_stat_user_tables WHERE relname = 'orders'")
-        maint.info("Post-vacuum stats", data={"dead_tuples": 0, "live_tuples": 50000, "bloat_pct": 0})
+        maint.info("Post-vacuum stats", extra={"dead_tuples": 0, "live_tuples": 50000, "bloat_pct": 0})
 
     assert True
 
 
-def test_migration_schema_dump_compare(log):
+def test_migration_schema_dump_compare():
     """Dump schema before and after migration, compare for correctness."""
-    mgr = log.child("migration")
-    db = log.child("database")
+    mgr = log.getChild("migration")
+    db = log.getChild("database")
 
     with step("Dump schema before migration"):
         db.info("pg_dump --schema-only --no-owner migration_test > before.sql")
-        mgr.debug("Schema dump captured", data={"file": "before.sql", "size_kb": 18})
+        mgr.debug("Schema dump captured", extra={"file": "before.sql", "size_kb": 18})
 
     with step("Apply migration 005"):
         mgr.info("Applying V005: Add order_items junction")
@@ -515,11 +518,11 @@ def test_migration_schema_dump_compare(log):
 
     with step("Dump schema after migration"):
         db.info("pg_dump --schema-only --no-owner migration_test > after.sql")
-        mgr.debug("Schema dump captured", data={"file": "after.sql", "size_kb": 22})
+        mgr.debug("Schema dump captured", extra={"file": "after.sql", "size_kb": 22})
 
     with step("Compare schema diffs"):
         mgr.info("Running diff between before.sql and after.sql")
-        mgr.debug("Diff result", data={
+        mgr.debug("Diff result", extra={
             "added_lines": 15,
             "removed_lines": 0,
             "new_objects": ["order_items", "order_items_pkey"],
@@ -530,10 +533,10 @@ def test_migration_schema_dump_compare(log):
     assert True
 
 
-def test_migration_dry_run(log):
+def test_migration_dry_run():
     """Execute migration in dry-run mode without committing."""
-    mgr = log.child("migration")
-    db = log.child("database")
+    mgr = log.getChild("migration")
+    db = log.getChild("database")
 
     with step("Begin dry-run transaction"):
         db.info("BEGIN")
@@ -545,13 +548,13 @@ def test_migration_dry_run(log):
         db.debug("Column added (within transaction)")
         with step("Verify column exists in transaction"):
             db.info("SELECT column_name FROM information_schema.columns WHERE column_name = 'phone_number'")
-            db.debug("Column visible within transaction", data={"found": True})
+            db.debug("Column visible within transaction", extra={"found": True})
 
     with step("Rollback dry-run"):
         db.info("ROLLBACK")
         mgr.info("Dry-run complete -- no changes persisted")
         with step("Verify column not present after rollback"):
             db.info("SELECT column_name FROM information_schema.columns WHERE column_name = 'phone_number'")
-            db.debug("Column not found (rollback successful)", data={"found": False})
+            db.debug("Column not found (rollback successful)", extra={"found": False})
 
     assert True

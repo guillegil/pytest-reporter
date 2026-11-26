@@ -8,11 +8,14 @@ checks as verification cards.
 
 from __future__ import annotations
 
+import logging
 import random
 
 import stepdoc
 from pytest_strategy import Parameter, RNGInteger, TestArg, register, strategy
 from stepdoc import step
+
+log = logging.getLogger("dac_strategies")
 
 
 @register("dac_codes")
@@ -40,12 +43,12 @@ class _Dac:
 
 
 @strategy("dac_codes")
-def test_dac_linearity(log, verify, code: int) -> None:
+def test_dac_linearity(verify, code: int) -> None:
     """The output follows the code within half an LSB-ish (1 mV)."""
     dac = _Dac()
     with step("Program the DAC"):
         dac.write(code)
-        log.info("Code written", data={"code": code})
+        log.info("Code written", extra={"code": code})
 
     with step("Measure the output"):
         volts = dac.measure()

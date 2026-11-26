@@ -35,8 +35,8 @@ class TableData(TypedDict, total=False):
     """Schema for table entries stored in ``LogEntryDict.data``.
 
     When ``data["_type"] == "table"``, the entry represents a logged table
-    (from ``log.table()``).  The HTML renderer detects this marker and
-    renders an inline styled table instead of a JSON dump.
+    (``extra={"report_table": rows}`` on a logging record).  The HTML renderer
+    detects this marker and renders an inline styled table instead of a JSON dump.
     """
 
     _type: str  # always "table"

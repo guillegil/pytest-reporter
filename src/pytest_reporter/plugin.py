@@ -9,7 +9,7 @@ import pytest
 
 from . import _hookspecs, _stepdoc
 from ._context import RunContext
-from ._logger import Logger
+from ._log_capture import LogCapture
 from ._tabs import ReportTabs
 from .reporter import Reporter
 
@@ -38,6 +38,12 @@ def pytest_addoption(parser: Parser) -> None:
         help="Maximum retry attempts per failed test (default: 0, disabled)",
     )
     parser.addini(
+        "report_log_level",
+        default="",
+        help="With --report-dir, the lowest level of the Python logging records shown "
+        "in the report's phase and session logs (default: pytest's log_level, else INFO)",
+    )
+    parser.addini(
         "report_stepdoc",
         type="bool",
         default=True,
@@ -62,50 +68,38 @@ def pytest_configure(config: Config) -> None:
     # stepdoc options that _stepdoc.activate() may set.
     report_dir: str | None = config.getoption("--report-dir", default=None)
     if report_dir:
-        # Only register on the controller, not xdist workers
-        if not hasattr(config, "workerinput"):
+        # Logging records are captured where tests run (xdist workers too) and
+        # travel on the phase reports; the report is written on the controller.
+        controller = not hasattr(config, "workerinput")
+        logs = LogCapture(config, session=controller)
+        config.pluginmanager.register(logs, "pytest_reporter_logs")
+        if controller:
             max_retries: int = config.getoption("--report-retries", default=0)
             context = RunContext(Path(report_dir))
             _stepdoc.activate(config, context.run_dir)
             config.pluginmanager.register(
-                Reporter(config, context, max_retries=max_retries),
+                Reporter(config, context, max_retries=max_retries, logs=logs),
                 "pytest_reporter",
             )
 
 
+_LOGGING_HINT = (
+    "was removed in pytest-reporter 0.4.0: the report now shows Python logging. "
+    "Use `log = logging.getLogger(__name__)` (data with extra={...}, tables with "
+    "extra={'report_table': rows})"
+)
+
+
 @pytest.fixture
-def log(request: pytest.FixtureRequest) -> Logger:
-    """Provide a structured tree-based logger for per-test logging.
-
-    Returns a Logger instance whose entries are automatically captured
-    by the reporter at the end of each phase (setup, call, teardown).
-    """
-    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
-    if reporter is None:
-        # No report dir configured -- return a no-op logger
-        return Logger()
-
-    # Get or create logger for this test item
-    item = request.node
-    logger = getattr(item, "_reporter_logger", None)
-    if logger is None:
-        logger = Logger()
-        item._reporter_logger = logger  # dynamic attribute on pytest.Item
-    return logger
+def log() -> None:
+    """Removed in 0.4.0: log with ``logging.getLogger(__name__)`` instead."""
+    pytest.fail(f"The `log` fixture {_LOGGING_HINT}", pytrace=False)
 
 
 @pytest.fixture(scope="session")
-def session_log(request: pytest.FixtureRequest) -> Logger:
-    """Provide a structured tree-based logger for session-level logging.
-
-    Session-scoped fixtures use this to produce structured logs that
-    are written to session.log.json at the end of the test run.
-    """
-    reporter: Reporter | None = request.config.pluginmanager.get_plugin("pytest_reporter")
-    if reporter is None:
-        return Logger()
-
-    return reporter.session_logger
+def session_log() -> None:
+    """Removed in 0.4.0: log with ``logging.getLogger(...)`` instead."""
+    pytest.fail(f"The `session_log` fixture {_LOGGING_HINT}", pytrace=False)
 
 
 @pytest.fixture

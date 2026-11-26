@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import time
 
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("pages")
 
 
 # ---------------------------------------------------------------------------
@@ -29,16 +32,16 @@ def _sim_render(ms_min: float = 80, ms_max: float = 250) -> float:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def browser(log):
+def browser():
     """Simulate a headless browser session with detailed setup logging."""
-    b = log.child("browser")
+    b = log.getChild("browser")
     b.info("Launching headless Chromium 124.0.6367.91")
     b.info("GPU acceleration: software (swiftshader)")
     b.debug("User-agent: Mozilla/5.0 ... HeadlessChrome/124")
-    b.info("Default viewport set", data={"width": 1920, "height": 1080, "dpr": 1})
+    b.info("Default viewport set", extra={"width": 1920, "height": 1080, "dpr": 1})
     b.info("Network interception enabled")
     b.info("Cookie jar cleared")
-    b.info("Auth token injected", data={"user": "qa-screenshot-bot", "scope": "read"})
+    b.info("Auth token injected", extra={"user": "qa-screenshot-bot", "scope": "read"})
     b.info("Navigating to https://app.example.com")
     b.info("DOMContentLoaded in 1.3s")
     b.info("All network requests idle (0 pending)")
@@ -53,10 +56,10 @@ def browser(log):
 
 
 @pytest.fixture
-def baseline_store(log):
+def baseline_store():
     """Simulate a baseline screenshot store for visual regression."""
-    store = log.child("baseline-store")
-    store.info("Loading baseline manifests", data={"baselines": 48, "storage": "s3://screenshots/baselines"})
+    store = log.getChild("baseline-store")
+    store.info("Loading baseline manifests", extra={"baselines": 48, "storage": "s3://screenshots/baselines"})
     store.debug("Manifest checksum verified: OK")
     store.info("Baseline store ready")
     yield {"count": 48, "storage": "s3"}
@@ -99,34 +102,34 @@ THEMES = [
     PAGES,
     ids=[p[0] for p in PAGES],
 )
-def test_page_screenshot_baseline(log, browser, baseline_store, page_id, path, title):
+def test_page_screenshot_baseline(browser, baseline_store, page_id, path, title):
     """Navigate to page and compare screenshot against baseline."""
-    ss = log.child("screenshot")
+    ss = log.getChild("screenshot")
 
     with step(f"Navigate to {path}"):
-        ss.info("Navigating", data={"url": browser["base_url"] + path})
+        ss.info("Navigating", extra={"url": browser["base_url"] + path})
         ss.info("Waiting for network idle")
         ss.debug("XHR requests completed: 3")
-        ss.info("Page loaded", data={"title": title, "render_ms": _sim_render()})
+        ss.info("Page loaded", extra={"title": title, "render_ms": _sim_render()})
         with step("Wait for animations to settle"):
             ss.info("No pending CSS transitions or animations")
             ss.debug("requestAnimationFrame callback count: 0")
 
     with step("Capture full-page screenshot"):
         w, h = browser["viewport"]
-        ss.info("Viewport dimensions", data={"width": w, "height": h, "dpr": browser["dpr"]})
+        ss.info("Viewport dimensions", extra={"width": w, "height": h, "dpr": browser["dpr"]})
         with step("Scroll to capture full page"):
             ss.info("Page scroll height: 2400px")
             ss.info("Stitching 3 viewport-sized captures")
             pixel_hash = _pixel_hash(w, 2400, page_id)
-            ss.info("Screenshot captured", data={"hash": pixel_hash, "size_bytes": w * 2400 * 3})
+            ss.info("Screenshot captured", extra={"hash": pixel_hash, "size_bytes": w * 2400 * 3})
 
     with step("Compare with baseline"):
         baseline_hash = _pixel_hash(w, 2400, page_id)  # Same seed = match
-        ss.info("Baseline hash", data={"hash": baseline_hash})
-        ss.info("Current hash", data={"hash": pixel_hash})
+        ss.info("Baseline hash", extra={"hash": baseline_hash})
+        ss.info("Current hash", extra={"hash": pixel_hash})
         with step("Pixel-level diff"):
-            ss.info("Diff result", data={"changed_pixels": 0, "threshold": 50, "match": True})
+            ss.info("Diff result", extra={"changed_pixels": 0, "threshold": 50, "match": True})
             ss.info("Visual regression check: PASS")
 
     assert pixel_hash == baseline_hash
@@ -137,18 +140,18 @@ def test_page_screenshot_baseline(log, browser, baseline_store, page_id, path, t
     VIEWPORTS,
     ids=[v[0] for v in VIEWPORTS],
 )
-def test_responsive_layout(log, browser, vp_name, width, height):
+def test_responsive_layout(browser, vp_name, width, height):
     """Verify page layout at different viewport sizes."""
-    resp = log.child("responsive")
+    resp = log.getChild("responsive")
 
     with step(f"Resize viewport to {vp_name} ({width}x{height})"):
-        resp.info("Setting viewport", data={"width": width, "height": height, "name": vp_name})
+        resp.info("Setting viewport", extra={"data": {"width": width, "height": height, "name": vp_name}})
         resp.info("Triggering reflow")
         resp.debug("Layout recalculated in 12ms")
 
     with step("Navigate to dashboard"):
         resp.info("Loading /dashboard")
-        resp.info("Page rendered", data={"render_ms": _sim_render()})
+        resp.info("Page rendered", extra={"render_ms": _sim_render()})
 
     with step("Verify layout elements"):
         with step("Check navigation"):
@@ -163,23 +166,23 @@ def test_responsive_layout(log, browser, vp_name, width, height):
             if width < 1024:
                 resp.info("Sidebar: collapsed / hidden")
             else:
-                resp.info("Sidebar: visible", data={"width": 260})
+                resp.info("Sidebar: visible", extra={"width": 260})
 
         with step("Check content grid"):
             if width < 768:
-                resp.info("Grid: single column", data={"columns": 1})
+                resp.info("Grid: single column", extra={"columns": 1})
             elif width < 1366:
-                resp.info("Grid: 2 columns", data={"columns": 2})
+                resp.info("Grid: 2 columns", extra={"columns": 2})
             else:
-                resp.info("Grid: 3 columns", data={"columns": 3})
+                resp.info("Grid: 3 columns", extra={"columns": 3})
             resp.info("Card components fill available width")
 
         with step("Check footer"):
-            resp.info("Footer visible", data={"stacked": width < 768})
+            resp.info("Footer visible", extra={"stacked": width < 768})
 
     with step("Capture responsive screenshot"):
         pixel_hash = _pixel_hash(width, height, f"dashboard-{vp_name}")
-        resp.info("Screenshot captured", data={"hash": pixel_hash, "viewport": vp_name})
+        resp.info("Screenshot captured", extra={"hash": pixel_hash, "viewport": vp_name})
 
     assert width > 0 and height > 0
 
@@ -189,12 +192,12 @@ def test_responsive_layout(log, browser, vp_name, width, height):
     THEMES,
     ids=[t[0] for t in THEMES],
 )
-def test_theme_screenshot(log, browser, theme_name, colors):
+def test_theme_screenshot(browser, theme_name, colors):
     """Capture screenshots in each theme and verify color application."""
-    theme = log.child("theme")
+    theme = log.getChild("theme")
 
     with step(f"Apply theme: {theme_name}"):
-        theme.info("Setting theme", data={"theme": theme_name, "colors": colors})
+        theme.info("Setting theme", extra={"theme": theme_name, "colors": colors})
         with step("Update CSS custom properties"):
             for prop, value in colors.items():
                 theme.debug(f"--color-{prop}: {value}")
@@ -203,27 +206,27 @@ def test_theme_screenshot(log, browser, theme_name, colors):
 
     with step("Navigate to settings page"):
         theme.info("Loading /settings/general")
-        theme.info("Page rendered", data={"render_ms": _sim_render()})
+        theme.info("Page rendered", extra={"render_ms": _sim_render()})
 
     with step("Verify theme colors"):
         with step("Check background color"):
-            theme.info("body background", data={"expected": colors["bg"], "actual": colors["bg"], "match": True})
+            theme.info("body background", extra={"expected": colors["bg"], "actual": colors["bg"], "match": True})
         with step("Check text color"):
-            theme.info("body text", data={"expected": colors["text"], "actual": colors["text"], "match": True})
+            theme.info("body text", extra={"expected": colors["text"], "actual": colors["text"], "match": True})
         with step("Check primary accent"):
-            theme.info("Primary button", data={"expected": colors["primary"], "actual": colors["primary"], "match": True})
+            theme.info("Primary button", extra={"expected": colors["primary"], "actual": colors["primary"], "match": True})
             theme.info("All theme colors verified")
 
     with step("Capture themed screenshot"):
         pixel_hash = _pixel_hash(1920, 1080, f"settings-{theme_name}")
-        theme.info("Screenshot saved", data={"theme": theme_name, "hash": pixel_hash})
+        theme.info("Screenshot saved", extra={"theme": theme_name, "hash": pixel_hash})
 
     assert all(k in colors for k in ("bg", "text", "primary"))
 
 
-def test_loading_skeleton_states(log, browser):
+def test_loading_skeleton_states(browser):
     """Verify skeleton loading placeholders render before data arrives."""
-    skel = log.child("skeleton")
+    skel = log.getChild("skeleton")
 
     with step("Navigate with network throttle"):
         skel.info("Enabling network throttle: slow 3G (400kbps)")
@@ -242,54 +245,54 @@ def test_loading_skeleton_states(log, browser):
         ]
         for name, shape, width in placeholders:
             with step(f"Check skeleton: {name}"):
-                skel.info(f"Skeleton '{name}'", data={"shape": shape, "width": width, "animated": True})
+                skel.info(f"Skeleton '{name}'", extra={"shape": shape, "width": width, "animated": True})
                 skel.debug(f"CSS animation: shimmer 1.5s infinite")
-        skel.info("All skeletons visible", data={"count": len(placeholders)})
+        skel.info("All skeletons visible", extra={"count": len(placeholders)})
 
     with step("Wait for data to load"):
         skel.info("API responses arriving...")
-        skel.info("Skeleton -> real content transition", data={"transition": "fade", "duration_ms": 300})
+        skel.info("Skeleton -> real content transition", extra={"transition": "fade", "duration_ms": 300})
         skel.info("All skeletons replaced with real content")
 
     with step("Capture post-load screenshot"):
         pixel_hash = _pixel_hash(1920, 1080, "dashboard-loaded")
-        skel.info("Screenshot captured", data={"hash": pixel_hash, "state": "loaded"})
+        skel.info("Screenshot captured", extra={"hash": pixel_hash, "state": "loaded"})
 
     assert len(placeholders) == 7
 
 
-def test_error_page_404(log, browser):
+def test_error_page_404(browser):
     """Verify custom 404 error page renders correctly."""
-    err = log.child("error-page")
+    err = log.getChild("error-page")
 
     with step("Navigate to non-existent route"):
         err.info("Loading /this-page-does-not-exist")
-        err.info("Server returned 404", data={"status": 404})
+        err.info("Server returned 404", extra={"status": 404})
 
     with step("Verify error page content"):
         with step("Check illustration"):
-            err.info("404 illustration SVG rendered", data={"width": 400, "height": 300})
+            err.info("404 illustration SVG rendered", extra={"width": 400, "height": 300})
         with step("Check heading"):
-            err.info("Heading: 'Page Not Found'", data={"tag": "h1", "font_size": "2rem"})
+            err.info("Heading: 'Page Not Found'", extra={"tag": "h1", "font_size": "2rem"})
         with step("Check message"):
             err.info("Message: 'The page you are looking for might have been removed...'")
         with step("Check back button"):
-            err.info("'Go to Dashboard' button rendered", data={"href": "/dashboard", "variant": "primary"})
+            err.info("'Go to Dashboard' button rendered", extra={"href": "/dashboard", "variant": "primary"})
 
     with step("Capture error page screenshot"):
         pixel_hash = _pixel_hash(1920, 1080, "error-404")
-        err.info("Screenshot captured", data={"hash": pixel_hash})
+        err.info("Screenshot captured", extra={"hash": pixel_hash})
 
     assert True
 
 
-def test_infinite_scroll_capture(log, browser):
+def test_infinite_scroll_capture(browser):
     """Test capturing screenshots during infinite scroll loading."""
-    scroll = log.child("infinite-scroll")
+    scroll = log.getChild("infinite-scroll")
 
     with step("Load initial page"):
         scroll.info("Loading /feed")
-        scroll.info("Initial items loaded", data={"count": 20, "total_available": 200})
+        scroll.info("Initial items loaded", extra={"count": 20, "total_available": 200})
 
     batches = 3
     for batch in range(1, batches + 1):
@@ -298,23 +301,23 @@ def test_infinite_scroll_capture(log, browser):
             scroll.debug(f"IntersectionObserver triggered for sentinel element")
             with step("Load next batch"):
                 scroll.info(f"Fetching items {batch * 20 + 1} to {(batch + 1) * 20}")
-                scroll.info(f"Batch {batch} loaded", data={"new_items": 20, "total_rendered": (batch + 1) * 20})
+                scroll.info(f"Batch {batch} loaded", extra={"new_items": 20, "total_rendered": (batch + 1) * 20})
             with step("Capture scroll position screenshot"):
                 pixel_hash = _pixel_hash(1920, 1080, f"feed-batch-{batch}")
-                scroll.info(f"Screenshot at batch {batch}", data={"hash": pixel_hash})
+                scroll.info(f"Screenshot at batch {batch}", extra={"hash": pixel_hash})
 
     with step("Verify lazy-loaded images"):
         scroll.info("Checking image loading states")
-        scroll.info("Above-fold images: loaded", data={"count": 8})
-        scroll.info("Below-fold images: placeholder shown", data={"count": 12})
+        scroll.info("Above-fold images: loaded", extra={"count": 8})
+        scroll.info("Below-fold images: placeholder shown", extra={"count": 12})
         scroll.debug("loading='lazy' attribute present on all below-fold images")
 
     assert batches == 3
 
 
-def test_print_stylesheet(log, browser):
+def test_print_stylesheet(browser):
     """Verify print media query styles are applied correctly."""
-    pr = log.child("print")
+    pr = log.getChild("print")
 
     with step("Emulate print media"):
         pr.info("Setting CSS media to 'print'")
@@ -333,18 +336,18 @@ def test_print_stylesheet(log, browser):
             pr.info("Text color: black")
             pr.debug("Link colors preserved with underline")
         with step("Check page margins"):
-            pr.info("@page margins", data={"top": "1cm", "right": "1.5cm", "bottom": "1cm", "left": "1.5cm"})
+            pr.info("@page margins", extra={"top": "1cm", "right": "1.5cm", "bottom": "1cm", "left": "1.5cm"})
 
     with step("Capture print preview"):
         pixel_hash = _pixel_hash(794, 1123, "print-preview")  # A4 at 96dpi
-        pr.info("Print preview captured", data={"hash": pixel_hash, "paper": "A4", "dpi": 96})
+        pr.info("Print preview captured", extra={"hash": pixel_hash, "paper": "A4", "dpi": 96})
 
     assert True
 
 
-def test_animation_frame_capture(log, browser):
+def test_animation_frame_capture(browser):
     """Capture keyframes of a CSS animation sequence."""
-    anim = log.child("animation")
+    anim = log.getChild("animation")
 
     with step("Set up animation observer"):
         anim.info("Target element: .hero-banner")
@@ -357,7 +360,7 @@ def test_animation_frame_capture(log, browser):
             with step(f"Frame at {pct}%"):
                 opacity = round(pct / 100, 2)
                 translate_y = round(20 * (1 - pct / 100), 1)
-                anim.info(f"Keyframe {pct}%", data={
+                anim.info(f"Keyframe {pct}%", extra={
                     "opacity": opacity,
                     "translateY": f"{translate_y}px",
                     "timestamp_ms": pct * 6,
@@ -374,61 +377,61 @@ def test_animation_frame_capture(log, browser):
     assert len(keyframes) == 5
 
 
-def test_retina_display_rendering(log, browser):
+def test_retina_display_rendering(browser):
     """Verify crisp rendering at 2x device pixel ratio."""
-    retina = log.child("retina")
+    retina = log.getChild("retina")
 
     with step("Configure 2x DPR viewport"):
-        retina.info("Setting viewport", data={"width": 1440, "height": 900, "dpr": 2})
+        retina.info("Setting viewport", extra={"width": 1440, "height": 900, "dpr": 2})
         retina.info("Effective render size: 2880x1800")
         retina.debug("Image srcset selection will prefer 2x variants")
 
     with step("Navigate to dashboard"):
         retina.info("Loading /dashboard")
-        retina.info("Page rendered", data={"render_ms": _sim_render()})
+        retina.info("Page rendered", extra={"render_ms": _sim_render()})
 
     with step("Verify image sharpness"):
         with step("Check logo"):
-            retina.info("Logo: loaded 2x variant", data={"natural_size": "200x50", "display_size": "100x25", "ratio": 2})
+            retina.info("Logo: loaded 2x variant", extra={"natural_size": "200x50", "display_size": "100x25", "ratio": 2})
         with step("Check icons"):
             retina.info("SVG icons: resolution-independent (sharp at any DPR)")
         with step("Check avatar images"):
-            retina.info("Avatar: loaded 2x variant", data={"natural_size": "160x160", "display_size": "80x80"})
+            retina.info("Avatar: loaded 2x variant", extra={"natural_size": "160x160", "display_size": "80x80"})
 
     with step("Capture retina screenshot"):
         pixel_hash = _pixel_hash(2880, 1800, "dashboard-retina-2x")
-        retina.info("Screenshot at 2x DPR", data={"hash": pixel_hash, "canvas_size": "2880x1800"})
-        retina.info("File size significantly larger than 1x", data={"estimated_kb": 2880 * 1800 * 3 // 1024})
+        retina.info("Screenshot at 2x DPR", extra={"hash": pixel_hash, "canvas_size": "2880x1800"})
+        retina.info("File size significantly larger than 1x", extra={"estimated_kb": 2880 * 1800 * 3 // 1024})
 
     assert True
 
 
 @pytest.mark.skip(reason="Percy snapshot service not configured")
-def test_percy_visual_review(log, browser):
+def test_percy_visual_review(browser):
     """Submit screenshot to Percy for visual review."""
     pass
 
 
 @pytest.mark.skip(reason="Lighthouse CI integration pending")
-def test_lighthouse_performance_score(log, browser):
+def test_lighthouse_performance_score(browser):
     """Run Lighthouse and assert performance score >= 90."""
     pass
 
 
-def test_toast_notification_lifecycle(log, browser):
+def test_toast_notification_lifecycle(browser):
     """Capture toast notification appearance and auto-dismiss."""
-    toast = log.child("toast")
+    toast = log.getChild("toast")
 
     with step("Trigger success toast"):
-        toast.info("Dispatching toast event", data={"type": "success", "message": "Settings saved!"})
+        toast.info("Dispatching toast event", extra={"data": {"type": "success", "message": "Settings saved!"}})
         with step("Render toast"):
-            toast.info("Toast element created", data={
+            toast.info("Toast element created", extra={
                 "position": "top-right", "z_index": 9999, "bg": "#22C55E",
             })
             toast.debug("Entrance animation: slideIn from right, 200ms")
         with step("Capture visible state"):
             pixel_hash = _pixel_hash(400, 80, "toast-success")
-            toast.info("Toast screenshot", data={"hash": pixel_hash})
+            toast.info("Toast screenshot", extra={"hash": pixel_hash})
 
     with step("Wait for auto-dismiss"):
         toast.info("Auto-dismiss timer: 5000ms")
@@ -441,33 +444,33 @@ def test_toast_notification_lifecycle(log, browser):
         toast.info("Triggering 3 toasts in quick succession")
         for i in range(3):
             with step(f"Toast {i + 1} rendered"):
-                toast.info(f"Toast {i + 1}", data={"offset_top": i * 88, "stacked": True})
-        toast.info("Stack spacing verified", data={"gap": 8, "total_height": 3 * 80 + 2 * 8})
+                toast.info(f"Toast {i + 1}", extra={"offset_top": i * 88, "stacked": True})
+        toast.info("Stack spacing verified", extra={"gap": 8, "total_height": 3 * 80 + 2 * 8})
 
     assert True
 
 
-def test_modal_screenshot_overlay(log, browser):
+def test_modal_screenshot_overlay(browser):
     """Capture modal with backdrop overlay."""
-    modal = log.child("modal")
+    modal = log.getChild("modal")
 
     with step("Open confirmation modal"):
         modal.info("Triggering modal via button click")
-        modal.info("Backdrop rendered", data={"opacity": 0.5, "bg": "rgba(0,0,0,0.5)"})
+        modal.info("Backdrop rendered", extra={"opacity": 0.5, "bg": "rgba(0,0,0,0.5)"})
         with step("Animate modal entrance"):
             modal.info("Modal scale: 0.95 -> 1.0 over 200ms")
 
     with step("Capture modal screenshot"):
         with step("Capture with backdrop"):
             pixel_hash = _pixel_hash(1920, 1080, "modal-with-backdrop")
-            modal.info("Full page with modal", data={"hash": pixel_hash})
+            modal.info("Full page with modal", extra={"hash": pixel_hash})
         with step("Capture modal element only"):
             modal_hash = _pixel_hash(480, 320, "modal-content-only")
-            modal.info("Modal content", data={"hash": modal_hash, "width": 480, "height": 320})
+            modal.info("Modal content", extra={"hash": modal_hash, "width": 480, "height": 320})
 
     with step("Verify focus trap"):
         modal.info("Tab key pressed 5 times")
-        modal.info("Focus cycles within modal", data={"focusable_count": 3, "cycle_detected": True})
+        modal.info("Focus cycles within modal", extra={"focusable_count": 3, "cycle_detected": True})
         modal.debug("Focus order: Close button -> Cancel -> Confirm -> Close button")
 
     assert True
@@ -477,34 +480,34 @@ def test_modal_screenshot_overlay(log, browser):
 # Flaky / retry tests
 # ---------------------------------------------------------------------------
 
-def test_screenshot_service_flaky(log, browser, flaky_service):
+def test_screenshot_service_flaky(browser, flaky_service):
     """Screenshot comparison service has intermittent outages."""
-    ss = log.child("screenshot-service")
+    ss = log.getChild("screenshot-service")
 
     with step("Capture current screenshot"):
         ss.info("Navigating to /dashboard")
-        ss.info("Screenshot captured", data={"width": 1920, "height": 1080})
+        ss.info("Screenshot captured", extra={"width": 1920, "height": 1080})
 
     with step("Upload to comparison service"):
         ss.info("Connecting to screenshot comparison API")
         result = flaky_service("screenshot_compare_api")
-        ss.info("Upload successful", data={"result": result})
+        ss.info("Upload successful", extra={"result": result})
 
     with step("Retrieve comparison result"):
-        ss.info("Comparison complete", data={"diff_pct": 0.0, "status": "match"})
+        ss.info("Comparison complete", extra={"diff_pct": 0.0, "status": "match"})
         ss.info("Visual regression: PASS")
 
     assert result == "ok:screenshot_compare_api"
 
 
-def test_baseline_storage_flaky(log, browser, baseline_store, flaky_service):
+def test_baseline_storage_flaky(browser, baseline_store, flaky_service):
     """Baseline storage S3 bucket has occasional timeouts."""
-    store = log.child("baseline-s3")
+    store = log.getChild("baseline-s3")
 
     with step("Fetch baseline from S3"):
         store.info("Requesting baseline: s3://screenshots/baselines/dashboard.png")
         result = flaky_service("s3_baseline_fetch")
-        store.info("Baseline retrieved", data={"result": result, "size_kb": 847})
+        store.info("Baseline retrieved", extra={"result": result, "size_kb": 847})
 
     with step("Compare with current"):
         store.info("Running pixel diff")
@@ -514,22 +517,22 @@ def test_baseline_storage_flaky(log, browser, baseline_store, flaky_service):
     assert "ok" in result
 
 
-def test_cdn_asset_loading_flaky(log, browser, flaky_service):
+def test_cdn_asset_loading_flaky(browser, flaky_service):
     """CDN delivering page assets has intermittent failures."""
-    cdn = log.child("cdn")
+    cdn = log.getChild("cdn")
 
     with step("Load page assets from CDN"):
         cdn.info("Requesting main.css from cdn.example.com")
         cdn.info("Requesting main.js from cdn.example.com")
         result = flaky_service("cdn_asset_delivery")
-        cdn.info("All assets loaded", data={"result": result})
+        cdn.info("All assets loaded", extra={"result": result})
 
     with step("Verify page rendered with assets"):
         cdn.info("CSS applied: layout matches expected")
         cdn.info("JS initialized: interactive elements responding")
         with step("Capture screenshot with full assets"):
             pixel_hash = _pixel_hash(1920, 1080, "dashboard-with-cdn-assets")
-            cdn.info("Screenshot captured", data={"hash": pixel_hash})
+            cdn.info("Screenshot captured", extra={"hash": pixel_hash})
 
     assert result.startswith("ok:")
 
@@ -538,9 +541,9 @@ def test_cdn_asset_loading_flaky(log, browser, flaky_service):
 # Deliberate failures
 # ---------------------------------------------------------------------------
 
-def test_visual_regression_mismatch(log, browser, baseline_store):
+def test_visual_regression_mismatch(browser, baseline_store):
     """Visual diff that deliberately detects a regression."""
-    diff = log.child("visual-diff")
+    diff = log.getChild("visual-diff")
 
     with step("Capture current page"):
         diff.info("Loading /dashboard")
@@ -549,10 +552,10 @@ def test_visual_regression_mismatch(log, browser, baseline_store):
 
     with step("Compare with baseline"):
         baseline_hash = _pixel_hash(1920, 1080, "dashboard-v1")  # Different seed = mismatch
-        diff.info("Baseline hash", data={"hash": baseline_hash})
-        diff.info("Current hash", data={"hash": current_hash})
+        diff.info("Baseline hash", extra={"hash": baseline_hash})
+        diff.info("Current hash", extra={"hash": current_hash})
         diff.warning("Hashes do not match!")
-        diff.error("Visual regression detected", data={
+        diff.error("Visual regression detected", extra={
             "changed_pixels": 14832,
             "total_pixels": 1920 * 1080,
             "diff_pct": round(14832 / (1920 * 1080) * 100, 2),
@@ -563,9 +566,9 @@ def test_visual_regression_mismatch(log, browser, baseline_store):
     )
 
 
-def test_page_load_performance(log, browser):
+def test_page_load_performance(browser):
     """Page load time exceeds acceptable threshold -- deliberately fails."""
-    perf = log.child("performance")
+    perf = log.getChild("performance")
 
     with step("Measure page load timing"):
         perf.info("Navigating to /analytics (heavy page)")
@@ -577,12 +580,12 @@ def test_page_load_performance(log, browser):
             "total_blocking_time_ms": 890,
         }
         for metric, value in metrics.items():
-            perf.info(f"{metric}: {value}ms", data={metric: value})
+            perf.info(f"{metric}: {value}ms", extra={metric: value})
 
     with step("Assert performance budgets"):
         perf.info("LCP threshold: 2500ms")
         perf.warning(f"LCP actual: {metrics['lcp_ms']}ms -- OVER BUDGET")
-        perf.error("Performance budget exceeded", data={
+        perf.error("Performance budget exceeded", extra={
             "metric": "LCP",
             "actual": metrics["lcp_ms"],
             "budget": 2500,

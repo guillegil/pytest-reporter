@@ -17,7 +17,7 @@ from ._context import RunContext
 from ._html_builder._degraded import build_degraded_report
 from ._json_writer import write_session_log_json, write_test_log_json
 from ._junit_writer import write_junit_xml
-from ._logger import Logger
+from ._log_capture import LogCapture
 from ._phase_capture import capture_phase_logs, write_run_finish_files
 from ._report_builder import build_html_data
 from ._retry import run_with_retries
@@ -36,11 +36,19 @@ if TYPE_CHECKING:
 class Reporter:
     """Orchestrates data collection and report generation."""
 
-    def __init__(self, config: Config, context: RunContext, *, max_retries: int = 0) -> None:
+    def __init__(
+        self,
+        config: Config,
+        context: RunContext,
+        *,
+        max_retries: int = 0,
+        logs: LogCapture | None = None,
+    ) -> None:
         self.config = config
         self.context = context
         self.collector = DataCollector()
-        self.session_logger = Logger()
+        # Python logging records: per phase on the reports, the rest here
+        self.logs = logs
         self.max_retries = max_retries
         self._tee: TeeFile | None = None
         self._start_time: float = 0.0
@@ -54,8 +62,6 @@ class Reporter:
         self.strategy_export: dict[str, Any] | None = None
         # procedure.json of each finished run (first attempt): nodeid -> dict
         self._procedures: dict[str, dict[str, Any]] = {}
-        # Per-test loggers: nodeid -> Logger
-        self._test_loggers: dict[str, Logger] = {}
         # Current retry write paths: nodeid -> Path (for retry subfolder)
         self._retry_paths: dict[str, Path] = {}
         # pytest-verifier checks of each run (first attempt), from
@@ -74,6 +80,10 @@ class Reporter:
         # Mutable dict for manual seed override via report_seed fixture
         # Set report_seed["value"] = <int|str> to override auto-detected seed.
         self.seed_store: dict[str, object] = {}
+
+    def session_entries(self) -> list[dict[str, Any]]:
+        """The logging records captured outside tests (the session log)."""
+        return self.logs.session_entries() if self.logs is not None else []
 
     def get_current_run_dir(self, nodeid: str) -> Path | None:
         """Get the current write directory for a test (retry-aware)."""
@@ -257,18 +267,13 @@ class Reporter:
         self.collector.register_items(items)
 
     def _do_runtest_setup(self, item: Item) -> None:
-        """Real body of pytest_runtest_setup: fresh logger, steps and checks per attempt."""
+        """Real body of pytest_runtest_setup: fresh steps, checks and tabs per attempt."""
         nodeid = item.nodeid
         if nodeid not in self.collector._run_map:
             return
 
         # Store item reference for stash access at finish time
         self._items[nodeid] = item
-
-        # Create fresh logger
-        logger = Logger()
-        self._test_loggers[nodeid] = logger
-        item._reporter_logger = logger  # type: ignore[attr-defined]
 
         # Start a new attempt: its own stepdoc steps and verifier checks
         self.steps.begin(nodeid)
@@ -330,7 +335,7 @@ class Reporter:
         )
 
         # Write session.log.json
-        session_entries = self.session_logger.serialize().get("entries", [])
+        session_entries = self.session_entries()
         write_session_log_json(
             self.context.run_dir / "session.log.json",
             self._session_start_iso,

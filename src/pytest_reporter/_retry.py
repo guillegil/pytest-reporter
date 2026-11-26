@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ._context import sanitize_path_component
 from ._json_writer import (
@@ -12,8 +12,8 @@ from ._json_writer import (
     write_phase_log,
     write_procedure_json,
 )
-from ._logger import Logger
-from ._phase_capture import flush_table_artifacts, note_verify_checks
+from ._log_capture import phase_entries
+from ._phase_capture import note_verify_checks, write_table_artifacts
 from ._types import PhaseData, RetryData
 
 if TYPE_CHECKING:
@@ -66,20 +66,10 @@ def run_with_retries(
     # Run the test normally first (log=False so we control report dispatch).
     reports = runtestprotocol(item, nextitem=nextitem, log=False)
 
-    # Process reports: since log=False, the logger was NOT reset between
-    # phases.  All entries accumulated during the full run belong to the
-    # call phase (setup/teardown only run fixture code, not user code).
-    # Capture entries once and assign to the call-phase report.
-    logger = reporter._test_loggers.get(nodeid)
-    all_entries: list[dict[str, Any]] = []
-    if logger is not None:
-        all_entries = logger.serialize().get("entries", [])
-        run_dir = reporter._get_run_dir(nodeid)
-        flush_table_artifacts(logger, run_dir)
-
+    # Each phase report carries the logging records of its phase.
     for report in reports:
-        entries = all_entries if report.when == "call" else []
-        reporter.collector.record_phase(report, entries=entries)
+        write_table_artifacts(report, reporter._get_run_dir(nodeid))
+        reporter.collector.record_phase(report, entries=phase_entries(report))
         note_verify_checks(reporter, report)
         phase = reporter.collector.get_phase(nodeid, report.when)
         if phase is not None:
@@ -145,12 +135,7 @@ def run_with_retries(
         # Set retry path so writes go to retry subfolder
         reporter._retry_paths[nodeid] = retry_dir
 
-        # Create fresh logger for retry (steps and checks restart at the
-        # attempt's runtest_setup)
-        logger = Logger()
-        reporter._test_loggers[nodeid] = logger
-        item._reporter_logger = logger  # type: ignore[attr-defined]
-
+        # Steps, checks and log records restart at the attempt's runtest_setup
         # Re-execute the test. Use the REAL nextitem (not None): this tears down
         # only function-scoped fixtures (so setup re-runs fresh next attempt and
         # parametrize funcargs are repopulated) while KEEPING module/session
@@ -161,11 +146,8 @@ def run_with_retries(
 
         # Write retry phase logs directly to disk (don't overwrite collector)
         for report in retry_reports:
-            retry_entries: list[dict[str, Any]] = []
-            if logger is not None:
-                serialized = logger.serialize()
-                retry_entries = serialized.get("entries", [])
-                flush_table_artifacts(logger, retry_dir)
+            retry_entries = phase_entries(report)
+            write_table_artifacts(report, retry_dir)
 
             end_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             start_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00")) - timedelta(

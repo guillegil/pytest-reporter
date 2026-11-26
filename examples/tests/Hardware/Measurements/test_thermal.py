@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import json
 import math
 import random
@@ -9,6 +10,8 @@ import random
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("thermal")
 
 
 # ---------------------------------------------------------------------------
@@ -31,17 +34,17 @@ def _read_fan_rpm(fan: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_cpu_temperature_idle(log, verify, testbench):
+def test_cpu_temperature_idle(verify, testbench):
     """Verify CPU temperature at idle is within safe limits."""
-    thermal = log.child("thermal")
+    thermal = log.getChild("thermal")
 
     with step("Read ambient temperature"):
         ambient = _read_temperature("ambient")
-        thermal.info("Ambient", data={"temp_c": ambient})
+        thermal.info("Ambient", extra={"temp_c": ambient})
 
     with step("Read CPU temperature"):
         cpu_temp = _read_temperature("cpu")
-        thermal.info("CPU temperature", data={"temp_c": cpu_temp, "state": "idle"})
+        thermal.info("CPU temperature", extra={"temp_c": cpu_temp, "state": "idle"})
 
     with step("CPU temp below 70 °C"):
         verify.less(cpu_temp, 70.0, name="CPU idle temp", units="°C")
@@ -50,21 +53,21 @@ def test_cpu_temperature_idle(log, verify, testbench):
         verify.greater(cpu_temp, ambient, name="CPU > ambient", units="°C")
 
 
-def test_gpu_temperature_under_load(log, verify, testbench):
+def test_gpu_temperature_under_load(verify, testbench):
     """Verify GPU temperature under synthetic load."""
-    thermal = log.child("thermal")
+    thermal = log.getChild("thermal")
 
     with step("Apply GPU stress test"):
         thermal.info("Starting FurMark 30-second burn")
         for sec in [5, 10, 15, 20, 25, 30]:
             with step(f"t = {sec}s"):
                 temp = _read_temperature("gpu") + sec * 0.3
-                thermal.info("GPU temp", data={"temp_c": round(temp, 1), "elapsed_s": sec})
+                thermal.info("GPU temp", extra={"temp_c": round(temp, 1), "elapsed_s": sec})
 
     final_temp = round(_read_temperature("gpu") + 9.0, 1)
 
     with step("Read final temperature"):
-        thermal.info("Final GPU temperature", data={"temp_c": final_temp})
+        thermal.info("Final GPU temperature", extra={"temp_c": final_temp})
 
     with step("GPU below 85 °C after stress"):
         verify.less(final_temp, 85.0, name="GPU stress temp", units="°C")
@@ -75,9 +78,9 @@ def test_gpu_temperature_under_load(log, verify, testbench):
 # ---------------------------------------------------------------------------
 
 
-def test_fan_speeds_and_report(log, verify, report_artifacts):
+def test_fan_speeds_and_report(verify, report_artifacts):
     """Verify fan speeds and save a JSON report as artifact."""
-    cooling = log.child("cooling")
+    cooling = log.getChild("cooling")
 
     fans = ["cpu_fan", "case_fan_1", "case_fan_2", "psu_fan"]
     readings = {}
@@ -87,7 +90,7 @@ def test_fan_speeds_and_report(log, verify, report_artifacts):
             rpm = _read_fan_rpm(fan)
             readings[fan] = rpm
             with step(f"{fan}: {rpm} RPM"):
-                cooling.info(f"{fan} speed", data={"rpm": rpm})
+                cooling.info(f"{fan} speed", extra={"rpm": rpm})
 
     with step("CPU fan above 1500 RPM"):
         verify.greater(readings["cpu_fan"], 1500, name="CPU fan speed", units="RPM")
@@ -99,11 +102,8 @@ def test_fan_speeds_and_report(log, verify, report_artifacts):
         verify.greater(readings["psu_fan"], 700, name="PSU fan speed", units="RPM")
 
     # Log fan readings as a table
-    cooling.table(
-        [{"Fan": fan, "RPM": rpm, "Status": "OK" if rpm > 700 else "WARNING"}
-         for fan, rpm in readings.items()],
-        name="fan_speed_readings",
-    )
+    cooling.info("fan_speed_readings", extra={"report_table": [{"Fan": fan, "RPM": rpm, "Status": "OK" if rpm > 700 else "WARNING"}
+         for fan, rpm in readings.items()]})
 
     # Save fan speed report as artifact
     report_artifacts.mkdir(parents=True, exist_ok=True)
@@ -121,9 +121,9 @@ def test_fan_speeds_and_report(log, verify, report_artifacts):
 # ---------------------------------------------------------------------------
 
 
-def test_thermal_profile(log, verify, report_artifacts, testbench):
+def test_thermal_profile(verify, report_artifacts, testbench):
     """Run a thermal profile test and generate an HTML artifact with inline chart."""
-    thermal = log.child("thermal")
+    thermal = log.getChild("thermal")
 
     profile = []
     with step("Run 60-second thermal profile"):
@@ -133,10 +133,10 @@ def test_thermal_profile(log, verify, report_artifacts, testbench):
             profile.append({"time_s": t, "cpu_c": round(cpu, 1), "gpu_c": round(gpu, 1)})
             if t % 15 == 0:
                 with step(f"t={t}s: CPU={cpu:.1f}°C, GPU={gpu:.1f}°C"):
-                    thermal.info("Sample", data=profile[-1])
+                    thermal.info("Sample", extra={"data": profile[-1]})
 
     # Log the full profile as a table
-    thermal.table(profile, name="thermal_profile")
+    thermal.info("thermal_profile", extra={"report_table": profile})
 
     max_cpu = max(p["cpu_c"] for p in profile)
     max_gpu = max(p["gpu_c"] for p in profile)
@@ -189,7 +189,7 @@ svg{{background:#131C2E;border-radius:8px}}
 </body></html>"""
 
     (report_artifacts / "thermal_profile.html").write_text(html)
-    thermal.info("Thermal profile artifact saved", data={"file": "thermal_profile.html"})
+    thermal.info("Thermal profile artifact saved", extra={"file": "thermal_profile.html"})
 
 
 # ---------------------------------------------------------------------------
@@ -207,14 +207,14 @@ svg{{background:#131C2E;border-radius:8px}}
     ],
     ids=["CPU", "GPU", "VRM", "Heatsink"],
 )
-def test_sensor_limits(log, verify, sensor, max_temp):
+def test_sensor_limits(verify, sensor, max_temp):
     """Verify each thermal sensor is within its rated limit."""
-    thermal = log.child("thermal")
+    thermal = log.getChild("thermal")
 
     temp = _read_temperature(sensor)
 
     with step(f"Read {sensor} sensor"):
-        thermal.info(f"{sensor} temperature", data={"temp_c": temp})
+        thermal.info(f"{sensor} temperature", extra={"temp_c": temp})
 
     with step(f"{sensor} below {max_temp} °C"):
         verify.less(temp, max_temp, name=f"{sensor} temp", units="°C")
@@ -226,15 +226,15 @@ def test_sensor_limits(log, verify, sensor, max_temp):
 
 
 @pytest.mark.skip(reason="Liquid cooling loop not installed in this test fixture")
-def test_liquid_cooling_flow_rate(log, verify):
+def test_liquid_cooling_flow_rate(verify):
     """Verify coolant flow rate through the liquid cooling loop."""
     log.info("This should not execute")
 
 
 @pytest.mark.xfail(reason="VRM thermal pad needs replacement -- known issue #THERM-445")
-def test_vrm_thermal_throttling(log, verify, testbench):
+def test_vrm_thermal_throttling(verify, testbench):
     """VRM should not throttle below 100 W load -- expected fail with degraded pad."""
-    thermal = log.child("thermal")
+    thermal = log.getChild("thermal")
 
     with step("Apply 100 W CPU load"):
         thermal.info("Stress test started")
@@ -242,7 +242,7 @@ def test_vrm_thermal_throttling(log, verify, testbench):
     vrm_temp = _read_temperature("vrm") + 25.0  # Simulate degraded pad
 
     with step("Check VRM temperature"):
-        thermal.info("VRM temp", data={"temp_c": vrm_temp})
+        thermal.info("VRM temp", extra={"temp_c": vrm_temp})
 
     with step("VRM below 60 °C"):
         verify.less(vrm_temp, 60.0, name="VRM under load", units="°C")
@@ -255,14 +255,14 @@ def test_vrm_thermal_throttling(log, verify, testbench):
 # ---------------------------------------------------------------------------
 
 
-def test_ambient_temperature_range(log, verify):
+def test_ambient_temperature_range(verify):
     """Ambient temp must be 20-25 °C per lab spec -- deliberate failure."""
-    thermal = log.child("thermal")
+    thermal = log.getChild("thermal")
 
     ambient = _read_temperature("ambient") + 5.0  # Push above range
 
     with step("Read lab ambient"):
-        thermal.info("Ambient reading", data={"temp_c": ambient})
+        thermal.info("Ambient reading", extra={"temp_c": ambient})
 
     with step("Ambient in [20, 25] °C"):
         verify.between(ambient, 20.0, 25.0, name="Lab ambient", units="°C")

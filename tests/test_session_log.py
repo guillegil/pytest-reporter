@@ -42,54 +42,49 @@ def test_session_log_empty_when_unused(pytester: Pytester) -> None:
     assert data["entries"] == []
 
 
-def test_session_log_with_entries(pytester: Pytester) -> None:
+def test_session_log_has_records_from_outside_tests(pytester: Pytester) -> None:
+    """Logging outside any test phase (here: a plugin hook) goes to the session log."""
     pytester.makepyfile(
         conftest="""
-import pytest
+import logging
 
-@pytest.fixture(scope="session")
-def instrument(session_log):
-    tb = session_log.child("testbench")
-    tb.info("Discovering instruments")
-    psu = tb.child("psu")
-    psu.info("Connected", data={"model": "Keysight E36312A"})
-    yield "instrument"
-    tb.info("Disconnecting")
+def pytest_sessionstart(session):
+    logging.getLogger("testbench.psu").warning("Connected", extra={"model": "E36312A"})
+
+def pytest_collection_finish(session):
+    logging.getLogger("testbench").warning("Collected")
 """,
         test_session="""
-def test_uses_instrument(instrument):
-    assert instrument == "instrument"
+def test_pass():
+    pass
 """,
     )
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
-    data = json.loads((runs[0] / "session.log.json").read_text())
-
-    entries = data["entries"]
-    assert len(entries) >= 2
-    assert entries[0]["source"] == ["testbench"]
-    assert entries[0]["msg"] == "Discovering instruments"
-    assert entries[1]["source"] == ["testbench", "psu"]
-    assert entries[1]["msg"] == "Connected"
-    assert entries[1]["data"]["model"] == "Keysight E36312A"
+    entries = json.loads((runs[0] / "session.log.json").read_text())["entries"]
+    by_msg = {e["msg"]: e for e in entries}
+    assert by_msg["Collected"]["source"] == ["testbench"]
+    assert by_msg["Connected"]["source"] == ["testbench", "psu"]
+    assert by_msg["Connected"]["level"] == "WARNING"
+    assert by_msg["Connected"]["data"] == {"model": "E36312A"}
 
 
 def test_session_log_independent_from_test_log(pytester: Pytester) -> None:
-    """session_log and log fixtures produce separate outputs."""
+    """Records of a test phase never reach the session log."""
     pytester.makepyfile(
         conftest="""
-import pytest
+import logging
 
-@pytest.fixture(scope="session")
-def setup_once(session_log):
-    session_log.info("session setup")
-    yield
+def pytest_collection_finish(session):
+    logging.getLogger("session").warning("session setup")
 """,
         test_independent="""
-def test_a(setup_once, log):
-    log.info("test log entry")
+import logging
+
+def test_a():
+    logging.getLogger("t").warning("test log entry")
 """,
     )
     result = pytester.runpytest("--report-dir=reports")
@@ -97,7 +92,22 @@ def test_a(setup_once, log):
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     session_data = json.loads((runs[0] / "session.log.json").read_text())
-    # Session log should have the session entry
     assert any(e["msg"] == "session setup" for e in session_data["entries"])
-    # Session log should NOT have the test entry
     assert not any(e["msg"] == "test log entry" for e in session_data["entries"])
+
+
+def test_session_log_keeps_info_records(pytester: Pytester) -> None:
+    """The session log uses the same level as the phases (INFO by default)."""
+    pytester.makeconftest("""
+import logging
+
+def pytest_sessionstart(session):
+    logging.getLogger("lab").info("Bench session started")
+    logging.getLogger("lab").debug("hidden")
+""")
+    pytester.makepyfile("def test_pass(): pass")
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+
+    runs = list((pytester.path / "reports" / "runs").iterdir())
+    entries = json.loads((runs[0] / "session.log.json").read_text())["entries"]
+    assert [e["msg"] for e in entries] == ["Bench session started"]
