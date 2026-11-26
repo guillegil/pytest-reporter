@@ -166,7 +166,14 @@ const texts = (node, cls) => findAll(node, cls).map(n => n.textContent);
 function _appendCheckInline() {}
 """
 
-_FUNCTIONS = ("el", "renderFormattedDesc", "renderNode", "renderEachValues", "renderGenericNode")
+_FUNCTIONS = (
+    "el",
+    "renderFormattedDesc",
+    "renderNode",
+    "renderEachValues",
+    "renderBranches",
+    "renderGenericNode",
+)
 
 
 def _function(name: str) -> str:

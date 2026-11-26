@@ -66,6 +66,7 @@ def _run(script: str) -> Any:  # noqa: ANN401
                 "renderFormattedDesc",
                 "renderNode",
                 "renderEachValues",
+                "renderBranches",
                 "checkNote",
             )
         ]

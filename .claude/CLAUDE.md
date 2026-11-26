@@ -350,6 +350,18 @@ node may hold `substeps` of the same shape.
   `Verify item [3]: <code>`. JS: `renderEachValues` (a closed `<details>` of every item's
   value, failed ones marked; positions of a cut list count from the end); the Generic view
   shows the line without items or values.
+- A guarded check (pytest-verifier's `guard`) that stepdoc read from the source
+  (`Check.branches`: each `Branch` with `label`, `condition` as written, `holds`, `taken`,
+  `default`, the built `check`, the `wording` of its check as written and, for one never
+  built, its call's `source`) reads `Verify '<name>', depending on the condition:` (no
+  `[→ …]`, `result` or `detail`; `_stepdoc._guarded`) and gets `branches` (`_branches`):
+  `opening` (`If` / `Else if` / `Otherwise`), `condition`, `label` (`branch N` when neither
+  is known), `default`, `taken`, `state` (`taken`, `condition false` before the branch taken,
+  else `not evaluated`), the line (`description[_segments]`: the check this run built, else
+  its wording; `generic[_segments]`: the wording) and, for the branch taken, its `outcome`,
+  `result` and `detail`. The node also gets the record's `location`. JS `renderBranches`:
+  one line per branch under the check, the one taken bold with its dot and result, the
+  others greyed with their `state`; the Generic view lists them alike.
 - `doc` (top level, next to `steps`, only when present): the test's docstring as stepdoc
   parsed it, `{"description", "objective", "acceptance"}` (only the keys with text; list
   markers and backticks kept). From stepdoc's `pytest_stepdoc_test_doc(item, doc)` hook
@@ -398,6 +410,13 @@ node may hold `substeps` of the same shape.
   (`operandNameEl`). A check with a `name=` of its own also shows `actual_name` beside its
   label, in the card header, the failure strip and the failure reason (`checkOperand`;
   without `name=` the name is that text already).
+- A `guard` card lists its branches (`renderGuardBody`): `if` / `elif` / `else`, the label,
+  the condition's truth (`true`, `false`, `not evaluated`), the evaluated one expanded. With
+  stepdoc, `renderCheckResults(checks, procedure)` takes the branches stepdoc read for each
+  guard call from the procedure's guarded check nodes, by the record's `location`
+  (`collectGuardSources`; the source is the same every time the call runs): each branch then
+  shows its condition as written, and a branch whose lazy check was never built (the default
+  too, which the record then lacks) shows the check as written, `not run` (`renderUnbuilt`).
 
 ### Strategy export (pytest-strategies 4.3+)
 

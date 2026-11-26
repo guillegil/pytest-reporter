@@ -1706,7 +1706,7 @@ function showSubTab(tab, run) {
     if (checks.length === 0) {
       content.appendChild(el('div', {style:'color:var(--c-text3);font-size:var(--fs-md);padding:8px 0'}, 'No verification checks.'));
     } else {
-      content.appendChild(renderCheckResults(checks));
+      content.appendChild(renderCheckResults(checks, run.procedure));
     }
 
   } else if (tab === 'artifacts') {
@@ -1874,7 +1874,7 @@ function showSubTab(tab, run) {
         // Verification checks of this attempt
         if (attempt.check_results && attempt.check_results.length > 0) {
           body.appendChild(el('h4', {style:'margin-top:12px;font-size:var(--fs-sm);color:var(--c-text2)'}, 'Checks'));
-          body.appendChild(renderCheckResults(attempt.check_results));
+          body.appendChild(renderCheckResults(attempt.check_results, attempt.procedure));
         }
         // Custom tabs of this attempt, once its card is open: a frame that
         // loads while hidden has no size to report
@@ -2338,6 +2338,8 @@ function renderNode(node, depth, generic) {
   }
   const eachValues = renderEachValues(node.each);
   if (eachValues) row.appendChild(eachValues);
+  const branches = renderBranches(node.branches, false);
+  if (branches) row.appendChild(branches);
   if (hasKids) {
     const nextDepth = depth < 3 ? depth + 1 : 3;
     const kids = el('div', {className: 'procedure-substeps'});
@@ -2379,6 +2381,54 @@ function renderEachValues(each) {
   return box;
 }
 
+// The branches of a guarded check (pytest-verifier's guard, which stepdoc reads
+// from the source): one line each, "If <condition> (label): Verify ...", the
+// default last as "Otherwise:". This run's view gives the branch taken its
+// outcome and result and greys the others out, saying why they were not
+// checked; the Generic view lists them all alike. Text via textContent only.
+function renderBranches(branches, generic) {
+  if (!Array.isArray(branches) || branches.length === 0) return null;
+  const list = el('div', {className: 'procedure-branches'});
+  branches.forEach(function(b) {
+    const taken = !generic && b.taken === true;
+    const off = !generic && !taken;
+    const row = el('div', {className: 'procedure-branch' + (taken ? ' taken' : '') + (off ? ' not-run' : '')});
+    const head = el('span', {className: 'procedure-branch-head'});
+    head.appendChild(document.createTextNode(String(b.opening || 'If') + (b.condition || b.label ? ' ' : '')));
+    if (b.condition) head.appendChild(el('span', {className: 'proc-mono procedure-branch-cond'}, b.condition));
+    if (b.label) {
+      head.appendChild(document.createTextNode(b.condition ? ' (' + b.label + ')' : b.label));
+    }
+    head.appendChild(document.createTextNode(':'));
+    const desc = el('span', {className: 'procedure-step-desc'}, head, document.createTextNode(' '));
+    desc.appendChild(renderFormattedDesc(b, generic));
+    if (b.note) desc.appendChild(el('span', {className: 'procedure-check-note'}, ' (' + b.note + ')'));
+    const header = el('div', {className: 'procedure-step-header'});
+    if (!generic) {
+      header.appendChild(el('span', {className: 'status-dot ' + (taken ? (b.outcome || 'unknown') : 'not-run')}));
+    }
+    header.appendChild(desc);
+    if (taken && b.result) {
+      header.appendChild(el('span', {className: 'procedure-result'}, '\u2192 ' + b.result));
+    }
+    if (off && b.state) {
+      header.appendChild(el('span', {className: 'procedure-branch-state'}, b.state));
+    }
+    row.appendChild(header);
+    if (taken && b.detail && b.outcome === 'failed') {
+      row.appendChild(el('div', {className: 'procedure-step-exc'}, b.detail));
+    }
+    if (taken) {
+      const eachValues = renderEachValues(b.each);
+      if (eachValues) row.appendChild(eachValues);
+    }
+    const nested = renderBranches(taken || generic ? b.branches : null, generic);
+    if (nested) row.appendChild(nested);
+    list.appendChild(row);
+  });
+  return list;
+}
+
 // A node of the Generic view: the procedure as the test is written, for any
 // run of it. No outcome, result, duration or failure text: the names stand
 // where this run's values were (reg<channel>.F == <wdata>).
@@ -2403,6 +2453,8 @@ function renderGenericNode(node, depth) {
   }
   row.appendChild(header);
   if (node.note && !inlineNote) row.appendChild(el('div', {className: 'procedure-note'}, node.note));
+  const branches = renderBranches(node.branches, true);
+  if (branches) row.appendChild(branches);
   // The failed items of a folded check belong to this run, not to the procedure.
   if (hasKids && !node.each) {
     const kids = el('div', {className: 'procedure-substeps'});
@@ -2622,7 +2674,30 @@ function renderProcedurePhases(proc, run, generic) {
   return wrap;
 }
 
-function renderCheckResults(checks) {
+// The branches stepdoc read from each verify.guard(...) call's source, by the
+// call's location ("test_x.py:12"): the Procedure's guarded check nodes carry
+// them. The source is the same every time the call runs, so any node of that
+// location words the record's branches. Set while a Checks list renders.
+let guardSources = {};
+
+function collectGuardSources(proc) {
+  const found = {};
+  const walk = function(nodes) {
+    (nodes || []).forEach(function(n) {
+      if (!n) return;
+      if (typeof n.location === 'string' && Array.isArray(n.branches) && !found[n.location]) {
+        found[n.location] = n.branches;
+      }
+      walk(n.substeps);
+      walk(n.branches);
+    });
+  };
+  walk(proc && proc.steps);
+  return found;
+}
+
+function renderCheckResults(checks, proc) {
+  guardSources = collectGuardSources(proc);
   const container = el('div');
   // Summary bar
   const passed = checks.filter(c => c.passed).length;
@@ -2779,39 +2854,60 @@ function renderGuardCheck(check, expand) {
 }
 
 // Render a guard descriptor body: the ordered if/elif/else branch chain, the
-// evaluated branch marked via matched_index (or the default when null).
+// evaluated branch marked via matched_index (or the default when null). With
+// stepdoc, each branch shows its condition as written (mode == "fast"), and a
+// branch whose lazy check was never built, the default included, shows that
+// check as written; the record alone knows only labels and truth values.
 function renderGuardBody(check) {
   const wrap = el('div', {className:'guard-body'});
   const branches = check.branches || [];
   const matched = check.matched_index;  // int | null
+  const words = (typeof check.location === 'string' && guardSources[check.location]) || [];
+  const said = words.filter(w => w && !w.default);
+  const saidDefault = words.find(w => w && w.default) || null;
+  const sourceOk = said.length === branches.length;
+  const truth = v => v === true ? 'true' : v === false ? 'false' : 'unknown';
   branches.forEach((b, i) => {
     const chosen = matched === i;
+    const w = sourceOk ? said[i] : null;
     const row = el('div', {className:'guard-branch' + (chosen ? ' chosen' : '')});
     const head = el('div', {className:'guard-branch-head'});
     head.appendChild(el('span', {className:'guard-kw'}, i === 0 ? 'if' : 'elif'));
+    if (w && w.condition) head.appendChild(el('span', {className:'guard-cond-src'}, w.condition));
     head.appendChild(el('span', {className:'guard-label'}, b.label || ''));
-    head.appendChild(el('span', {className:'guard-cond ' + (b.condition ? 'true' : 'false')},
-      b.condition ? 'true' : 'false'));
+    head.appendChild(el('span', {className:'guard-cond ' + truth(b.condition)},
+      b.condition === true || b.condition === false ? String(b.condition) : 'not evaluated'));
     if (chosen) head.appendChild(el('span', {className:'guard-chosen-tag'}, 'evaluated'));
     row.appendChild(head);
-    row.appendChild(renderGuardCheck(b.check, chosen));
+    row.appendChild(b.check || !w ? renderGuardCheck(b.check, chosen) : renderUnbuilt(w));
     wrap.appendChild(row);
   });
-  if (check.default) {
-    const chosen = matched == null;
+  const fallback = check.default || (sourceOk ? saidDefault : null);
+  if (fallback) {
+    const chosen = matched == null && !!check.default;
     const row = el('div', {className:'guard-branch guard-default' + (chosen ? ' chosen' : '')});
     const head = el('div', {className:'guard-branch-head'});
     head.appendChild(el('span', {className:'guard-kw'}, 'else'));
-    head.appendChild(el('span', {className:'guard-label'}, check.default.name || 'default'));
+    head.appendChild(el('span', {className:'guard-label'},
+      (check.default && check.default.name) || 'default'));
     if (chosen) head.appendChild(el('span', {className:'guard-chosen-tag'}, 'evaluated'));
     row.appendChild(head);
-    row.appendChild(renderGuardCheck(check.default, chosen));
+    row.appendChild(check.default ? renderGuardCheck(check.default, chosen) : renderUnbuilt(saidDefault));
     wrap.appendChild(row);
   } else if (matched == null) {
     wrap.appendChild(el('div', {className:'guard-nomatch'},
       'No branch matched and no default — check fails.'));
   }
   return wrap;
+}
+
+// A guard branch whose check this run never built (a lazy check, called only
+// when its branch is taken): the check as the source words it.
+function renderUnbuilt(words) {
+  const box = el('div', {className:'guard-unbuilt'});
+  box.appendChild(renderFormattedDesc(words, true));
+  box.appendChild(el('span', {className:'guard-unbuilt-tag'}, 'not run'));
+  return box;
 }
 
 // Render a conditional descriptor: a switch over named cases, the matched case

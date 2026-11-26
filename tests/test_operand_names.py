@@ -389,6 +389,7 @@ _FUNCTIONS = (
     "failedChecks",
     "failureReason",
     "renderFailureStrip",
+    "collectGuardSources",
     "renderCheckResults",
     "checkNote",
     "checkOperand",
@@ -407,7 +408,9 @@ def _function(name: str) -> str:
 
 
 def _node(script: str) -> Any:  # noqa: ANN401
-    source = "\n".join([_DOM, *(_function(n) for n in _FUNCTIONS), script])
+    source = "\n".join(
+        [_DOM, "let guardSources = {};", *(_function(n) for n in _FUNCTIONS), script]
+    )
     out = subprocess.run(
         ["node", "-"],
         input=source,

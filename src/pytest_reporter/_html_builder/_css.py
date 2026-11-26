@@ -1661,6 +1661,27 @@ button { font-family: inherit; }
   white-space: pre-line;
   margin: 2px 0 4px 2.4em;
 }
+/* A guarded check's branches (stepdoc's reading of verify.guard): one line each */
+.procedure-branches { display: flex; flex-direction: column; gap: 1px; margin: 0 0 2px 2.4em; }
+.procedure-branch .procedure-step-header { padding-left: 0; }
+.procedure-branch-head { color: var(--c-text2); }
+.procedure-branch.taken .procedure-branch-head,
+.procedure-branch.taken .procedure-branch-cond { color: var(--c-text); font-weight: 600; }
+.procedure-branch.not-run .procedure-step-desc { color: var(--c-text3); }
+.procedure-branch.not-run .proc-mono { color: var(--c-text3); background: transparent; }
+.procedure-branch-state {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  font-style: italic;
+  color: var(--c-text3);
+}
+@media (max-width: 640px) {
+  .procedure-branches { margin-left: 0.6em; }
+  .procedure-branch .procedure-step-header { flex-wrap: wrap; row-gap: 0; }
+  .procedure-branch .procedure-step-desc { flex-basis: calc(100% - 20px); }
+  .procedure-branch-state, .procedure-branch .procedure-result { margin-left: 18px; }
+}
+.status-dot.not-run { background: transparent; border: 1px dashed var(--c-text3); opacity: 0.7; }
 .procedure-each { margin: 2px 0 4px 2.4em; font-size: var(--fs-xs); color: var(--c-text2); }
 .procedure-each > summary { cursor: pointer; width: fit-content; padding: 2px 0; }
 .procedure-each > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
@@ -1902,7 +1923,18 @@ button { font-family: inherit; }
   line-height: 16px;
 }
 .guard-cond.true { background: var(--c-passed-dim); color: var(--c-passed-ink); }
-.guard-cond.false { background: var(--c-surface); color: var(--c-text2); }
+.guard-cond.false, .guard-cond.unknown { background: var(--c-surface); color: var(--c-text2); }
+.guard-cond-src {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  font-size: var(--fs-xs);
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+.guard-branch.chosen .guard-cond-src { font-weight: 600; }
+.guard-unbuilt { margin-top: 6px; font-size: var(--fs-xs); color: var(--c-text2); }
+.guard-unbuilt .proc-mono { overflow-wrap: anywhere; }
+.guard-unbuilt-tag { margin-left: 6px; font-style: italic; color: var(--c-text3); }
 .guard-chosen-tag {
   margin-left: auto;
   font-size: var(--fs-xs);

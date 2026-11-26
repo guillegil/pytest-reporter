@@ -545,7 +545,115 @@ def _check(check: Any, number: str) -> dict[str, Any]:  # noqa: ANN401
     ]
     if children:
         node["substeps"] = children
+    branches = _branches(check)
+    if branches is not None:
+        _guarded(node, check, branches)
     return node
+
+
+def _guarded(node: dict[str, Any], check: Any, branches: list[dict[str, Any]]) -> None:  # noqa: ANN401
+    """Word a guarded check as stepdoc does: its name, then every branch.
+
+    The line reads ``Verify 'Speed by mode', depending on the condition:``;
+    the branches carry the rest (the condition, the check, the result), so the
+    line loses the ``[→ fast mode]`` suffix, its result and its detail. The
+    pytest-verifier record's ``location`` comes along: the Checks tab finds the
+    branches' source wording by it.
+    """
+    label = getattr(check, "label", None)
+    text = (
+        f"'{label}', depending on the condition:"
+        if isinstance(label, str) and label
+        else "depending on the condition:"
+    )
+    for key in ("description", "generic"):
+        node[key] = f"Verify {text}"
+        node[f"{key}_segments"] = [{"text": node[key], "style": None}]
+    for key in ("result", "detail"):
+        node.pop(key, None)
+    node["branches"] = branches
+    source = getattr(check, "source", None)
+    location = source.get("location") if isinstance(source, Mapping) else None
+    if isinstance(location, str) and location:
+        node["location"] = location
+
+
+def _branches(check: Any) -> list[dict[str, Any]] | None:  # noqa: ANN401
+    """stepdoc's ``Check.branches``: every branch of a guarded check (stepdoc 0.6+).
+
+    pytest-verifier's ``guard`` checks the first branch whose condition holds,
+    else its default. stepdoc reads every branch from the call's source: the
+    condition as written, and the check as written (``wording``, test
+    parameters as ``<name>``), also for a lazy check that was never built. Each
+    branch becomes ``{"opening", "condition", "label", "default", "taken",
+    "state", ...}`` with the line's texts: this run's for the branch taken
+    (with its outcome, result and detail), the check this run built or else
+    its wording for the others, and the wording for the Generic view.
+    ``state`` is ``taken``, ``condition false`` (a branch before the one taken)
+    or ``not evaluated``. None for a check that is not guarded.
+    """
+    raw = getattr(check, "branches", None)
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return None
+    out: list[dict[str, Any]] = []
+    seen_taken = False
+    for i, branch in enumerate(raw):
+        is_default = getattr(branch, "default", False) is True
+        taken = getattr(branch, "taken", False) is True
+        holds = getattr(branch, "holds", None)
+        condition = getattr(branch, "condition", None)
+        label = getattr(branch, "label", None)
+        condition = condition if isinstance(condition, str) and condition else None
+        label = label if isinstance(label, str) and label else None
+        if is_default:
+            opening, condition, label = "Otherwise", None, None
+        else:
+            opening = "If" if i == 0 else "Else if"
+            if condition is None and label is None:
+                label = f"branch {i + 1}"
+        if taken:
+            state = "taken"
+            seen_taken = True
+        elif holds is False and not seen_taken:
+            state = "condition false"
+        else:
+            state = "not evaluated"
+        node: dict[str, Any] = {
+            "opening": opening,
+            "condition": condition,
+            "label": label,
+            "default": is_default,
+            "taken": taken,
+            "state": state,
+        }
+        built, wording = getattr(branch, "check", None), getattr(branch, "wording", None)
+        shown = built if built is not None else wording
+        generic = wording if wording is not None else built
+        if shown is not None:
+            line = _check(shown, "")
+            for key in ("description", "description_segments", "note"):
+                if key in line:
+                    node[key] = line[key]
+            if taken:
+                for key in ("outcome", "result", "detail", "each", "substeps", "branches"):
+                    if key in line:
+                        node[key] = line[key]
+        if generic is not None:
+            line = _check(generic, "")
+            node["generic"] = line["generic"]
+            node["generic_segments"] = line["generic_segments"]
+        source = getattr(branch, "source", None)
+        if isinstance(source, str) and source:
+            # A check that was not built and has no wording: the call as written
+            for key in ("description", "generic"):
+                if key not in node:
+                    node[key] = f"Verify {source}"
+                    node[f"{key}_segments"] = [
+                        {"text": "Verify ", "style": None},
+                        {"text": source, "style": "mono"},
+                    ]
+        out.append(node)
+    return out
 
 
 def _each(check: Any) -> dict[str, Any] | None:  # noqa: ANN401
