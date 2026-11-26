@@ -190,8 +190,9 @@ pytest's own captured logs. `print()` output is not part of these logs; pytest s
 in its captured sections.
 
 The lowest level shown is `report_log_level` (ini), else pytest's `log_level`
-(`--log-level`), else `INFO`. While a test phase runs, the root logger is lowered to that
-level when it is higher, and set back afterwards, as pytest does for `log_level`.
+(`--log-level`), else `INFO`. The root logger is lowered to that level when it is higher,
+for the session and while each test phase runs, and set back afterwards, as pytest does for
+`log_level`.
 
 ```toml
 [tool.pytest.ini_options]

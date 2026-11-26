@@ -94,3 +94,20 @@ def test_a():
     session_data = json.loads((runs[0] / "session.log.json").read_text())
     assert any(e["msg"] == "session setup" for e in session_data["entries"])
     assert not any(e["msg"] == "test log entry" for e in session_data["entries"])
+
+
+def test_session_log_keeps_info_records(pytester: Pytester) -> None:
+    """The session log uses the same level as the phases (INFO by default)."""
+    pytester.makeconftest("""
+import logging
+
+def pytest_sessionstart(session):
+    logging.getLogger("lab").info("Bench session started")
+    logging.getLogger("lab").debug("hidden")
+""")
+    pytester.makepyfile("def test_pass(): pass")
+    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)
+
+    runs = list((pytester.path / "reports" / "runs").iterdir())
+    entries = json.loads((runs[0] / "session.log.json").read_text())["entries"]
+    assert [e["msg"] for e in entries] == ["Bench session started"]

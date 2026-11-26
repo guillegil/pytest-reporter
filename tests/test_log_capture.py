@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -134,26 +135,28 @@ def test_bad_level_is_a_usage_error(pytester: Pytester) -> None:
     result.stderr.fnmatch_lines(["*report_log_level*LOUD*"])
 
 
-def test_root_level_is_restored_after_each_phase(pytester: Pytester) -> None:
+def test_root_level_is_lowered_and_restored(pytester: Pytester) -> None:
+    """INFO during the run (phases and session), the old level once pytest is done."""
     pytester.makepyfile("""
         import logging
 
         def test_first():
             assert logging.getLogger().level == logging.INFO
-
-        def test_after():
-            pass
-
-        def teardown_module():
-            pass
     """)
     pytester.makeconftest("""
         import logging
 
         def pytest_runtest_logfinish(nodeid):
-            assert logging.getLogger().level == logging.WARNING, nodeid
+            assert logging.getLogger().level == logging.INFO, nodeid
     """)
-    pytester.runpytest("--report-dir=reports").assert_outcomes(passed=2)
+    root = logging.getLogger()
+    before = root.level
+    root.setLevel(logging.WARNING)
+    try:
+        pytester.runpytest_inprocess("--report-dir=reports").assert_outcomes(passed=1)
+        assert root.level == logging.WARNING
+    finally:
+        root.setLevel(before)
 
 
 def test_each_retry_attempt_has_its_own_records(pytester: Pytester) -> None:

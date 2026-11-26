@@ -19,8 +19,10 @@ reserves); ``extra={"report_table": rows}`` logs a table (shown inline and
 saved as an HTML artifact), named by the message.
 
 The level is ``report_log_level`` (ini), else pytest's ``log_level``, else
-``INFO``. During a test phase the root logger is lowered to that level when it
-is higher (and set back afterwards), as pytest does for ``log_level``.
+``INFO``. The root logger is lowered to that level when it is higher: during
+each test phase (set back afterwards, as pytest does for ``log_level``) and,
+on the process that writes the report, for the whole session, so the session
+log gets the same levels (set back when pytest unconfigures).
 """
 
 from __future__ import annotations
@@ -212,6 +214,13 @@ class LogCapture:
         if session:
             self.handler.session = _Buffer(keep_tables=False)
         self._saved_level: int | None = None
+        # Outside the test phases too (session log): lower the root logger for
+        # the whole session, set back at unconfigure
+        root = logging.getLogger()
+        self._session_level: int | None = None
+        if session and root.level > self.level:
+            self._session_level = root.level
+            root.setLevel(self.level)
         self._attach()
 
     def _attach(self) -> None:
@@ -220,8 +229,12 @@ class LogCapture:
             root.addHandler(self.handler)
 
     def detach(self) -> None:
-        """Take the handler off the root logger."""
-        logging.getLogger().removeHandler(self.handler)
+        """Take the handler off the root logger (and restore its level)."""
+        root = logging.getLogger()
+        root.removeHandler(self.handler)
+        if self._session_level is not None:
+            root.setLevel(self._session_level)
+            self._session_level = None
 
     def session_entries(self) -> list[dict[str, Any]]:
         """The entries logged outside tests so far."""

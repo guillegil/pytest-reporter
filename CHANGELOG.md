@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Records logged outside the tests (plugin hooks, collection, session start and finish) are
   the session log. `print()` output is not captured. The lowest level shown is the new
   `report_log_level` ini setting, else pytest's `log_level`, else `INFO`; while a phase
-  runs the root logger is lowered to it when higher, and set back afterwards. Records
+  runs (and for the session) the root logger is lowered to it when higher, and set back afterwards. Records
   travel on the phase reports (`report.reporter_log`).
 
 - Less time spent writing the run folder. A test's folder path is built once instead of for
