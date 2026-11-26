@@ -13,10 +13,14 @@ pytest-reporter (this plugin)
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
 │  FIXTURES (no import needed — auto-registered):             │
-│  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐      │
-│  │ log      │  │ session_log  │  │ report_artifacts  │      │
-│  │ (test)   │  │ (session)    │  │ (test)            │      │
-│  └──────────┘  └──────────────┘  └──────────────────┘      │
+│  ┌──────────────────┐  ┌─────────────┐                     │
+│  │ report_artifacts │  │ report_tabs │  (+ metadata, seed, │
+│  │ (test)           │  │ (test)      │   dashboard)        │
+│  └──────────────────┘  └─────────────┘                     │
+│                                                             │
+│  LOGS: Python `logging` records (LogCapture, root handler)  │
+│        per phase → report.reporter_log; outside tests →     │
+│        session log                                          │
 │                                                             │
 │  OPTIONAL INTEGRATIONS (never imported):                    │
 │  stepdoc          → pytest_stepdoc_step_* hooks → procedures│
@@ -42,10 +46,11 @@ pytest-reporter (this plugin)
 ## Core Principles
 
 - **The reporter observes, never judges.** It never raises exceptions to determine test outcomes. It hooks into `pytest_runtest_makereport` to observe what happened and records it. Pass/fail for checks is determined by `pytest-verifier`.
-- **Fixtures are the public API.** `log`, `session_log`, `report_artifacts` are pytest fixtures (no import). The package exports only `Logger`/`ReportLogger`. There is no step API: tests use `from stepdoc import step`.
+- **Fixtures are the public API.** `report_artifacts`, `report_tabs`, `report_metadata`, `report_seed`, `report_dashboard` are pytest fixtures (no import). The package exports only `ReportTabs`. There is no logger and no step API: tests log with `logging.getLogger(...)` and write steps with `from stepdoc import step`.
+- **Logs are Python `logging` records.** `_log_capture.LogCapture` (registered with `--report-dir`, xdist workers too) keeps a handler on the root logger: records logged while a phase runs (its `pytest_runtest_setup/call/teardown` wrappers, `trylast`) go on that phase's report as `report.reporter_log` (tables as `report.reporter_log_tables`), the rest to the session log (controller only). Level: `report_log_level` ini, else pytest's `log_level`, else `INFO`; the root logger is lowered to it during a phase and restored. The `log`/`session_log` fixtures (removed in 0.4.0) are stubs that fail with a migration message.
 - **Integrations stay optional.** Never import stepdoc, pytest-verifier or pytest-strategies. Read what they publish: stepdoc's `pytest_stepdoc_step_started/finished` and `pytest_stepdoc_test_doc` hooks (`optionalhook=True`), `report.verify_checks`, the `strategy` mark's `VectorInfo.to_dict()`, and pytest-strategies' run export (its `pytest_strategies_export_dir` hook, `optionalhook=True`, and the files it writes). CI runs the suite with and without them.
 - **Single self-contained HTML report.** `report.html` must be one file with inline HTML, CSS, JS. Artifacts are base64-encoded as data URIs. No external CDN dependencies.
-- **Flat serialization with source paths.** The logger uses a tree API in memory but serializes to flat arrays with `source` path arrays. Never nest on disk.
+- **Flat serialization with source paths.** An entry's `source` is its logger name split on dots (`[]` for the root logger). Never nest on disk.
 
 ## CLI Options
 
@@ -58,13 +63,13 @@ pytest tests/ --report-dir=reports --report-retries=3  # Enable retries
 
 ```
 pytest_reporter/
-├── __init__.py              # Exports: Logger, ReportLogger, ReportTabs (removed names raise ImportError)
+├── __init__.py              # Exports: ReportTabs (removed names, Logger/ReportLogger too, raise ImportError)
 ├── py.typed                 # PEP 561 marker — REQUIRED
 ├── plugin.py                # Plugin registration (pytest11 entry point)
 ├── reporter.py              # Reporter class — main hook orchestrator
 ├── _collector.py            # DataCollector — item registry, phase tracking, aggregation
 ├── _context.py              # RunContext — timestamped run directory management
-├── _logger.py               # Logger class (+ ReportLogger alias) — tree-based structured logger
+├── _log_capture.py          # LogCapture: logging records per phase (on the reports) + session
 ├── _stepdoc.py              # activate() stepdoc recording; StepCollector: steps → procedure.json
 ├── _strategies.py           # StrategyExport: where pytest-strategies writes its run export,
 │                            #   reading strategies.vectors.json; html_data() for the report
@@ -85,19 +90,16 @@ pytest_reporter/
 
 | Fixture | Scope | Returns | Purpose |
 |---------|-------|---------|---------|
-| `log` | test | `ReportLogger` | Structured logging during test phases |
-| `session_log` | session | `ReportLogger` | Structured logging for session-scoped fixtures |
 | `report_artifacts` | test | `pathlib.Path` | Directory path for saving test artifacts |
 | `report_tabs` | test | `ReportTabs` | Custom HTML tabs in the test's detail |
 
 ### Imports
 
 ```python
-from pytest_reporter import ReportLogger     # canonical public name
-from pytest_reporter import Logger           # internal name, kept for compat
+from pytest_reporter import ReportTabs
 ```
 
-`ReportLogger` is the canonical public name documented for users. `Logger` is the underlying class name in `_logger.py`; both names refer to the same class object (`ReportLogger is Logger`).
+`Logger` and `ReportLogger` were removed in 0.4.0 (an `ImportError` points to `logging`).
 
 `step`, `substep`, `fmt`, `FormattedText`, `ProcedureError` and `ProcedureNestingError`
 were removed in 0.3.0; `pytest_reporter.__getattr__` raises an `ImportError` naming stepdoc.
@@ -106,22 +108,9 @@ were removed in 0.3.0; `pytest_reporter.__getattr__` raises an `ImportError` nam
 
 All fixtures must return fully typed class instances. Ship `py.typed` marker.
 
-The logger class is `Logger` (internal name), exported as `ReportLogger` (public name):
-
-```python
-class Logger:  # also exported as ReportLogger
-    def info(self, msg: str, data: dict | None = None) -> None: ...
-    def debug(self, msg: str, data: dict | None = None) -> None: ...
-    def warning(self, msg: str, data: dict | None = None) -> None: ...
-    def error(self, msg: str, data: dict | None = None, exc_info: BaseException | None = None) -> None: ...
-    def critical(self, msg: str, data: dict | None = None, exc_info: BaseException | None = None) -> None: ...
-    def child(self, name: str) -> "Logger": ...
-    def table(self, data: Any, name: str = "table", *, level: str = "INFO") -> None: ...
-```
-
 ### Table Logging
 
-`log.table(data, name="...")` logs a table that appears in two places:
+`logger.info("<name>", extra={"report_table": data})` logs a table (named by the message) that appears in two places:
 1. **Inline in phase logs** — rendered as a styled HTML table at the chronological log position
 2. **In the Artifacts tab** — saved as a self-contained dark-theme HTML file
 
@@ -368,12 +357,13 @@ node may hold `substeps` of the same shape.
 
 ## Phase Capture Flow
 
-1. `pytest_runtest_makereport` fires for each phase (setup/call/teardown).
-2. Retrieve logger from `item._reporter_logger`.
-3. Call `logger.serialize()` → `{"entries": [...]}`.
-4. Wrap with phase metadata (outcome, timing, longrepr).
-5. Write to `{phase}.log.json`.
-6. **Do NOT modify or reorder entries.** Wrap as-is.
+1. `LogCapture` collects the phase's logging records; its `pytest_runtest_makereport`
+   wrapper puts them on the report (`report.reporter_log`, `report.reporter_log_tables`).
+2. `capture_phase_logs` (or the retry engine) reads them with `phase_entries` and writes
+   the tables as artifacts (`write_table_artifacts`).
+3. Wrap with phase metadata (outcome, timing, longrepr).
+4. Write to `{phase}.log.json`.
+5. **Do NOT modify or reorder entries.** Wrap as-is.
 
 ## Check Integration (§6.10 + §15)
 
@@ -428,7 +418,7 @@ node may hold `substeps` of the same shape.
 1. **Summary** — Counters (passed/failed/skipped/error/retried), config-driven donut charts or
    pass-rate bars per group (no whole-suite "All Tests" donut; top counters convey totals).
 2. **Tests** — Left: collapsible tree (folders → files → functions, with status pills). Right: run pills + detail sub-tabs (Summary, Procedure, Checks, Strategy, Artifacts, Retries).
-3. **Session Logs** — Collapsible tree by child logger name, reconstructed from `source` arrays. Search bar + level filters.
+3. **Session Logs** — Collapsible tree by logger name, reconstructed from `source` arrays. Search bar + level filters.
 4. **Report** — Run metadata, versions, platform, command line args, full `pytest.log` viewer.
 
 ### Test detail sub-tabs:
@@ -510,7 +500,7 @@ else donut grid.
 ### Execution flow:
 1. Run test normally. Write to `01/` (or `default/`).
 2. If call failed → enter retry loop.
-3. Each retry: set write path to `retries/<attempt>/`, re-execute via `runtestprotocol()`, fresh logger/fixtures.
+3. Each retry: set write path to `retries/<attempt>/`, re-execute via `runtestprotocol()`, fresh fixtures (each phase report carries its own log records).
 4. Stop on pass or limit reached.
 5. Final outcome in `test.log.json` and `junit.xml` = last attempt's result.
 
@@ -548,11 +538,11 @@ else donut grid.
 
 ## Testing Strategy
 
-### Logger:
-- Tree hierarchy: root → child → grandchild, correct `source` paths
-- `seq` counter: global, monotonic across all children
-- Serialization: flat array, correct entry schema
-- Independent loggers: `log` vs `session_log` have separate `seq` counters
+### Log capture (`tests/test_log_capture.py`):
+- Records go to the phase that logged them; `source` from the logger name
+- `extra=` fields as `data`, exceptions kept, tables via `report_table`
+- Level: `report_log_level`, pytest's `log_level`, default `INFO`; root level restored
+- Each retry attempt has its own records per phase
 
 ### Phase capture:
 - Each phase writes correct file (setup/call/teardown)
@@ -574,7 +564,7 @@ else donut grid.
 ### Retries:
 - Only call-phase failures trigger retry
 - Correct folder structure (retries/01/, retries/02/)
-- Fresh logger per retry
+- Each attempt's own log records
 - Final outcome is last attempt
 - No parameters.json in retry folders
 - `01_latest/` hard copy refreshed after all retries complete
@@ -588,7 +578,7 @@ else donut grid.
 
 ### Session logging:
 - session.log.json written at session end
-- Independent from per-test log
+- Records from outside the tests only, never a test phase's
 - Empty session log produces placeholder
 
 ## Common Pitfalls
@@ -596,10 +586,11 @@ else donut grid.
 - **Don't forget `py.typed`.** Without it, IDE autocompletion won't work.
 - **Never import an integration.** stepdoc, pytest-verifier and pytest-strategies are optional extras (`[stepdoc]`, `[verifier]`, `[strategies]`, `[all]`); `tests/test_stepdoc_procedure.py` and `tests/test_verify_integration.py` check the imports with `ast`. Tests that need one skip without it.
 - **stepdoc's recorder spans all retry attempts.** The reporter's retries run inside stepdoc's `pytest_runtest_protocol` wrapper, so `StepCollector.begin()` (at each attempt's `pytest_runtest_setup`) starts a fresh list and the procedure is renumbered.
-- **Logger seq is global.** Root owns the counter. All children share it. Must be monotonically increasing but does not need to be gap-free.
+- **Entry seq counts per phase.** From 0 in each phase's log (and in the session log).
 - **`01_latest/` copy refreshed at END of run.** Not during. All files must be written first; the previous `01_latest/` is removed before the new copy is created.
 - **Timestamp format uses underscores.** `YYYY_MM_DD_HH_MM_SS`. No colons, no dashes.
-- **Entries must not be modified.** Phase capture wraps entries as-is from the logger.
+- **Entries must not be modified.** Phase capture wraps entries as-is from the report.
+- **logging reserves some `extra=` names** (`name`, `message`, `args`, ...): `extra={"data": {...}}` is the escape hatch (`_Buffer.add` unwraps it).
 - **Parametrized folder names are sequential numbers.** Not pytest IDs. IDs go in `parameters.json`.
 - **Non-parametrized = `default/` folder.** Not `01/`.
 - **Retry folders omit `parameters.json`.** Parent folder is the single source of truth.

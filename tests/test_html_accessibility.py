@@ -24,8 +24,9 @@ def _report_html(pytester: Pytester) -> str:
         def test_sweep(n):
             assert n == 1
 
-        def test_ok(log):
-            log.table([{"a": 1}, {"a": 2}], name="rows")
+        def test_ok():
+            import logging
+            logging.getLogger("t").info("rows", extra={"report_table": [{"a": 1}, {"a": 2}]})
         """
     )
     pytester.runpytest("--report-dir=reports")

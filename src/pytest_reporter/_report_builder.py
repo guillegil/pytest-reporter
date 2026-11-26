@@ -361,7 +361,7 @@ def build_html_data(reporter: Reporter, duration: float, exitstatus: int) -> dic
     cmdline = reporter.config.invocation_params.args
 
     # Session log data
-    session_log_data = reporter.session_logger.serialize()
+    session_log_data = {"entries": reporter.session_entries()}
 
     # Collect and merge metadata from hook + fixture.
     # Broad except is intentional: pytest_reporter_metadata() is third-party

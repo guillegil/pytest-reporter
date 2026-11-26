@@ -6,15 +6,18 @@ Tests grouped under a ``Test*`` class render the class name as a muted
 
 from __future__ import annotations
 
+import logging
 import time
 
 from stepdoc import step
+
+log = logging.getLogger("power_supply")
 
 
 class TestPowerSupply:
     """Bench power-supply characterization across its output channels."""
 
-    def test_channel_voltage_accuracy(self, log) -> None:
+    def test_channel_voltage_accuracy(self) -> None:
         log.info("Characterizing CH1 voltage accuracy")
         with step("Set CH1.Voltage to 3.3 V"):
             with step("Write setpoint over SCPI"):
@@ -26,9 +29,9 @@ class TestPowerSupply:
                 with step("Compare against tolerance"):
                     with step("Within +/- 1 percent"):
                         pass
-        log.info("CH1 voltage within spec", data={"setpoint": 3.3, "measured": 3.301})
+        log.info("CH1 voltage within spec", extra={"setpoint": 3.3, "measured": 3.301})
 
-    def test_channel_current_limit(self, log) -> None:
+    def test_channel_current_limit(self) -> None:
         log.info("Verifying CH2 current limit trips correctly")
         with step("Configure CH2 current limit to 2 A"):
             with step("SOUR2:CURR 2.0"):
@@ -38,7 +41,7 @@ class TestPowerSupply:
                 pass
         time.sleep(0.01)
 
-    def test_overvoltage_protection(self, log) -> None:
+    def test_overvoltage_protection(self) -> None:
         log.info("Exercising OVP on CH3")
         with step("Arm overvoltage protection at 13 V"):
             with step("SOUR3:VOLT:PROT 13"):

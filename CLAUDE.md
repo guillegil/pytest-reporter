@@ -54,6 +54,7 @@ mypy --strict src/pytest_reporter/
 - `_json_writer.py` — writes phase logs immediately during run; test.log.json aggregates at session end
 - `_junit_writer.py` — standard JUnit XML via `xml.etree.ElementTree`
 - `_html_builder.py` — self-contained HTML with embedded JSON data, rendered by inline JS (SVG donut charts, tree navigation, 3 tabs)
+- `_log_capture.py` — `LogCapture`: Python `logging` records per phase (on `report.reporter_log`) and outside tests (session log)
 - `_console_capture.py` — `TeeFile` wraps terminal reporter to capture pytest.log
 - `_stepdoc.py` — optional stepdoc integration: makes stepdoc record (`--stepdoc-record=<run>/stepdoc.json`) and turns its steps into `procedure.json`; keeps the test's parsed docstring from `pytest_stepdoc_test_doc` (procedure.json `doc`, the Summary sub-tab's "About this test")
 - `_strategies.py` — optional pytest-strategies integration (4.3+): answers its `pytest_strategies_export_dir` hook with the run folder and reads `strategies.vectors.json` for the Strategy sub-tab

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("endpoints")
 
 
 # ---------------------------------------------------------------------------
@@ -73,121 +76,121 @@ def _sim_request(method: str, path: str, *, body: dict | None = None, headers: d
     ],
     ids=["list-users", "create-user", "get-user", "update-user", "delete-user", "not-found"],
 )
-def test_crud_status_codes(log, method: str, path: str, expected_status: int) -> None:
+def test_crud_status_codes(method: str, path: str, expected_status: int) -> None:
     """Verify each CRUD operation returns the correct HTTP status."""
-    http = log.child("http")
-    validation = log.child("validation")
+    http = log.getChild("http")
+    validation = log.getChild("validation")
 
     with step("Prepare request"):
-        http.info("Building request", data={"method": method, "path": path})
-        http.debug("Setting default headers", data={"Accept": "application/json", "User-Agent": "test-client/1.0"})
+        http.info("Building request", extra={"method": method, "path": path})
+        http.debug("Setting default headers", extra={"Accept": "application/json", "User-Agent": "test-client/1.0"})
         with step("Attach auth token"):
-            http.info("Bearer token attached", data={"token_prefix": "eyJhbGci..."})
+            http.info("Bearer token attached", extra={"token_prefix": "eyJhbGci..."})
 
     with step("Send request"):
         time.sleep(0.001)
         resp = _sim_request(method, path, body={"name": "New User", "email": "new@example.com"})
-        http.info("Response received", data={"status": resp["status"], "request_id": resp["headers"]["X-Request-Id"]})
-        http.debug("Response headers", data=resp["headers"])
+        http.info("Response received", extra={"status": resp["status"], "request_id": resp["headers"]["X-Request-Id"]})
+        http.debug("Response headers", extra={"data": resp["headers"]})
         if resp["body"] is not None:
-            http.debug("Response body preview", data={"body": resp["body"] if isinstance(resp["body"], dict) else {"count": len(resp["body"])}})
+            http.debug("Response body preview", extra={"body": resp["body"] if isinstance(resp["body"], dict) else {"count": len(resp["body"])}})
 
     with step("Validate status code"):
-        validation.info("Comparing status", data={"expected": expected_status, "actual": resp["status"]})
+        validation.info("Comparing status", extra={"expected": expected_status, "actual": resp["status"]})
         assert resp["status"] == expected_status
         validation.info("Status code matches")
 
 
-def test_list_users_pagination(log) -> None:
+def test_list_users_pagination() -> None:
     """Test paginated user listing with offset and limit."""
-    http = log.child("http")
-    pagination = log.child("pagination")
+    http = log.getChild("http")
+    pagination = log.getChild("pagination")
 
     with step("Request first page"):
-        http.info("GET /api/v1/users", data={"params": {"offset": 0, "limit": 2}})
+        http.info("GET /api/v1/users", extra={"params": {"offset": 0, "limit": 2}})
         time.sleep(0.001)
         page1 = _USERS_DB[:2]
-        http.info("Page 1 received", data={"count": len(page1), "users": [u["name"] for u in page1]})
-        pagination.debug("Cursor state", data={"offset": 0, "limit": 2, "total": 5, "has_next": True})
+        http.info("Page 1 received", extra={"count": len(page1), "users": [u["name"] for u in page1]})
+        pagination.debug("Cursor state", extra={"offset": 0, "limit": 2, "total": 5, "has_next": True})
 
     with step("Request second page"):
-        http.info("GET /api/v1/users", data={"params": {"offset": 2, "limit": 2}})
+        http.info("GET /api/v1/users", extra={"params": {"offset": 2, "limit": 2}})
         page2 = _USERS_DB[2:4]
-        http.info("Page 2 received", data={"count": len(page2), "users": [u["name"] for u in page2]})
-        pagination.debug("Cursor state", data={"offset": 2, "limit": 2, "total": 5, "has_next": True})
+        http.info("Page 2 received", extra={"count": len(page2), "users": [u["name"] for u in page2]})
+        pagination.debug("Cursor state", extra={"offset": 2, "limit": 2, "total": 5, "has_next": True})
 
     with step("Request last page"):
-        http.info("GET /api/v1/users", data={"params": {"offset": 4, "limit": 2}})
+        http.info("GET /api/v1/users", extra={"params": {"offset": 4, "limit": 2}})
         page3 = _USERS_DB[4:]
-        http.info("Page 3 received", data={"count": len(page3), "users": [u["name"] for u in page3]})
-        pagination.debug("Cursor state", data={"offset": 4, "limit": 2, "total": 5, "has_next": False})
+        http.info("Page 3 received", extra={"count": len(page3), "users": [u["name"] for u in page3]})
+        pagination.debug("Cursor state", extra={"offset": 4, "limit": 2, "total": 5, "has_next": False})
 
     with step("Verify all pages cover full dataset"):
         all_users = page1 + page2 + page3
-        pagination.info("Aggregated results", data={"total_fetched": len(all_users), "expected": 5})
+        pagination.info("Aggregated results", extra={"total_fetched": len(all_users), "expected": 5})
         assert len(all_users) == 5
         pagination.info("Pagination verified: all users returned across pages")
 
 
-def test_rate_limit_headers(log) -> None:
+def test_rate_limit_headers() -> None:
     """Verify rate-limit headers are present and correctly decremented."""
-    http = log.child("http")
-    rate_limit = log.child("rate_limit")
+    http = log.getChild("http")
+    rate_limit = log.getChild("rate_limit")
 
     with step("Send initial request"):
         resp = _sim_request("GET", "/api/v1/users")
-        http.info("Response received", data={"status": resp["status"]})
-        http.debug("All headers", data=resp["headers"])
+        http.info("Response received", extra={"status": resp["status"]})
+        http.debug("All headers", extra={"data": resp["headers"]})
 
     with step("Extract rate-limit headers"):
         limit = int(resp["headers"]["X-RateLimit-Limit"])
         remaining = int(resp["headers"]["X-RateLimit-Remaining"])
         reset_ts = int(resp["headers"]["X-RateLimit-Reset"])
-        rate_limit.info("Parsed rate-limit values", data={"limit": limit, "remaining": remaining, "reset": reset_ts})
+        rate_limit.info("Parsed rate-limit values", extra={"limit": limit, "remaining": remaining, "reset": reset_ts})
 
     with step("Validate rate-limit values"):
         with step("Check limit is positive"):
-            rate_limit.info("Limit value", data={"value": limit})
+            rate_limit.info("Limit value", extra={"value": limit})
             assert limit > 0
 
         with step("Check remaining is within bounds"):
-            rate_limit.info("Remaining value", data={"value": remaining, "max": limit})
+            rate_limit.info("Remaining value", extra={"value": remaining, "max": limit})
             assert 0 <= remaining <= limit
 
         with step("Check reset timestamp is in the future"):
-            rate_limit.info("Reset timestamp", data={"value": reset_ts})
+            rate_limit.info("Reset timestamp", extra={"value": reset_ts})
             assert reset_ts > 0
             rate_limit.info("All rate-limit headers valid")
 
 
-def test_create_user_with_validation(log) -> None:
+def test_create_user_with_validation() -> None:
     """Test user creation validates required fields and returns the new resource."""
-    http = log.child("http")
-    validation = log.child("validation")
+    http = log.getChild("http")
+    validation = log.getChild("validation")
 
     payload = {"name": "Frank Lee", "email": "frank@example.com", "role": "editor"}
 
     with step("Validate request payload"):
-        validation.info("Checking required fields", data={"payload": payload})
+        validation.info("Checking required fields", extra={"payload": payload})
         for field in ("name", "email", "role"):
             with step(f"Verify field: {field}"):
-                validation.debug(f"Field '{field}' present", data={"value": payload[field]})
+                validation.debug(f"Field '{field}' present", extra={"value": payload[field]})
                 assert field in payload
         validation.info("Payload validation passed")
 
     with step("Send POST request"):
         time.sleep(0.001)
         resp = _sim_request("POST", "/api/v1/users", body=payload)
-        http.info("User creation response", data={"status": resp["status"], "body": resp["body"]})
-        http.debug("Response latency", data={"ms": 42})
+        http.info("User creation response", extra={"status": resp["status"], "body": resp["body"]})
+        http.debug("Response latency", extra={"ms": 42})
 
     with step("Verify response"):
         with step("Check 201 status"):
-            validation.info("Status code", data={"expected": 201, "actual": resp["status"]})
+            validation.info("Status code", extra={"expected": 201, "actual": resp["status"]})
             assert resp["status"] == 201
 
         with step("Check returned user has an ID"):
-            validation.info("New user ID", data={"id": resp["body"]["id"]})
+            validation.info("New user ID", extra={"id": resp["body"]["id"]})
             assert "id" in resp["body"]
             validation.info("User creation verified successfully")
 
@@ -202,79 +205,79 @@ def test_create_user_with_validation(log) -> None:
     ],
     ids=["json", "xml", "plaintext", "json-charset"],
 )
-def test_content_type_negotiation(log, content_type: str, accepted: bool) -> None:
+def test_content_type_negotiation(content_type: str, accepted: bool) -> None:
     """Verify the API only accepts supported content types."""
-    http = log.child("http")
-    negotiation = log.child("negotiation")
+    http = log.getChild("http")
+    negotiation = log.getChild("negotiation")
 
     with step("Send request with content type"):
-        http.info("Preparing request", data={"Content-Type": content_type})
-        http.debug("Request details", data={"method": "POST", "path": "/api/v1/users", "content_type": content_type})
+        http.info("Preparing request", extra={"Content-Type": content_type})
+        http.debug("Request details", extra={"method": "POST", "path": "/api/v1/users", "content_type": content_type})
         time.sleep(0.001)
         is_json = content_type.startswith("application/json")
-        negotiation.info("Content type check", data={"content_type": content_type, "is_json": is_json})
+        negotiation.info("Content type check", extra={"content_type": content_type, "is_json": is_json})
 
     with step("Validate acceptance"):
-        negotiation.info("Comparing result", data={"expected_accepted": accepted, "actual_accepted": is_json})
+        negotiation.info("Comparing result", extra={"expected_accepted": accepted, "actual_accepted": is_json})
         assert is_json == accepted
         negotiation.info("Content negotiation behaves correctly")
 
 
-def test_health_endpoint(log) -> None:
+def test_health_endpoint() -> None:
     """Test /health returns uptime and status."""
-    http = log.child("http")
-    health = log.child("health")
+    http = log.getChild("http")
+    health = log.getChild("health")
 
     with step("Request health endpoint"):
         resp = _sim_request("GET", "/api/v1/health")
-        http.info("Health response", data={"status": resp["status"]})
-        http.debug("Full response", data=resp["body"])
+        http.info("Health response", extra={"status": resp["status"]})
+        http.debug("Full response", extra={"data": resp["body"]})
 
     with step("Validate health payload"):
         body = resp["body"]
         with step("Check status field"):
-            health.info("Status value", data={"status": body["status"]})
+            health.info("Status value", extra={"status": body["status"]})
             assert body["status"] == "healthy"
 
         with step("Check uptime"):
-            health.info("Uptime", data={"seconds": body["uptime_seconds"]})
+            health.info("Uptime", extra={"seconds": body["uptime_seconds"]})
             assert body["uptime_seconds"] > 0
             health.info("Health check passed")
 
 
-def test_update_user_partial(log) -> None:
+def test_update_user_partial() -> None:
     """Test PATCH for partial user update."""
-    http = log.child("http")
-    validation = log.child("validation")
+    http = log.getChild("http")
+    validation = log.getChild("validation")
 
     patch_data = {"email": "alice_new@example.com"}
 
     with step("Fetch current user"):
         resp = _sim_request("GET", "/api/v1/users/1")
-        http.info("Current user data", data=resp["body"])
+        http.info("Current user data", extra={"data": resp["body"]})
         original_email = resp["body"]["email"]
-        validation.debug("Original email", data={"email": original_email})
+        validation.debug("Original email", extra={"email": original_email})
 
     with step("Send PATCH request"):
         resp = _sim_request("PATCH", "/api/v1/users/1", body=patch_data)
-        http.info("Patch response", data={"status": resp["status"], "body": resp["body"]})
+        http.info("Patch response", extra={"status": resp["status"], "body": resp["body"]})
         time.sleep(0.001)
 
     with step("Verify partial update applied"):
-        validation.info("Checking patched flag", data={"patched": resp["body"].get("patched")})
+        validation.info("Checking patched flag", extra={"patched": resp["body"].get("patched")})
         assert resp["body"]["patched"] is True
         validation.info("Partial update verified")
 
 
-def test_delete_returns_no_content(log) -> None:
+def test_delete_returns_no_content() -> None:
     """Test DELETE returns 204 with no body."""
-    http = log.child("http")
+    http = log.getChild("http")
 
     with step("Send DELETE request"):
-        http.info("Deleting user", data={"user_id": 3})
+        http.info("Deleting user", extra={"user_id": 3})
         resp = _sim_request("DELETE", "/api/v1/users/3")
-        http.info("Delete response", data={"status": resp["status"]})
-        http.debug("Response body", data={"body": resp["body"]})
+        http.info("Delete response", extra={"status": resp["status"]})
+        http.debug("Response body", extra={"body": resp["body"]})
 
     with step("Validate 204 No Content"):
         assert resp["status"] == 204
@@ -291,61 +294,61 @@ def test_delete_returns_no_content(log) -> None:
     ],
     ids=["auth-bearer", "correlation-id", "idempotency-key"],
 )
-def test_custom_headers_forwarded(log, header_name: str, header_value: str) -> None:
+def test_custom_headers_forwarded(header_name: str, header_value: str) -> None:
     """Verify custom headers are properly forwarded."""
-    http = log.child("http")
-    headers_log = log.child("headers")
+    http = log.getChild("http")
+    headers_log = log.getChild("headers")
 
     with step("Build request with custom header"):
         custom = {header_name: header_value}
-        http.info("Request headers", data=custom)
-        headers_log.debug("Header details", data={"name": header_name, "value_length": len(header_value)})
+        http.info("Request headers", extra={"data": custom})
+        headers_log.debug("Header details", extra={"data": {"name": header_name, "value_length": len(header_value)}})
 
     with step("Send request"):
         resp = _sim_request("GET", "/api/v1/users", headers=custom)
-        http.info("Response received", data={"status": resp["status"]})
+        http.info("Response received", extra={"status": resp["status"]})
         time.sleep(0.001)
 
     with step("Validate header echo"):
         echoed = resp["headers"].get(header_name)
-        headers_log.info("Header echoed", data={"name": header_name, "echoed": echoed is not None or header_name in resp["headers"]})
+        headers_log.info("Header echoed", extra={"data": {"name": header_name, "echoed": echoed is not None or header_name in resp["headers"]}})
         # Custom headers are merged into response headers in our sim
         assert header_name in resp["headers"]
         headers_log.info("Custom header forwarded correctly")
 
 
-def test_error_response_structure(log) -> None:
+def test_error_response_structure() -> None:
     """Verify error responses have the correct JSON structure."""
-    http = log.child("http")
-    error_log = log.child("error_handling")
+    http = log.getChild("http")
+    error_log = log.getChild("error_handling")
 
     with step("Request a non-existent resource"):
         resp = _sim_request("GET", "/api/v1/users/999")
-        http.info("Error response", data={"status": resp["status"], "body": resp["body"]})
+        http.info("Error response", extra={"status": resp["status"], "body": resp["body"]})
 
     with step("Validate error structure"):
         with step("Check 404 status"):
-            error_log.info("Status code", data={"expected": 404, "actual": resp["status"]})
+            error_log.info("Status code", extra={"expected": 404, "actual": resp["status"]})
             assert resp["status"] == 404
 
         with step("Check error field present"):
-            error_log.info("Error body", data=resp["body"])
+            error_log.info("Error body", extra={"data": resp["body"]})
             assert "error" in resp["body"]
 
         with step("Check error message"):
-            error_log.info("Error message", data={"message": resp["body"]["error"]})
+            error_log.info("Error message", extra={"data": {"message": resp["body"]["error"]}})
             assert resp["body"]["error"] == "Not found"
             error_log.info("Error response structure is correct")
 
 
-def test_method_not_allowed(log) -> None:
+def test_method_not_allowed() -> None:
     """Test that unsupported methods return 405."""
-    http = log.child("http")
+    http = log.getChild("http")
 
     with step("Send unsupported method"):
         http.info("Sending OPTIONS to /api/v1/users")
         resp = _sim_request("OPTIONS", "/api/v1/users")
-        http.info("Response", data={"status": resp["status"], "body": resp["body"]})
+        http.info("Response", extra={"status": resp["status"], "body": resp["body"]})
 
     with step("Validate 405"):
         assert resp["status"] == 405
@@ -361,102 +364,102 @@ def test_method_not_allowed(log) -> None:
     ],
     ids=["by-name", "by-role", "no-match"],
 )
-def test_user_search(log, search_term: str, expected_count: int) -> None:
+def test_user_search(search_term: str, expected_count: int) -> None:
     """Test user search/filter functionality."""
-    http = log.child("http")
-    search = log.child("search")
+    http = log.getChild("http")
+    search = log.getChild("search")
 
     with step("Perform search"):
-        http.info("Searching users", data={"query": search_term})
+        http.info("Searching users", extra={"query": search_term})
         results = [u for u in _USERS_DB if search_term.lower() in str(u).lower()]
-        search.info("Search results", data={"query": search_term, "matches": len(results)})
-        search.debug("Matched users", data={"users": [u["name"] for u in results]})
+        search.info("Search results", extra={"query": search_term, "matches": len(results)})
+        search.debug("Matched users", extra={"users": [u["name"] for u in results]})
 
     with step("Validate result count"):
-        search.info("Comparing counts", data={"expected": expected_count, "actual": len(results)})
+        search.info("Comparing counts", extra={"expected": expected_count, "actual": len(results)})
         assert len(results) == expected_count
         search.info("Search results match expected count")
 
 
 @pytest.mark.skip(reason="Batch endpoint not yet implemented")
-def test_batch_create_users(log) -> None:
+def test_batch_create_users() -> None:
     """Test batch user creation endpoint."""
-    http = log.child("http")
+    http = log.getChild("http")
     http.info("This test is skipped")
 
 
 @pytest.mark.skip(reason="Export feature pending review")
-def test_export_users_csv(log) -> None:
+def test_export_users_csv() -> None:
     """Test CSV export of user data."""
-    http = log.child("http")
+    http = log.getChild("http")
     http.info("This test is skipped")
 
 
 # --- Flaky service / retry tests ---
 
 
-def test_user_service_retry_on_connection_error(log, flaky_service) -> None:
+def test_user_service_retry_on_connection_error(flaky_service) -> None:
     """Test that the user service retries on transient connection errors."""
-    http = log.child("http")
-    retry_log = log.child("retry")
+    http = log.getChild("http")
+    retry_log = log.getChild("retry")
 
     with step("Attempt initial request"):
-        http.info("Calling user service", data={"endpoint": "/api/v1/users", "attempt": 1})
+        http.info("Calling user service", extra={"endpoint": "/api/v1/users", "attempt": 1})
         try:
             flaky_service("endpoint_users")
         except ConnectionError as exc:
-            retry_log.warning("Connection failed, will retry", data={"error": str(exc)}, exc_info=exc)
+            retry_log.warning("Connection failed, will retry", extra={"error": str(exc)}, exc_info=exc)
 
     with step("Retry request"):
-        retry_log.info("Retrying after backoff", data={"backoff_ms": 100, "attempt": 2})
+        retry_log.info("Retrying after backoff", extra={"backoff_ms": 100, "attempt": 2})
         time.sleep(0.001)
         result = flaky_service("endpoint_users")
-        http.info("Retry succeeded", data={"result": result})
+        http.info("Retry succeeded", extra={"result": result})
 
     with step("Validate successful response"):
         assert result == "ok:endpoint_users"
         http.info("User service recovered after retry")
 
 
-def test_auth_service_retry(log, flaky_service) -> None:
+def test_auth_service_retry(flaky_service) -> None:
     """Test authentication service retries on transient failure."""
-    http = log.child("http")
-    auth = log.child("auth")
+    http = log.getChild("http")
+    auth = log.getChild("auth")
 
     with step("Request auth token"):
-        auth.info("Requesting OAuth token", data={"grant_type": "client_credentials", "scope": "read write"})
+        auth.info("Requesting OAuth token", extra={"grant_type": "client_credentials", "scope": "read write"})
         try:
             flaky_service("endpoint_auth")
         except ConnectionError as exc:
-            auth.warning("Auth service unavailable", data={"error": str(exc)}, exc_info=exc)
+            auth.warning("Auth service unavailable", extra={"error": str(exc)}, exc_info=exc)
 
     with step("Retry token request"):
-        auth.info("Retrying token acquisition", data={"attempt": 2, "backoff_ms": 200})
+        auth.info("Retrying token acquisition", extra={"attempt": 2, "backoff_ms": 200})
         time.sleep(0.001)
         result = flaky_service("endpoint_auth")
-        auth.info("Token acquired", data={"result": result, "expires_in": 3600})
+        auth.info("Token acquired", extra={"result": result, "expires_in": 3600})
 
     with step("Validate token"):
         assert result == "ok:endpoint_auth"
         auth.info("Auth token validated successfully")
 
 
-def test_notification_service_retry(log, flaky_service) -> None:
+def test_notification_service_retry(flaky_service) -> None:
     """Test notification dispatch retries on transient error."""
-    http = log.child("http")
-    notif = log.child("notification")
+    http = log.getChild("http")
+    notif = log.getChild("notification")
 
     with step("Send notification"):
-        notif.info("Dispatching push notification", data={"user_id": 42, "channel": "email", "template": "welcome"})
+        notif.info("Dispatching push notification", extra={"user_id": 42, "channel": "email", "template": "welcome"})
         try:
             flaky_service("endpoint_notify")
         except ConnectionError as exc:
-            notif.warning("Notification service down", data={"error": str(exc)}, exc_info=exc)
+            notif.warning("Notification service down", extra={"error": str(exc)}, exc_info=exc)
 
     with step("Retry notification"):
-        notif.info("Retrying dispatch", data={"attempt": 2})
+        notif.info("Retrying dispatch", extra={"attempt": 2})
         result = flaky_service("endpoint_notify")
-        notif.info("Notification sent", data={"result": result})
+        notif.info("Notification sent", extra={"result": result})
 
     with step("Verify dispatch"):
         assert result == "ok:endpoint_notify"
@@ -466,42 +469,42 @@ def test_notification_service_retry(log, flaky_service) -> None:
 # --- Deliberate failures ---
 
 
-def test_response_time_sla_breach(log) -> None:
+def test_response_time_sla_breach() -> None:
     """Test that response time stays under SLA threshold (deliberately fails)."""
-    http = log.child("http")
-    perf = log.child("performance")
+    http = log.getChild("http")
+    perf = log.getChild("performance")
 
     with step("Send request and measure latency"):
         http.info("Sending GET /api/v1/users")
         resp = _sim_request("GET", "/api/v1/users")
         simulated_latency_ms = 850
-        perf.info("Latency measured", data={"latency_ms": simulated_latency_ms, "sla_ms": 500})
-        http.debug("Response status", data={"status": resp["status"]})
+        perf.info("Latency measured", extra={"latency_ms": simulated_latency_ms, "sla_ms": 500})
+        http.debug("Response status", extra={"status": resp["status"]})
 
     with step("Check SLA compliance"):
-        perf.warning("Latency exceeds SLA", data={"latency_ms": simulated_latency_ms, "threshold_ms": 500})
+        perf.warning("Latency exceeds SLA", extra={"latency_ms": simulated_latency_ms, "threshold_ms": 500})
         assert simulated_latency_ms < 500, (
             f"Response latency {simulated_latency_ms}ms exceeds 500ms SLA threshold"
         )
 
 
-def test_concurrent_request_limit(log) -> None:
+def test_concurrent_request_limit() -> None:
     """Test concurrent request limit enforcement (deliberately fails)."""
-    http = log.child("http")
-    concurrency = log.child("concurrency")
+    http = log.getChild("http")
+    concurrency = log.getChild("concurrency")
 
     with step("Simulate concurrent requests"):
         max_concurrent = 50
         simulated_concurrent = 75
-        concurrency.info("Load test", data={"concurrent": simulated_concurrent, "limit": max_concurrent})
+        concurrency.info("Load test", extra={"concurrent": simulated_concurrent, "limit": max_concurrent})
         for i in range(5):
-            http.debug(f"Batch {i + 1} dispatched", data={"connections": 15})
+            http.debug(f"Batch {i + 1} dispatched", extra={"connections": 15})
         time.sleep(0.001)
 
     with step("Verify request limit"):
         concurrency.error(
             "Concurrent limit exceeded",
-            data={"actual": simulated_concurrent, "max_allowed": max_concurrent},
+            extra={"actual": simulated_concurrent, "max_allowed": max_concurrent},
         )
         assert simulated_concurrent <= max_concurrent, (
             f"Server accepted {simulated_concurrent} concurrent requests, "
@@ -509,25 +512,25 @@ def test_concurrent_request_limit(log) -> None:
         )
 
 
-def test_idempotency_key_dedup(log) -> None:
+def test_idempotency_key_dedup() -> None:
     """Test that duplicate idempotency keys are rejected (deliberately fails)."""
-    http = log.child("http")
-    idem = log.child("idempotency")
+    http = log.getChild("http")
+    idem = log.getChild("idempotency")
 
     idem_key = "idem-20260402-abc123"
 
     with step("Send first request with idempotency key"):
-        http.info("POST /api/v1/users", data={"idempotency_key": idem_key})
+        http.info("POST /api/v1/users", extra={"idempotency_key": idem_key})
         resp1 = _sim_request("POST", "/api/v1/users", body={"name": "Test"}, headers={"X-Idempotency-Key": idem_key})
-        idem.info("First request succeeded", data={"status": resp1["status"]})
+        idem.info("First request succeeded", extra={"status": resp1["status"]})
 
     with step("Send duplicate request with same key"):
-        http.info("POST /api/v1/users (duplicate)", data={"idempotency_key": idem_key})
+        http.info("POST /api/v1/users (duplicate)", extra={"idempotency_key": idem_key})
         resp2 = _sim_request("POST", "/api/v1/users", body={"name": "Test"}, headers={"X-Idempotency-Key": idem_key})
-        idem.info("Duplicate response", data={"status": resp2["status"]})
+        idem.info("Duplicate response", extra={"status": resp2["status"]})
 
     with step("Verify duplicate was rejected"):
-        idem.warning("Duplicate was not rejected", data={"first_status": resp1["status"], "second_status": resp2["status"]})
+        idem.warning("Duplicate was not rejected", extra={"first_status": resp1["status"], "second_status": resp2["status"]})
         assert resp2["status"] == 409, (
             f"Expected 409 Conflict for duplicate idempotency key, got {resp2['status']}"
         )

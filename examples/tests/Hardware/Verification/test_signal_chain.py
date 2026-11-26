@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("signal_chain")
 
 
 # ---------------------------------------------------------------------------
@@ -45,19 +48,19 @@ def _measure_phase_deg(freq_hz: float) -> float:
     [100, 1_000, 5_000, 10_000, 20_000, 50_000, 100_000],
     ids=["100Hz", "1kHz", "5kHz", "10kHz", "20kHz", "50kHz", "100kHz"],
 )
-def test_gain_flatness(log, verify, testbench, freq_hz):
+def test_gain_flatness(verify, testbench, freq_hz):
     """Verify amplifier gain is 20 dB ± 0.5 dB within passband."""
-    sig = log.child("siggen")
-    scope = log.child("scope")
+    sig = log.getChild("siggen")
+    scope = log.getChild("scope")
 
     with step(f"Apply {freq_hz} Hz sine wave"):
-        sig.info("Output configured", data={
+        sig.info("Output configured", extra={
             "frequency_hz": freq_hz, "amplitude_vpp": 0.1, "waveform": "sine",
         })
 
     with step("Measure output amplitude"):
         gain = _measure_gain_db(freq_hz, 20.0)
-        scope.info("Gain measured", data={"gain_db": gain, "frequency_hz": freq_hz})
+        scope.info("Gain measured", extra={"gain_db": gain, "frequency_hz": freq_hz})
 
     with step("Gain within ±0.5 dB of 20 dB"):
         verify.approx(gain, 20.0, abs_tol=0.5, name=f"Gain @ {freq_hz} Hz", units="dB")
@@ -68,16 +71,16 @@ def test_gain_flatness(log, verify, testbench, freq_hz):
 # ---------------------------------------------------------------------------
 
 
-def test_signal_to_noise_ratio(log, verify, testbench):
+def test_signal_to_noise_ratio(verify, testbench):
     """Verify SNR exceeds 60 dB."""
-    dmm = log.child("dmm")
+    dmm = log.getChild("dmm")
 
     with step("Apply 1 kHz reference signal"):
         dmm.info("Signal: 1 kHz, 1 Vrms")
 
     with step("Measure noise floor"):
         snr = _measure_snr_db()
-        dmm.info("SNR measured", data={"snr_db": snr})
+        dmm.info("SNR measured", extra={"snr_db": snr})
 
     with step("SNR above 60 dB"):
         verify.greater(snr, 60.0, name="Signal-to-noise ratio", units="dB")
@@ -88,16 +91,16 @@ def test_signal_to_noise_ratio(log, verify, testbench):
 # ---------------------------------------------------------------------------
 
 
-def test_total_harmonic_distortion(log, verify, testbench):
+def test_total_harmonic_distortion(verify, testbench):
     """Verify THD is below 0.1%."""
-    scope = log.child("scope")
+    scope = log.getChild("scope")
 
     with step("Apply 1 kHz test tone"):
         scope.info("Input: 1 kHz sine, 1 Vrms")
 
     with step("Perform FFT and measure harmonics"):
         thd = _measure_thd_percent()
-        scope.info("THD result", data={
+        scope.info("THD result", extra={
             "thd_percent": thd,
             "h2_db": round(-60 + random.gauss(0, 2), 1),
             "h3_db": round(-72 + random.gauss(0, 2), 1),
@@ -122,18 +125,18 @@ def test_total_harmonic_distortion(log, verify, testbench):
     ],
     ids=["100Hz", "1kHz", "10kHz", "50kHz"],
 )
-def test_phase_response(log, verify, testbench, freq_hz, max_phase_shift):
+def test_phase_response(verify, testbench, freq_hz, max_phase_shift):
     """Verify phase shift does not exceed limits at key frequencies."""
-    sig = log.child("siggen")
-    scope = log.child("scope")
+    sig = log.getChild("siggen")
+    scope = log.getChild("scope")
 
     with step(f"Configure {freq_hz} Hz stimulus"):
-        sig.info("Waveform applied", data={"freq": freq_hz, "amplitude": "100 mVpp"})
+        sig.info("Waveform applied", extra={"freq": freq_hz, "amplitude": "100 mVpp"})
 
     phase = _measure_phase_deg(freq_hz)
 
     with step("Measure phase"):
-        scope.info("Phase measurement", data={"phase_deg": phase, "freq_hz": freq_hz})
+        scope.info("Phase measurement", extra={"phase_deg": phase, "freq_hz": freq_hz})
 
     with step("Phase within limit"):
         verify.greater(phase, max_phase_shift,
@@ -145,22 +148,22 @@ def test_phase_response(log, verify, testbench, freq_hz, max_phase_shift):
 # ---------------------------------------------------------------------------
 
 
-def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
+def test_signal_chain_end_to_end(verify, report_artifacts, testbench):
     """Full signal chain test: source → amplifier → filter → ADC.
 
     Saves a simulated waveform capture as an artifact.
     """
-    sig = log.child("siggen")
-    amp = log.child("amplifier")
-    filt = log.child("filter")
-    adc = log.child("adc")
+    sig = log.getChild("siggen")
+    amp = log.getChild("amplifier")
+    filt = log.getChild("filter")
+    adc = log.getChild("adc")
 
     with step("Configure signal source"):
         sig.info("1 kHz sine, 100 mVpp, 50 ohm output")
 
     with step("Verify amplifier stage"):
         gain = _measure_gain_db(1_000, 20.0)
-        amp.info("Gain measured", data={"gain_db": gain})
+        amp.info("Gain measured", extra={"gain_db": gain})
         with step("Check gain"):
             pass
 
@@ -170,8 +173,8 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
     with step("Verify filter response"):
         passband_gain = _measure_gain_db(1_000, 0.0)
         stopband_gain = _measure_gain_db(100_000, 0.0)
-        filt.info("Passband", data={"gain_db": passband_gain, "freq": "1 kHz"})
-        filt.info("Stopband", data={"gain_db": stopband_gain, "freq": "100 kHz"})
+        filt.info("Passband", extra={"gain_db": passband_gain, "freq": "1 kHz"})
+        filt.info("Stopband", extra={"gain_db": stopband_gain, "freq": "100 kHz"})
 
     with step("Passband flat"):
         verify.approx(passband_gain, 0.0, abs_tol=0.5, name="Filter passband", units="dB")
@@ -182,7 +185,7 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
     with step("Verify ADC output"):
         snr = _measure_snr_db()
         thd = _measure_thd_percent()
-        adc.info("ADC metrics", data={"snr_db": snr, "thd_pct": thd, "resolution_bits": 16})
+        adc.info("ADC metrics", extra={"snr_db": snr, "thd_pct": thd, "resolution_bits": 16})
 
     with step("ADC SNR"):
         verify.greater(snr, 60.0, name="ADC SNR", units="dB")
@@ -190,13 +193,13 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
         verify.less(thd, 0.1, name="ADC THD", units="%")
 
     # Log signal chain summary as table
-    log.table([
+    log.info("signal_chain_summary", extra={"report_table": [
         {"Stage": "Amplifier", "Metric": "Gain", "Value": f"{gain:.1f} dB", "Limit": "20.0 +/- 0.5 dB"},
         {"Stage": "Filter", "Metric": "Passband", "Value": f"{passband_gain:.1f} dB", "Limit": "0.0 +/- 0.5 dB"},
         {"Stage": "Filter", "Metric": "Stopband", "Value": f"{stopband_gain:.1f} dB", "Limit": "< -15 dB"},
         {"Stage": "ADC", "Metric": "SNR", "Value": f"{snr:.1f} dB", "Limit": "> 60 dB"},
         {"Stage": "ADC", "Metric": "THD", "Value": f"{thd:.4f}%", "Limit": "< 0.1%"},
-    ], name="signal_chain_summary")
+    ]})
 
     # Save simulated waveform data as artifact
     waveform_data = "time_us,voltage_mv\n"
@@ -207,7 +210,7 @@ def test_signal_chain_end_to_end(log, verify, report_artifacts, testbench):
 
     report_artifacts.mkdir(parents=True, exist_ok=True)
     (report_artifacts / "waveform_capture.csv").write_text(waveform_data)
-    log.info("Waveform artifact saved", data={"file": "waveform_capture.csv", "points": 200})
+    log.info("Waveform artifact saved", extra={"file": "waveform_capture.csv", "points": 200})
 
     # Save a simple HTML summary as artifact
     html = """<!DOCTYPE html>
@@ -225,7 +228,7 @@ th{background:#f5f5f5}.pass{color:green}.fail{color:red}</style></head>
 <tr><td>ADC</td><td>THD</td><td>""" + f"{thd:.4f}%" + """</td><td>&lt; 0.1%</td></tr>
 </table></body></html>"""
     (report_artifacts / "signal_chain_summary.html").write_text(html)
-    log.info("HTML summary artifact saved", data={"file": "signal_chain_summary.html"})
+    log.info("HTML summary artifact saved", extra={"file": "signal_chain_summary.html"})
 
 
 # ---------------------------------------------------------------------------
@@ -233,9 +236,9 @@ th{background:#f5f5f5}.pass{color:green}.fail{color:red}</style></head>
 # ---------------------------------------------------------------------------
 
 
-def test_adc_linearity_check(log, verify, testbench):
+def test_adc_linearity_check(verify, testbench):
     """ADC linearity test with several checks -- some deliberately failing."""
-    adc = log.child("adc")
+    adc = log.getChild("adc")
 
     with step("Sweep input voltage"):
         readings = []
@@ -243,7 +246,7 @@ def test_adc_linearity_check(log, verify, testbench):
             code = int(vin_mv / 3300 * 4095) + random.randint(-5, 5)
             readings.append((vin_mv, code))
             with step(f"Vin = {vin_mv} mV → code {code}"):
-                adc.info("Reading", data={"vin_mv": vin_mv, "adc_code": code})
+                adc.info("Reading", extra={"vin_mv": vin_mv, "adc_code": code})
 
     with step("Check linearity at key points"):
         linearity_rows = []
@@ -255,10 +258,10 @@ def test_adc_linearity_check(log, verify, testbench):
                 "Actual Code": code, "Error (LSB)": error_lsb,
                 "Status": "PASS" if error_lsb <= 3 else "FAIL",
             })
-            adc.info(f"Linearity @ {vin} mV", data={
+            adc.info(f"Linearity @ {vin} mV", extra={
                 "expected": expected, "actual": code, "error_lsb": error_lsb,
             })
-        adc.table(linearity_rows, name="adc_linearity_sweep")
+        adc.info("adc_linearity_sweep", extra={"report_table": linearity_rows})
 
     # Some of these may fail if random noise is large enough
     with step("Zero-scale accuracy"):
@@ -277,16 +280,16 @@ def test_adc_linearity_check(log, verify, testbench):
 
 
 @pytest.mark.xfail(reason="Known ADC crosstalk issue on CH3 above 50 kHz -- ticket #ADC-1192")
-def test_crosstalk_rejection(log, verify, testbench):
+def test_crosstalk_rejection(verify, testbench):
     """Verify channel crosstalk is below -60 dB -- expected fail due to known issue."""
-    scope = log.child("scope")
+    scope = log.getChild("scope")
 
     with step("Drive CH1 with 50 kHz full-scale"):
         scope.info("CH1: 50 kHz, 3.3 Vpp")
 
     with step("Measure crosstalk on CH3"):
         crosstalk_db = round(-45 + random.gauss(0, 2), 1)
-        scope.info("Crosstalk measured", data={"crosstalk_db": crosstalk_db, "frequency": "50 kHz"})
+        scope.info("Crosstalk measured", extra={"crosstalk_db": crosstalk_db, "frequency": "50 kHz"})
 
     with step("Crosstalk below -60 dB"):
         verify.less(crosstalk_db, -60.0, name="CH3 crosstalk", units="dB")

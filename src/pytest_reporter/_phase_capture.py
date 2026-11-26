@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._context import sanitize_path_component
 from ._json_writer import write_failure_log, write_phase_log, write_procedure_json
+from ._log_capture import phase_entries, phase_tables
 from ._table import build_table_artifact_html
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
-    from ._logger import Logger
     from .reporter import Reporter
 
 
@@ -45,58 +44,49 @@ def note_verify_checks(reporter: Reporter, report: object) -> None:
         reporter._attempt_checks.setdefault(nodeid, []).extend(checks)
 
 
-def flush_table_artifacts(logger: Logger, run_dir: Path) -> None:
-    """Write any pending table HTML artifacts from the logger and reset it.
-
-    Writes each table payload as a self-contained HTML file in
-    ``run_dir/artifacts/``, then calls ``logger.reset()`` so the next phase
-    starts with an empty entry list.
+def write_table_artifacts(report: object, run_dir: Path) -> None:
+    """Save the tables logged in a phase as HTML files in ``run_dir/artifacts/``.
 
     Args:
-        logger: The active per-test (or per-retry) logger instance.
-        run_dir: The run directory whose ``artifacts/`` sub-directory will
-            receive the table HTML files.
+        report: The phase's ``TestReport`` (its ``reporter_log_tables``).
+        run_dir: The run (or retry attempt) directory.
     """
-    table_payloads = logger.get_table_payloads()
-    if table_payloads:
-        artifacts_dir = run_dir / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        for _seq, payload in table_payloads.items():
-            html = build_table_artifact_html(payload.name, payload.columns, payload.rows)
-            (artifacts_dir / payload.artifact_name).write_text(html, encoding="utf-8")
-    logger.reset()
+    tables = phase_tables(report)  # type: ignore[arg-type]
+    if not tables:
+        return
+    artifacts_dir = run_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    for table in tables:
+        try:
+            html = build_table_artifact_html(
+                str(table["name"]), list(table["columns"]), list(table["rows"])
+            )
+            name = Path(str(table["artifact_name"])).name
+            (artifacts_dir / name).write_text(html, encoding="utf-8")
+        except (KeyError, TypeError, ValueError, OSError):
+            continue
 
 
 def capture_phase_logs(reporter: Reporter, report: pytest.TestReport) -> None:
     """Capture log entries for one test phase and write all related files.
 
-    Ordering (must be preserved exactly):
-    1. Serialize logger → capture entries.
-    2. Write table artifacts and reset logger (``flush_table_artifacts``).
-    3. ``collector.record_phase(entries=…)`` — entries captured *before* reset.
-    4. Write ``{phase}.log.json``.
-    5. Write failure log for original call-phase failures (not retries).
+    1. Write the tables logged in the phase as artifacts.
+    2. ``collector.record_phase(entries=…)`` with the phase's logging records
+       (``report.reporter_log``, set by ``_log_capture.LogCapture``).
+    3. Write ``{phase}.log.json``.
+    4. Write failure log for original call-phase failures (not retries).
 
     Args:
         reporter: The active ``Reporter`` instance.
         report: The ``TestReport`` for the phase being recorded.
     """
     nodeid = report.nodeid
-    logger = reporter._test_loggers.get(nodeid)
-    entries: list[dict[str, Any]] = []
-    if logger is not None:
-        serialized = logger.serialize()
-        entries = serialized.get("entries", [])
-
-        # Write table artifacts before resetting the logger
-        run_dir = reporter._get_run_dir(nodeid)
-        flush_table_artifacts(logger, run_dir)
-
-    # Record phase data with entries
-    reporter.collector.record_phase(report, entries=entries)
-    note_verify_checks(reporter, report)
-
     run_dir = reporter._get_run_dir(nodeid)
+    write_table_artifacts(report, run_dir)
+
+    # Record phase data with the logging records captured in the phase
+    reporter.collector.record_phase(report, entries=phase_entries(report))
+    note_verify_checks(reporter, report)
 
     # Write phase log immediately
     phase = reporter.collector.get_phase(nodeid, report.when)

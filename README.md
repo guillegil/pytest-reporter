@@ -28,8 +28,8 @@ A pytest plugin that turns every test run into a self-contained, structured repo
 |---|---|
 | 📂 **Structured reports** | Timestamped run folders with per-test JSON logs and aggregates. |
 | 🖥 **Self-contained HTML dashboard** | Single `report.html` file — no CDNs, no external assets. Summary, Tests, Session Logs, and Report tabs. |
-| 🪵 **Hierarchical structured logging** | `log.info(...)`, `log.child("psu").debug(...)` — flat serialization with `source` paths. |
-| 📊 **Inline tables** | `log.table(df, name="readings")` — pandas DataFrames, `list[dict]`, or `dict[str, list]` rendered inline and saved as HTML artifacts. |
+| 🪵 **Your Python logging, per phase** | Records from `logging.getLogger(...)` land in the setup, call and teardown logs, with level, logger name, time and `extra=` data. |
+| 📊 **Inline tables** | `log.info("readings", extra={"report_table": df})` — pandas DataFrames, `list[dict]`, or `dict[str, list]` rendered inline and saved as HTML artifacts. |
 | 🪜 **Procedures from stepdoc** | Steps written with [stepdoc](https://github.com/guillegil/stepdoc)'s `step()` appear with timing, outcome, actions and checks; a test's docstring becomes its description, objective and acceptance criteria. |
 | 🔁 **Built-in retries** | `--report-retries=N` re-runs failed tests with separate logs per attempt. |
 | 📎 **Artifacts** | `report_artifacts` fixture for screenshots, CSVs, HTML — embedded as data URIs in the report. |
@@ -89,7 +89,7 @@ reports/
         ├── report.html             # Open in any browser
         ├── junit.xml               # CI/CD
         ├── pytest.log              # Captured console output
-        ├── session.log.json        # Session-scoped logs
+        ├── session.log.json        # Logging from outside the tests
         ├── stepdoc.json            # stepdoc's run record (with stepdoc installed)
         ├── strategies.json         # pytest-strategies 4.3+: each test's strategies
         ├── strategies.vectors.json # ... and the rows each test ran, with outcomes
@@ -118,6 +118,7 @@ Open `reports/01_latest/report.html` to see the dashboard.
 
 | ini setting | Default | Description |
 |---|---|---|
+| `report_log_level` | *(pytest's `log_level`, else `INFO`)* | The lowest level of the [logging records](#logging) shown in the phase and session logs. |
 | `report_stepdoc` | `true` | With stepdoc installed, make it record the procedures (and save `stepdoc.json` in the run folder) when you pass no `--stepdoc-*` option. `false` leaves stepdoc alone. |
 | `report_strategies` | `true` | With pytest-strategies 4.3+, save its run export (`strategies.json`, `strategies.vectors.json`) in the run folder when you chose no export folder, and show it on the Strategy sub-tab. `false` leaves pytest-strategies alone. |
 
@@ -125,14 +126,12 @@ Open `reports/01_latest/report.html` to see the dashboard.
 
 ## Public API
 
-The plugin auto-registers fixtures (no imports needed). The package exports only the logger class, `ReportLogger` (alias `Logger`), and `ReportTabs`, for type hints.
+The plugin auto-registers fixtures (no imports needed). The package exports only `ReportTabs`, for type hints. Logs come from Python's standard `logging` (see [Logging](#logging)).
 
 ### Fixtures
 
 | Fixture | Scope | Returns | Purpose |
 |---|---|---|---|
-| `log` | test | `Logger` | Structured logging during a test. |
-| `session_log` | session | `Logger` | Structured logging from session-scoped fixtures. |
 | `report_artifacts` | test | `pathlib.Path` | Directory to save artifacts (images, HTML, CSV, anything). |
 | `report_tabs` | test | `ReportTabs` | Add [custom HTML tabs](#custom-tabs) to the test's detail. |
 | `report_metadata` | session | `dict` | Mutable `{section: {label: value}}` shown in the Report tab. |
@@ -155,53 +154,82 @@ The `report_metadata` / `report_seed` fixtures do the same per-session and overr
 
 ## Logging
 
-The `log` fixture is a hierarchical logger. Every entry has a timestamp, level, source path, message, and optional structured `data`.
+The report shows what your tests log with Python's standard `logging`. There is no
+logger to request: use `logging.getLogger(...)` anywhere (tests, fixtures, the libraries
+under test), and each record lands in the phase it was logged in, on the run's **Setup**,
+**Call** and **Teardown** log tabs and in `setup.log.json`, `call.log.json` and
+`teardown.log.json`.
 
 ```python
-def test_login(log):
+import logging
+
+log = logging.getLogger("bench.psu")
+
+
+def test_login(dut):
     log.info("Starting login flow")
-    log.debug("Auth token", data={"prefix": "eyJhbGci..."})
-
-    api = log.child("api")
-    api.info("POST /session")
-    api.warning("Rate-limited", data={"retry_after_s": 5})
+    log.debug("Auth token", extra={"prefix": "eyJhbGci..."})
+    log.warning("Rate-limited", extra={"retry_after_s": 5})
 ```
 
-Child loggers prefix entries with their path (`["api"]`) so you can group, filter, and search them in the HTML dashboard.
+Every entry keeps:
 
-The `Logger` exposes:
+- the **level** and the **time** of the record;
+- the **logger name** as its source, split on dots (`bench.psu` is `["bench", "psu"]`), so
+  you can group, filter and search by it in the dashboard;
+- the **message**, with its `%` arguments applied;
+- the **exception** with its traceback, from `log.exception(...)` or `exc_info=`;
+- the **`extra=` fields** as its structured `data`. Logging reserves some names (`name`,
+  `message`, `args`, ...): nest those as `extra={"data": {"name": "Alice"}}`, and the
+  entry's data is that dict.
 
-```python
-log.debug(msg, data=None)
-log.info(msg, data=None)
-log.warning(msg, data=None)
-log.error(msg, data=None, exc_info=None)
-log.critical(msg, data=None, exc_info=None)
-log.child(name) -> Logger
-log.table(data, name="table", *, level="INFO")
+Records logged outside any test (a plugin hook, collection, session start and finish) go to
+the **Session Logs** tab and `session.log.json`. A session-scoped fixture runs inside the
+setup of the first test that uses it, so its records are in that test's setup log, as in
+pytest's own captured logs. `print()` output is not part of these logs; pytest still shows it
+in its captured sections.
+
+The lowest level shown is `report_log_level` (ini), else pytest's `log_level`
+(`--log-level`), else `INFO`. While a test phase runs, the root logger is lowered to that
+level when it is higher, and set back afterwards, as pytest does for `log_level`.
+
+```toml
+[tool.pytest.ini_options]
+report_log_level = "DEBUG"
 ```
+
+> **Upgrading from 0.3:** the `log` and `session_log` fixtures and the `Logger` /
+> `ReportLogger` classes were removed in 0.4.0. Replace `log` with
+> `log = logging.getLogger(__name__)`, `log.child("api")` with `log.getChild("api")`,
+> `data={...}` with `extra={...}`, and `log.table(rows, name="x")` with
+> `log.info("x", extra={"report_table": rows})`. A test that still asks for `log` fails
+> with a message saying so.
 
 ### Tables
 
-`log.table(...)` renders tabular data inline in the phase log **and** as a styled HTML artifact in the Artifacts tab. It accepts:
+`extra={"report_table": data}` logs a table: it renders inline in the phase log **and** as a
+styled HTML artifact in the Artifacts tab, named by the message. It accepts:
 
 - `pandas.DataFrame` (duck-typed — no pandas dependency)
 - `list[dict]` — union of keys becomes the column set
 - `dict[str, list]` — keys are columns, values are rows
 
 ```python
-def test_psu_channels(log):
-    psu = log.child("psu")
+import logging
 
+psu = logging.getLogger("psu")
+
+
+def test_psu_channels():
     readings = [
         {"Channel": "CH1", "Nominal (V)": 3.3,  "Measured": 3.301, "Status": "PASS"},
         {"Channel": "CH2", "Nominal (V)": 5.0,  "Measured": 5.002, "Status": "PASS"},
         {"Channel": "CH3", "Nominal (V)": 12.0, "Measured": 11.98, "Status": "PASS"},
     ]
-    psu.table(readings, name="channel_readings")
+    psu.info("channel_readings", extra={"report_table": readings})
 ```
 
-Inline view is truncated to 20 rows with a "Show all" toggle (up to 200 rows). The full table is always available as `artifacts/channel_readings.html`.
+Inline view is truncated to 20 rows with a "Show all" toggle (up to 200 rows). The full table is always available as `artifacts/channel_readings.html`. A value that is not a table is kept as plain data.
 
 ---
 
@@ -218,7 +246,7 @@ pip install "pytest-reporter[stepdoc]"
 ```python
 from stepdoc import step
 
-def test_voltage_sweep(log, verify, psu):
+def test_voltage_sweep(verify, psu):
     with step("Enable 3.3 V output"):
         psu.enable(1, volts=3.3)
 
@@ -433,7 +461,7 @@ The data sits in the page as one JSON block, so even a report of several megabyt
 
 The report follows your system's light or dark setting; the button at the right of the header switches it. Printing (or saving as PDF) uses the light theme, without the navigation and the test tree.
 
-Tables logged via `log.table()` appear inline in the chronological log position **and** as full HTML artifacts in the Artifacts tab.
+Tables logged with `extra={"report_table": ...}` appear inline in the chronological log position **and** as full HTML artifacts in the Artifacts tab.
 
 ---
 
@@ -529,12 +557,12 @@ changes.
 
 ```
 src/pytest_reporter/
-├── __init__.py             # Public API: Logger/ReportLogger
+├── __init__.py             # Public API: ReportTabs
 ├── plugin.py               # Hooks, fixtures, CLI options, entry point
 ├── _hookspecs.py           # pytest_reporter_* hook specifications
 ├── reporter.py             # Orchestrator
 ├── _report_builder.py      # Assembles the HTML data model at session end
-├── _logger.py              # Hierarchical Logger + table()
+├── _log_capture.py         # Python logging records per phase and for the session
 ├── _stepdoc.py             # Procedures from stepdoc's steps (optional, via its hooks)
 ├── _strategies.py          # pytest-strategies' run export (optional, via its hook and files)
 ├── _collector.py           # Test indexing, run IDs, parametrization, strategy rows

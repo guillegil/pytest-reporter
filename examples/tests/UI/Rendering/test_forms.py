@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("forms")
 
 
 # ---------------------------------------------------------------------------
@@ -14,14 +17,14 @@ from stepdoc import step
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def form_engine(log):
+def form_engine():
     """Set up a simulated form rendering and validation engine."""
-    engine = log.child("form-engine")
+    engine = log.getChild("form-engine")
     engine.info("Initializing form engine v2.4.0")
-    engine.info("Loading validation rule library", data={"rules": 18, "locale": "en-US"})
+    engine.info("Loading validation rule library", extra={"rules": 18, "locale": "en-US"})
     engine.debug("Rule list: required, email, min_length, max_length, pattern, ...")
-    engine.info("Registering custom validators", data={"custom": ["phone_us", "postal_code", "tax_id"]})
-    engine.info("i18n messages loaded", data={"locale": "en-US", "messages": 52})
+    engine.info("Registering custom validators", extra={"custom": ["phone_us", "postal_code", "tax_id"]})
+    engine.info("i18n messages loaded", extra={"locale": "en-US", "messages": 52})
     engine.info("Form engine ready")
     yield {"version": "2.4.0", "rules": 18}
     engine.info("Form engine disposed")
@@ -70,18 +73,18 @@ PHONE_FORMATS = [
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("email", VALID_EMAILS, ids=[e.split("@")[0] for e in VALID_EMAILS])
-def test_valid_email_accepted(log, form_engine, email):
+def test_valid_email_accepted(form_engine, email):
     """Verify valid email addresses pass validation."""
-    v = log.child("email-validator")
+    v = log.getChild("email-validator")
 
     with step("Parse email address"):
-        v.info("Input value", data={"email": email, "length": len(email)})
+        v.info("Input value", extra={"email": email, "length": len(email)})
         local, domain = email.split("@")
-        v.debug("Parsed parts", data={"local": local, "domain": domain})
+        v.debug("Parsed parts", extra={"local": local, "domain": domain})
         with step("Validate local part"):
-            v.info("Local part valid", data={"local": local, "has_plus": "+" in local, "has_dot": "." in local})
+            v.info("Local part valid", extra={"local": local, "has_plus": "+" in local, "has_dot": "." in local})
         with step("Validate domain part"):
-            v.info("Domain valid", data={"domain": domain, "tld": domain.split(".")[-1]})
+            v.info("Domain valid", extra={"domain": domain, "tld": domain.split(".")[-1]})
 
     with step("Run validation pipeline"):
         v.info("Rule: required -- PASS (non-empty)")
@@ -89,11 +92,11 @@ def test_valid_email_accepted(log, form_engine, email):
         v.debug("Pattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
         v.info("Rule: format -- PASS")
         with step("Check DNS (simulated)"):
-            v.info("MX record lookup", data={"domain": domain, "mx_found": True})
+            v.info("MX record lookup", extra={"domain": domain, "mx_found": True})
             v.info("All validation rules passed")
 
     with step("Update form state"):
-        v.info("Field 'email': valid", data={"value": email, "errors": [], "touched": True})
+        v.info("Field 'email': valid", extra={"value": email, "errors": [], "touched": True})
         v.debug("Error message cleared")
         v.info("Submit button enabled")
 
@@ -101,12 +104,12 @@ def test_valid_email_accepted(log, form_engine, email):
 
 
 @pytest.mark.parametrize("email", INVALID_EMAILS, ids=[f"invalid-{i}" for i in range(len(INVALID_EMAILS))])
-def test_invalid_email_rejected(log, form_engine, email):
+def test_invalid_email_rejected(form_engine, email):
     """Verify invalid email addresses fail validation."""
-    v = log.child("email-validator")
+    v = log.getChild("email-validator")
 
     with step("Attempt email validation"):
-        v.info("Input value", data={"email": email, "length": len(email)})
+        v.info("Input value", extra={"email": email, "length": len(email)})
         if not email:
             v.info("Rule: required -- FAIL (empty string)")
             error = "Email is required"
@@ -115,13 +118,13 @@ def test_invalid_email_rejected(log, form_engine, email):
             error = "Invalid email format"
         else:
             parts = email.split("@")
-            v.info("Rule: format -- checking parts", data={"parts": parts})
+            v.info("Rule: format -- checking parts", extra={"parts": parts})
             v.info("Rule: format -- FAIL")
             error = "Invalid email format"
 
     with step("Display error state"):
-        v.info("Field 'email': invalid", data={"value": email, "errors": [error]})
-        v.info("Error message displayed", data={"message": error, "color": "#EF4444"})
+        v.info("Field 'email': invalid", extra={"value": email, "errors": [error]})
+        v.info("Error message displayed", extra={"data": {"message": error, "color": "#EF4444"}})
         with step("Update field visual state"):
             v.info("Border color changed to error red")
             v.info("Error icon shown")
@@ -137,12 +140,12 @@ def test_invalid_email_rejected(log, form_engine, email):
     PASSWORD_CASES,
     ids=[p[2].replace(" ", "-") for p in PASSWORD_CASES],
 )
-def test_password_strength_validation(log, form_engine, password, expected_valid, reason):
+def test_password_strength_validation(form_engine, password, expected_valid, reason):
     """Test password validation rules."""
-    pw = log.child("password-validator")
+    pw = log.getChild("password-validator")
 
     with step("Evaluate password strength"):
-        pw.info("Input received", data={"length": len(password), "reason": reason})
+        pw.info("Input received", extra={"length": len(password), "reason": reason})
         checks = {
             "min_length_8": len(password) >= 8,
             "has_uppercase": any(c.isupper() for c in password),
@@ -152,19 +155,19 @@ def test_password_strength_validation(log, form_engine, password, expected_valid
         }
         for rule, passed in checks.items():
             with step(f"Check: {rule}"):
-                pw.info(f"Rule '{rule}': {'PASS' if passed else 'FAIL'}", data={"rule": rule, "passed": passed})
+                pw.info(f"Rule '{rule}': {'PASS' if passed else 'FAIL'}", extra={"rule": rule, "passed": passed})
 
     with step("Compute strength score"):
         score = sum(checks.values())
         strength = "weak" if score < 3 else "fair" if score < 4 else "strong"
-        pw.info("Strength computed", data={"score": score, "max": 5, "strength": strength})
+        pw.info("Strength computed", extra={"score": score, "max": 5, "strength": strength})
         with step("Update strength meter UI"):
             colors = {"weak": "#EF4444", "fair": "#F59E0B", "strong": "#22C55E"}
-            pw.info("Meter color", data={"color": colors[strength], "width_pct": score * 20})
+            pw.info("Meter color", extra={"color": colors[strength], "width_pct": score * 20})
 
     with step("Determine validity"):
         is_valid = all(checks.values())
-        pw.info("Final result", data={"valid": is_valid, "expected": expected_valid})
+        pw.info("Final result", extra={"valid": is_valid, "expected": expected_valid})
 
     assert is_valid == expected_valid
 
@@ -174,38 +177,38 @@ def test_password_strength_validation(log, form_engine, password, expected_valid
     PHONE_FORMATS,
     ids=[f"phone-{i}" for i in range(len(PHONE_FORMATS))],
 )
-def test_phone_number_format(log, form_engine, phone, expected_valid):
+def test_phone_number_format(form_engine, phone, expected_valid):
     """Validate US phone number formats."""
-    ph = log.child("phone-validator")
+    ph = log.getChild("phone-validator")
 
     with step("Normalize phone input"):
-        ph.info("Raw input", data={"value": phone})
+        ph.info("Raw input", extra={"value": phone})
         digits = re.sub(r"\D", "", phone)
-        ph.info("Extracted digits", data={"digits": digits, "count": len(digits)})
+        ph.info("Extracted digits", extra={"digits": digits, "count": len(digits)})
         with step("Check country code"):
             if digits.startswith("1") and len(digits) == 11:
                 digits = digits[1:]
-                ph.info("US country code stripped", data={"remaining": digits})
+                ph.info("US country code stripped", extra={"remaining": digits})
             elif len(digits) == 10:
                 ph.info("10-digit US number detected")
             else:
-                ph.warning("Unexpected digit count", data={"count": len(digits)})
+                ph.warning("Unexpected digit count", extra={"count": len(digits)})
 
     with step("Validate format"):
         is_valid = len(digits) == 10 and digits.isdigit()
-        ph.info("Validation result", data={"valid": is_valid, "expected": expected_valid})
+        ph.info("Validation result", extra={"valid": is_valid, "expected": expected_valid})
         if is_valid:
             formatted = f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
-            ph.info("Formatted output", data={"formatted": formatted})
+            ph.info("Formatted output", extra={"formatted": formatted})
         else:
-            ph.info("Validation failed", data={"reason": "incorrect digit count" if len(digits) != 10 else "non-numeric"})
+            ph.info("Validation failed", extra={"reason": "incorrect digit count" if len(digits) != 10 else "non-numeric"})
 
     assert is_valid == expected_valid
 
 
-def test_registration_form_complete(log, form_engine):
+def test_registration_form_complete(form_engine):
     """Test complete registration form submission workflow."""
-    form = log.child("registration")
+    form = log.getChild("registration")
 
     fields = {
         "first_name": "Jane",
@@ -220,39 +223,39 @@ def test_registration_form_complete(log, form_engine):
     with step("Fill out registration form"):
         for field_name, value in fields.items():
             with step(f"Set field: {field_name}"):
-                form.info(f"Setting '{field_name}'", data={"value": str(value), "type": type(value).__name__})
+                form.info(f"Setting '{field_name}'", extra={"value": str(value), "type": type(value).__name__})
                 form.debug(f"onChange fired for '{field_name}'")
 
     with step("Client-side validation"):
         form.info("Running validation on all fields")
         for field_name in fields:
             form.debug(f"Validating '{field_name}': PASS")
-        form.info("All fields valid", data={"field_count": len(fields), "errors": 0})
+        form.info("All fields valid", extra={"field_count": len(fields), "errors": 0})
         with step("Cross-field validation"):
             form.info("Password match check: PASS")
             form.info("Terms accepted: PASS")
 
     with step("Submit form"):
         form.info("Submitting to POST /api/register")
-        form.info("Request payload prepared", data={
+        form.info("Request payload prepared", extra={
             "fields": list(fields.keys()),
             "content_type": "application/json",
             "csrf_token": "abc123def456",
         })
         with step("Simulate server response"):
-            form.info("Response received", data={"status": 201, "user_id": "usr_9f8e7d6c"})
+            form.info("Response received", extra={"status": 201, "user_id": "usr_9f8e7d6c"})
             form.info("Redirect to /welcome")
 
     assert len(fields) == 7
 
 
-def test_form_dirty_state_tracking(log, form_engine):
+def test_form_dirty_state_tracking(form_engine):
     """Test that form tracks dirty state for unsaved changes warning."""
-    form = log.child("dirty-tracking")
+    form = log.getChild("dirty-tracking")
 
     with step("Initialize form with server data"):
         initial = {"name": "Acme Corp", "email": "admin@acme.com", "plan": "pro"}
-        form.info("Form initialized", data={"initial_values": initial})
+        form.info("Form initialized", extra={"initial_values": initial})
         form.info("Dirty state: False (pristine)")
 
     with step("Modify field values"):
@@ -260,11 +263,11 @@ def test_form_dirty_state_tracking(log, form_engine):
         form.debug("Dirty fields: ['name']")
         form.info("Dirty state: True")
         with step("Track field-level changes"):
-            form.info("Field diff", data={
+            form.info("Field diff", extra={"data": {
                 "name": {"original": "Acme Corp", "current": "Acme Corporation", "dirty": True},
                 "email": {"original": "admin@acme.com", "current": "admin@acme.com", "dirty": False},
                 "plan": {"original": "pro", "current": "pro", "dirty": False},
-            })
+            }})
 
     with step("Revert field to original"):
         form.info("User changed 'name' back to 'Acme Corp'")
@@ -276,14 +279,14 @@ def test_form_dirty_state_tracking(log, form_engine):
         form.info("Dirty state: True")
         with step("Intercept navigation"):
             form.info("beforeunload handler triggered")
-            form.info("Unsaved changes dialog shown", data={"message": "You have unsaved changes. Leave anyway?"})
+            form.info("Unsaved changes dialog shown", extra={"data": {"message": "You have unsaved changes. Leave anyway?"}})
 
     assert True
 
 
-def test_multi_step_wizard(log, form_engine):
+def test_multi_step_wizard(form_engine):
     """Test multi-step form wizard navigation and state persistence."""
-    wiz = log.child("wizard")
+    wiz = log.getChild("wizard")
 
     steps_data = [
         ("Personal Info", {"name": "Alice", "dob": "1990-05-15"}),
@@ -293,7 +296,7 @@ def test_multi_step_wizard(log, form_engine):
     ]
 
     with step("Initialize wizard"):
-        wiz.info("Wizard created", data={"total_steps": len(steps_data), "current": 0})
+        wiz.info("Wizard created", extra={"total_steps": len(steps_data), "current": 0})
         wiz.info("Progress bar: 0% complete")
         wiz.debug("Step validation rules loaded")
 
@@ -310,26 +313,26 @@ def test_multi_step_wizard(log, form_engine):
     with step("Review and submit"):
         wiz.info("All steps complete, showing review summary")
         for i, (name, data) in enumerate(steps_data[:-1]):
-            wiz.info(f"Section '{name}'", data=data)
+            wiz.info(f"Section '{name}'", extra={"data": data})
         with step("Submit wizard data"):
-            wiz.info("Wizard submitted successfully", data={"redirect": "/dashboard"})
+            wiz.info("Wizard submitted successfully", extra={"redirect": "/dashboard"})
 
     assert len(steps_data) == 4
 
 
-def test_inline_edit_field(log, form_engine):
+def test_inline_edit_field(form_engine):
     """Test inline-editable field component behavior."""
-    edit = log.child("inline-edit")
+    edit = log.getChild("inline-edit")
 
     with step("Render in display mode"):
-        edit.info("Rendering inline field", data={"field": "company_name", "value": "Acme Corp", "mode": "display"})
+        edit.info("Rendering inline field", extra={"field": "company_name", "value": "Acme Corp", "mode": "display"})
         edit.debug("Pencil icon rendered beside text")
         edit.info("Double-click listener attached")
 
     with step("Switch to edit mode"):
         edit.info("Double-click detected on field")
         with step("Transform to input"):
-            edit.info("Display text replaced with <input>", data={"type": "text", "value": "Acme Corp"})
+            edit.info("Display text replaced with <input>", extra={"type": "text", "value": "Acme Corp"})
             edit.info("Input focused and text selected")
             edit.debug("Escape key listener attached for cancel")
 
@@ -339,7 +342,7 @@ def test_inline_edit_field(log, form_engine):
         with step("Validate inline"):
             edit.info("Validation passed (non-empty, max 100 chars)")
         with step("Save via API"):
-            edit.info("PATCH /api/company/name", data={"old": "Acme Corp", "new": "Acme Corporation"})
+            edit.info("PATCH /api/company/name", extra={"old": "Acme Corp", "new": "Acme Corporation"})
             edit.info("API response: 200 OK")
         with step("Return to display mode"):
             edit.info("Input replaced with updated text")
@@ -347,12 +350,12 @@ def test_inline_edit_field(log, form_engine):
     assert True
 
 
-def test_file_upload_form(log, form_engine):
+def test_file_upload_form(form_engine):
     """Test file upload with drag-and-drop and validation."""
-    upload = log.child("file-upload")
+    upload = log.getChild("file-upload")
 
     with step("Render upload zone"):
-        upload.info("Drop zone initialized", data={"accept": ".pdf,.png,.jpg", "max_size_mb": 10, "multiple": True})
+        upload.info("Drop zone initialized", extra={"accept": ".pdf,.png,.jpg", "max_size_mb": 10, "multiple": True})
         upload.debug("Drag-and-drop event listeners attached")
         upload.info("Upload zone rendered with placeholder text")
 
@@ -362,61 +365,61 @@ def test_file_upload_form(log, form_engine):
             {"name": "chart.png", "size_kb": 512, "type": "image/png"},
             {"name": "photo.jpg", "size_kb": 3072, "type": "image/jpeg"},
         ]
-        upload.info("Drop event received", data={"file_count": len(files)})
+        upload.info("Drop event received", extra={"file_count": len(files)})
         for f in files:
             with step(f"Validate: {f['name']}"):
-                upload.info(f"File '{f['name']}'", data=f)
+                upload.info(f"File '{f['name']}'", extra={"data": f})
                 upload.debug(f"Extension check: PASS")
                 upload.debug(f"Size check: {f['size_kb']}KB < 10240KB -- PASS")
 
     with step("Upload files"):
         for f in files:
             with step(f"Upload: {f['name']}"):
-                upload.info(f"Uploading '{f['name']}'", data={"progress": "0%"})
-                upload.info(f"Upload progress", data={"file": f["name"], "progress": "50%"})
-                upload.info(f"Upload complete", data={"file": f["name"], "progress": "100%", "url": f"/uploads/{f['name']}"})
-        upload.info("All files uploaded", data={"total_files": 3, "total_size_kb": sum(f["size_kb"] for f in files)})
+                upload.info(f"Uploading '{f['name']}'", extra={"progress": "0%"})
+                upload.info(f"Upload progress", extra={"file": f["name"], "progress": "50%"})
+                upload.info(f"Upload complete", extra={"file": f["name"], "progress": "100%", "url": f"/uploads/{f['name']}"})
+        upload.info("All files uploaded", extra={"total_files": 3, "total_size_kb": sum(f["size_kb"] for f in files)})
 
     assert len(files) == 3
 
 
 @pytest.mark.skip(reason="Captcha service mock not available")
-def test_captcha_integration(log, form_engine):
+def test_captcha_integration(form_engine):
     """Test reCAPTCHA integration in form submission."""
     pass
 
 
 @pytest.mark.skip(reason="Address autocomplete API key not configured for CI")
-def test_address_autocomplete(log, form_engine):
+def test_address_autocomplete(form_engine):
     """Test address autocomplete dropdown from Google Places API."""
     pass
 
 
-def test_date_picker_rendering(log, form_engine):
+def test_date_picker_rendering(form_engine):
     """Test date picker component with range selection."""
-    dp = log.child("date-picker")
+    dp = log.getChild("date-picker")
 
     with step("Open date picker"):
         dp.info("Click on date input field")
-        dp.info("Calendar popup opened", data={"month": "March", "year": 2026})
+        dp.info("Calendar popup opened", extra={"month": "March", "year": 2026})
         dp.debug("Calendar grid rendered: 6 weeks x 7 days")
         with step("Highlight today"):
-            dp.info("Today marker on March 28", data={"is_today": True, "class": "today"})
+            dp.info("Today marker on March 28", extra={"is_today": True, "class": "today"})
 
     with step("Navigate months"):
         dp.info("Click next month arrow")
-        dp.info("Calendar updated", data={"month": "April", "year": 2026})
+        dp.info("Calendar updated", extra={"month": "April", "year": 2026})
         with step("Verify disabled dates"):
-            dp.info("Past dates disabled", data={"disabled_before": "2026-03-28"})
+            dp.info("Past dates disabled", extra={"disabled_before": "2026-03-28"})
             dp.debug("Weekend styling applied (lighter text)")
 
     with step("Select date range"):
         dp.info("Click start date: April 5")
-        dp.info("Range start set", data={"start": "2026-04-05"})
+        dp.info("Range start set", extra={"start": "2026-04-05"})
         with step("Highlight hover range"):
             dp.info("Hovering over April 10 -- preview range highlighted")
             dp.info("Click end date: April 10")
-            dp.info("Range selected", data={"start": "2026-04-05", "end": "2026-04-10", "days": 6})
+            dp.info("Range selected", extra={"start": "2026-04-05", "end": "2026-04-10", "days": 6})
         with step("Close picker"):
             dp.info("Date picker closed")
             dp.info("Input value updated: 'Apr 5 - Apr 10, 2026'")
@@ -424,9 +427,9 @@ def test_date_picker_rendering(log, form_engine):
     assert True
 
 
-def test_select_dropdown_search(log, form_engine):
+def test_select_dropdown_search(form_engine):
     """Test searchable select dropdown component."""
-    sel = log.child("select")
+    sel = log.getChild("select")
 
     options = [
         {"value": "us", "label": "United States"},
@@ -440,23 +443,23 @@ def test_select_dropdown_search(log, form_engine):
     ]
 
     with step("Render select with options"):
-        sel.info("Select initialized", data={"options_count": len(options), "searchable": True, "placeholder": "Choose country..."})
+        sel.info("Select initialized", extra={"options_count": len(options), "searchable": True, "placeholder": "Choose country..."})
         sel.debug("Virtualized list: all options fit in viewport, no virtual scroll needed")
 
     with step("Open and search"):
         sel.info("Click to open dropdown")
         sel.info("Search input focused")
         with step("Type search query"):
-            sel.info("User typed 'uni'", data={"query": "uni"})
+            sel.info("User typed 'uni'", extra={"query": "uni"})
             filtered = [o for o in options if "uni" in o["label"].lower()]
-            sel.info("Filtered results", data={"matches": [o["label"] for o in filtered], "count": len(filtered)})
+            sel.info("Filtered results", extra={"matches": [o["label"] for o in filtered], "count": len(filtered)})
         with step("Highlight first match"):
             sel.info("'United States' highlighted via keyboard")
 
     with step("Select option"):
         sel.info("Enter pressed -- selecting 'United States'")
         sel.info("Dropdown closed")
-        sel.info("Selected value", data={"value": "us", "label": "United States"})
+        sel.info("Selected value", extra={"value": "us", "label": "United States"})
         sel.debug("onChange callback fired")
 
     assert len(options) == 8
@@ -466,18 +469,18 @@ def test_select_dropdown_search(log, form_engine):
 # Flaky / retry tests
 # ---------------------------------------------------------------------------
 
-def test_form_submit_api_flaky(log, form_engine, flaky_service):
+def test_form_submit_api_flaky(form_engine, flaky_service):
     """Form submission endpoint is intermittently unavailable."""
-    form = log.child("submit")
+    form = log.getChild("submit")
 
     with step("Prepare form submission"):
-        form.info("Collecting form data", data={"fields": 5})
+        form.info("Collecting form data", extra={"fields": 5})
         form.info("Client-side validation passed")
 
     with step("Submit to API"):
         form.info("POST /api/forms/contact")
         result = flaky_service("form_submit_endpoint")
-        form.info("API response received", data={"result": result, "status": 201})
+        form.info("API response received", extra={"result": result, "status": 201})
 
     with step("Handle success"):
         form.info("Success toast shown: 'Form submitted successfully'")
@@ -486,15 +489,15 @@ def test_form_submit_api_flaky(log, form_engine, flaky_service):
     assert result == "ok:form_submit_endpoint"
 
 
-def test_validation_service_flaky(log, form_engine, flaky_service):
+def test_validation_service_flaky(form_engine, flaky_service):
     """Server-side validation endpoint has intermittent failures."""
-    val = log.child("server-validation")
+    val = log.getChild("server-validation")
 
     with step("Submit for server-side validation"):
         val.info("Sending data to validation endpoint")
         val.info("POST /api/validate/registration")
         result = flaky_service("server_validation_check")
-        val.info("Validation response received", data={"result": result})
+        val.info("Validation response received", extra={"result": result})
 
     with step("Process validation results"):
         val.info("Server returned: all fields valid")
@@ -509,13 +512,13 @@ def test_validation_service_flaky(log, form_engine, flaky_service):
 # Deliberate failures
 # ---------------------------------------------------------------------------
 
-def test_email_format_strict_rfc(log, form_engine):
+def test_email_format_strict_rfc(form_engine):
     """Strict RFC 5322 validation -- deliberately fails on edge case."""
-    v = log.child("rfc-validator")
+    v = log.getChild("rfc-validator")
 
     with step("Validate edge-case email"):
         email = '"quoted local"@example.com'
-        v.info("Testing RFC 5322 quoted local part", data={"email": email})
+        v.info("Testing RFC 5322 quoted local part", extra={"email": email})
         v.info("Quoted local parts are valid per RFC 5322 but rarely supported")
         v.warning("Most form validators reject quoted local parts")
         v.error("Our validator does not support this edge case")
@@ -526,28 +529,28 @@ def test_email_format_strict_rfc(log, form_engine):
     assert result is not None, f"Email '{email}' should be valid per RFC 5322 but was rejected"
 
 
-def test_max_field_length_overflow(log, form_engine):
+def test_max_field_length_overflow(form_engine):
     """Test that exceeding max length is caught -- deliberately fails."""
-    v = log.child("length-validator")
+    v = log.getChild("length-validator")
 
     with step("Test field with value exceeding max length"):
         value = "A" * 300
         max_len = 255
-        v.info("Input length", data={"length": len(value), "max_allowed": max_len})
+        v.info("Input length", extra={"length": len(value), "max_allowed": max_len})
         v.warning("Value exceeds maximum length")
-        v.error("Truncation would lose data", data={"excess_chars": len(value) - max_len})
+        v.error("Truncation would lose data", extra={"excess_chars": len(value) - max_len})
 
     assert len(value) <= max_len, f"Field value length {len(value)} exceeds max of {max_len}"
 
 
-def test_required_field_empty_submit(log, form_engine):
+def test_required_field_empty_submit(form_engine):
     """Submitting with empty required fields -- deliberately fails."""
-    form = log.child("required-check")
+    form = log.getChild("required-check")
 
     with step("Attempt to submit with empty required fields"):
         fields = {"name": "", "email": "", "message": "Hello"}
         empty_required = [k for k, v in fields.items() if not v and k != "message"]
-        form.info("Form submission attempted", data={"fields": fields})
-        form.error("Required fields empty", data={"empty_fields": empty_required, "count": len(empty_required)})
+        form.info("Form submission attempted", extra={"fields": fields})
+        form.error("Required fields empty", extra={"empty_fields": empty_required, "count": len(empty_required)})
 
     assert len(empty_required) == 0, f"Required fields are empty: {empty_required}"

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import pytest
 
 from stepdoc import step
+
+log = logging.getLogger("components")
 
 
 # ---------------------------------------------------------------------------
@@ -23,18 +26,18 @@ def _sim_render_time() -> float:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def dom_env(log):
+def dom_env():
     """Set up a simulated DOM rendering environment."""
-    dom = log.child("dom")
+    dom = log.getChild("dom")
     dom.info("Initializing virtual DOM engine v3.8.1")
-    dom.info("Loading component registry", data={"components": 42, "theme": "material-dark"})
+    dom.info("Loading component registry", extra={"components": 42, "theme": "material-dark"})
     dom.info("Mounting root container <div id='app'>")
     dom.debug("Shadow DOM support: enabled")
     dom.debug("CSS containment: layout + paint")
-    dom.info("Design tokens loaded", data={
+    dom.info("Design tokens loaded", extra={
         "colors": 28, "spacing_scale": "4px", "border_radii": [0, 2, 4, 8, 12, 9999],
     })
-    dom.info("Font stack resolved", data={
+    dom.info("Font stack resolved", extra={
         "body": "Inter, system-ui, sans-serif",
         "mono": "JetBrains Mono, Consolas, monospace",
     })
@@ -76,29 +79,29 @@ ICON_SIZES = [16, 20, 24, 32, 48]
     BUTTON_VARIANTS,
     ids=[b[0] for b in BUTTON_VARIANTS],
 )
-def test_button_variant_rendering(log, dom_env, variant, bg, fg, style):
+def test_button_variant_rendering(dom_env, variant, bg, fg, style):
     """Render each button variant and verify DOM output."""
-    btn = log.child("button")
+    btn = log.getChild("button")
 
     with step(f"Create <Button variant='{variant}'>"):
-        btn.info("Instantiating Button component", data={"variant": variant, "style": style})
-        btn.debug("Resolved background color", data={"bg": bg, "fg": fg})
+        btn.info("Instantiating Button component", extra={"variant": variant, "style": style})
+        btn.debug("Resolved background color", extra={"bg": bg, "fg": fg})
         with step("Apply base styles from design tokens"):
             btn.info("Base padding: 8px 16px, border-radius: 6px")
         with step("Merge variant-specific overrides"):
-            btn.info("Style overrides applied", data={"background": bg, "color": fg, "border": "none" if style == "filled" else f"1px solid {bg}"})
+            btn.info("Style overrides applied", extra={"background": bg, "color": fg, "border": "none" if style == "filled" else f"1px solid {bg}"})
 
     with step("Render to virtual DOM"):
         btn.info("Creating vnode tree")
         btn.debug("Tree depth: 3 nodes (button > span.label + span.icon)")
-        btn.info("Layout pass complete", data={"width": 120, "height": 40, "render_ms": _sim_render_time()})
+        btn.info("Layout pass complete", extra={"width": 120, "height": 40, "render_ms": _sim_render_time()})
         with step("Commit to real DOM"):
             btn.info("DOM patch applied: 1 insertion")
 
     with step("Verify rendered output"):
-        btn.info("Querying rendered element via selector", data={"selector": f"button.btn-{variant}"})
+        btn.info("Querying rendered element via selector", extra={"selector": f"button.btn-{variant}"})
         btn.info("Element found in DOM")
-        btn.debug("Computed styles match expected", data={"background_color": bg, "color": fg})
+        btn.debug("Computed styles match expected", extra={"background_color": bg, "color": fg})
         with step("Check ARIA attributes"):
             btn.info("role='button' present")
             btn.info("tabindex='0' present")
@@ -108,8 +111,8 @@ def test_button_variant_rendering(log, dom_env, variant, bg, fg, style):
             btn.info("Active state scale transform: scale(0.98)")
 
     with step("Accessibility audit"):
-        btn.info("Running contrast ratio check", data={"bg": bg, "fg": fg})
-        btn.info("Contrast ratio: 7.2:1 (AAA pass)", data={"ratio": 7.2, "level": "AAA"})
+        btn.info("Running contrast ratio check", extra={"bg": bg, "fg": fg})
+        btn.info("Contrast ratio: 7.2:1 (AAA pass)", extra={"ratio": 7.2, "level": "AAA"})
         btn.info("Keyboard navigation: Enter and Space trigger click")
         btn.debug("Screen reader announcement: 'Button, {variant}'")
 
@@ -121,13 +124,13 @@ def test_button_variant_rendering(log, dom_env, variant, bg, fg, style):
     CARD_LAYOUTS,
     ids=[c[0] for c in CARD_LAYOUTS],
 )
-def test_card_layout(log, dom_env, layout, has_header, has_footer):
+def test_card_layout(dom_env, layout, has_header, has_footer):
     """Render Card component with different layout configurations."""
-    card = log.child("card")
+    card = log.getChild("card")
 
     with step(f"Configure Card layout='{layout}'"):
-        card.info("Building card structure", data={"header": has_header, "footer": has_footer})
-        card.debug("Slot analysis", data={
+        card.info("Building card structure", extra={"header": has_header, "footer": has_footer})
+        card.debug("Slot analysis", extra={
             "header_slot": "populated" if has_header else "empty",
             "default_slot": "populated",
             "footer_slot": "populated" if has_footer else "empty",
@@ -141,14 +144,14 @@ def test_card_layout(log, dom_env, layout, has_header, has_footer):
         card.debug("Content height computed: 180px")
         if has_header:
             with step("Render header slot"):
-                card.info("Header rendered", data={"height": 48, "border_bottom": True})
+                card.info("Header rendered", extra={"height": 48, "border_bottom": True})
         if has_footer:
             with step("Render footer slot"):
-                card.info("Footer rendered", data={"height": 52, "border_top": True})
+                card.info("Footer rendered", extra={"height": 52, "border_top": True})
 
     with step("Layout verification"):
         expected_h = 180 + (48 if has_header else 0) + (52 if has_footer else 0)
-        card.info("Total card height", data={"expected": expected_h, "padding": 16})
+        card.info("Total card height", extra={"expected": expected_h, "padding": 16})
         card.info("Overflow behavior: hidden (border-radius clip)")
         card.debug("Box model validated")
         with step("Verify responsive behavior"):
@@ -159,71 +162,71 @@ def test_card_layout(log, dom_env, layout, has_header, has_footer):
 
 
 @pytest.mark.parametrize("size", ICON_SIZES, ids=[f"{s}px" for s in ICON_SIZES])
-def test_icon_scaling(log, dom_env, size):
+def test_icon_scaling(dom_env, size):
     """Verify SVG icon renders correctly at each size."""
-    icon = log.child("icon")
+    icon = log.getChild("icon")
 
     with step(f"Render icon at {size}px"):
         icon.info("Loading SVG source for 'chevron-right'")
         icon.debug("SVG viewBox: 0 0 24 24")
-        icon.info("Scaling to target size", data={"target": size, "original": 24, "scale_factor": round(size / 24, 3)})
+        icon.info("Scaling to target size", extra={"target": size, "original": 24, "scale_factor": round(size / 24, 3)})
         with step("Apply currentColor inheritance"):
             icon.info("Fill color inherited from parent: #374151")
         with step("Render SVG to DOM"):
-            icon.info("SVG element created", data={"width": size, "height": size, "aria_hidden": True})
+            icon.info("SVG element created", extra={"width": size, "height": size, "aria_hidden": True})
 
     with step("Pixel-snap verification"):
         icon.info("Checking sub-pixel alignment")
         icon.debug("Transform origin: center center")
-        icon.info("Snap result", data={"aligned": size % 2 == 0, "half_pixel_offset": size % 2 != 0})
-        icon.info("Rendering complete", data={"render_ms": _sim_render_time()})
+        icon.info("Snap result", extra={"aligned": size % 2 == 0, "half_pixel_offset": size % 2 != 0})
+        icon.info("Rendering complete", extra={"render_ms": _sim_render_time()})
 
     assert size in ICON_SIZES
 
 
-def test_tooltip_positioning(log, dom_env):
+def test_tooltip_positioning(dom_env):
     """Test tooltip renders in correct positions relative to anchor."""
-    tip = log.child("tooltip")
+    tip = log.getChild("tooltip")
 
     positions = ["top", "right", "bottom", "left"]
     for pos in positions:
         with step(f"Position tooltip: {pos}"):
             tip.info(f"Mounting tooltip with placement='{pos}'")
-            tip.debug("Anchor element rect", data={"x": 200, "y": 300, "w": 100, "h": 40})
+            tip.debug("Anchor element rect", extra={"x": 200, "y": 300, "w": 100, "h": 40})
             with step("Calculate floating position"):
                 offsets = {"top": (200, 260), "right": (310, 300), "bottom": (200, 350), "left": (90, 300)}
-                tip.info("Computed position", data={"x": offsets[pos][0], "y": offsets[pos][1], "placement": pos})
+                tip.info("Computed position", extra={"x": offsets[pos][0], "y": offsets[pos][1], "placement": pos})
             with step("Check viewport overflow"):
                 tip.info("No overflow detected -- tooltip fits within viewport")
                 tip.debug("Arrow positioned at center of anchor edge")
 
     with step("Verify flip behavior"):
         tip.info("Simulating viewport edge collision (top placement near top edge)")
-        tip.info("Flip triggered: top -> bottom", data={"original": "top", "flipped": "bottom"})
+        tip.info("Flip triggered: top -> bottom", extra={"original": "top", "flipped": "bottom"})
         tip.info("Tooltip repositioned successfully")
 
     assert len(positions) == 4
 
 
-def test_modal_lifecycle(log, dom_env):
+def test_modal_lifecycle(dom_env):
     """Test modal open/close lifecycle and focus trapping."""
-    modal = log.child("modal")
+    modal = log.getChild("modal")
 
     with step("Open modal"):
         modal.info("Triggering modal open")
-        modal.info("Overlay backdrop rendered", data={"opacity": 0.5, "z_index": 1000})
+        modal.info("Overlay backdrop rendered", extra={"opacity": 0.5, "z_index": 1000})
         with step("Animate entrance"):
             modal.info("Scale animation: 0.95 -> 1.0 over 200ms")
             modal.info("Opacity animation: 0 -> 1 over 150ms")
         with step("Set up focus trap"):
-            modal.info("Focus trap activated", data={"focusable_elements": 5})
+            modal.info("Focus trap activated", extra={"focusable_elements": 5})
             modal.info("Initial focus set to first focusable element")
             modal.debug("Scroll lock applied to document.body")
 
     with step("Verify modal content"):
         modal.info("Title rendered: 'Confirm Action'")
         modal.info("Body content rendered: 3 paragraphs")
-        modal.info("Action buttons rendered", data={"buttons": ["Cancel", "Confirm"]})
+        modal.info("Action buttons rendered", extra={"buttons": ["Cancel", "Confirm"]})
         with step("Check overlay click behavior"):
             modal.info("Click on overlay dismisses modal: True")
 
@@ -240,58 +243,58 @@ def test_modal_lifecycle(log, dom_env):
     assert True
 
 
-def test_dropdown_menu_keyboard_nav(log, dom_env):
+def test_dropdown_menu_keyboard_nav(dom_env):
     """Test dropdown menu supports full keyboard navigation."""
-    dd = log.child("dropdown")
+    dd = log.getChild("dropdown")
 
     with step("Open dropdown via keyboard"):
         dd.info("Trigger button focused")
         dd.info("Enter key pressed")
-        dd.info("Menu panel opened", data={"items": 6, "z_index": 1050})
+        dd.info("Menu panel opened", extra={"items": 6, "z_index": 1050})
         with step("Position menu below trigger"):
-            dd.info("Menu positioned", data={"top": 44, "left": 0, "width": 200})
+            dd.info("Menu positioned", extra={"top": 44, "left": 0, "width": 200})
 
     menu_items = ["Profile", "Settings", "Billing", "Team", "Integrations", "Sign out"]
     with step("Navigate items with arrow keys"):
         for i, item in enumerate(menu_items):
             with step(f"ArrowDown to '{item}'"):
-                dd.info(f"Item {i} highlighted", data={"label": item, "aria_selected": True})
+                dd.info(f"Item {i} highlighted", extra={"label": item, "aria_selected": True})
                 dd.debug(f"Scroll into view: not needed (item {i} visible)")
 
     with step("Select item via Enter"):
         dd.info("Enter pressed on 'Settings'")
         dd.info("Menu closed")
-        dd.info("Navigation triggered", data={"route": "/settings"})
+        dd.info("Navigation triggered", extra={"route": "/settings"})
         dd.info("Focus returned to trigger button")
 
     assert len(menu_items) == 6
 
 
-def test_table_virtualization(log, dom_env):
+def test_table_virtualization(dom_env):
     """Test virtualized table renders only visible rows."""
-    tbl = log.child("table")
+    tbl = log.getChild("table")
 
     with step("Initialize table with large dataset"):
-        tbl.info("Dataset loaded", data={"total_rows": 10000, "columns": 8})
-        tbl.debug("Column definitions", data={
+        tbl.info("Dataset loaded", extra={"total_rows": 10000, "columns": 8})
+        tbl.debug("Column definitions", extra={
             "columns": ["id", "name", "email", "role", "status", "created", "last_login", "actions"],
         })
         with step("Calculate virtual window"):
             tbl.info("Container height: 600px, row height: 40px")
             tbl.info("Visible rows: 15, overscan: 5 (top + bottom)")
-            tbl.info("Virtual window", data={"start": 0, "end": 25, "total": 10000})
+            tbl.info("Virtual window", extra={"start": 0, "end": 25, "total": 10000})
 
     with step("Render visible rows"):
         tbl.info("Rendering 25 rows (15 visible + 10 overscan)")
         for i in range(5):
-            tbl.debug(f"Row {i} rendered", data={"id": i + 1, "name": f"User {i + 1}", "status": "active"})
+            tbl.debug(f"Row {i} rendered", extra={"data": {"id": i + 1, "name": f"User {i + 1}", "status": "active"}})
         tbl.info("Remaining 20 rows rendered (truncated log)")
-        tbl.info("Spacer divs created", data={"top_spacer": "0px", "bottom_spacer": "399000px"})
+        tbl.info("Spacer divs created", extra={"top_spacer": "0px", "bottom_spacer": "399000px"})
 
     with step("Scroll to row 5000"):
-        tbl.info("Scroll event received", data={"scroll_top": 200000})
+        tbl.info("Scroll event received", extra={"scroll_top": 200000})
         with step("Recalculate virtual window"):
-            tbl.info("New window", data={"start": 4990, "end": 5015})
+            tbl.info("New window", extra={"start": 4990, "end": 5015})
             tbl.info("Recycled 25 DOM nodes (no new allocations)")
             tbl.debug("Frame budget: 4.2ms (under 16ms target)")
 
@@ -303,13 +306,13 @@ def test_table_virtualization(log, dom_env):
     assert True
 
 
-def test_accordion_expand_collapse(log, dom_env):
+def test_accordion_expand_collapse(dom_env):
     """Test accordion panel expand and collapse animations."""
-    acc = log.child("accordion")
+    acc = log.getChild("accordion")
 
     sections = ["General", "Security", "Notifications", "Billing"]
     with step("Render accordion with 4 sections"):
-        acc.info("Accordion initialized", data={"sections": sections, "allow_multiple": False})
+        acc.info("Accordion initialized", extra={"sections": sections, "allow_multiple": False})
         for s in sections:
             with step(f"Render section header: {s}"):
                 acc.debug(f"Header '{s}': aria-expanded=false")
@@ -318,7 +321,7 @@ def test_accordion_expand_collapse(log, dom_env):
         acc.info("Click on 'Security' header")
         with step("Animate panel open"):
             acc.info("Height transition: 0px -> 240px over 300ms ease-out")
-            acc.info("Content revealed", data={"section": "Security", "aria_expanded": True})
+            acc.info("Content revealed", extra={"section": "Security", "aria_expanded": True})
         with step("Collapse previously open section"):
             acc.info("No section was previously open -- skip")
 
@@ -334,24 +337,24 @@ def test_accordion_expand_collapse(log, dom_env):
 
 
 @pytest.mark.skip(reason="Web Animations API polyfill not loaded in test env")
-def test_css_animation_keyframes(log, dom_env):
+def test_css_animation_keyframes(dom_env):
     """Test complex CSS animation keyframe rendering."""
     pass
 
 
 @pytest.mark.skip(reason="ResizeObserver mock not yet implemented")
-def test_responsive_container_queries(log, dom_env):
+def test_responsive_container_queries(dom_env):
     """Test container query breakpoints trigger correct layouts."""
     pass
 
 
-def test_tabs_switching(log, dom_env):
+def test_tabs_switching(dom_env):
     """Test tab component switches panels correctly."""
-    tabs = log.child("tabs")
+    tabs = log.getChild("tabs")
 
     tab_labels = ["Overview", "Analytics", "Settings", "Logs"]
     with step("Initialize tab group"):
-        tabs.info("Creating tab group", data={"tabs": tab_labels, "default_active": 0})
+        tabs.info("Creating tab group", extra={"tabs": tab_labels, "default_active": 0})
         for i, label in enumerate(tab_labels):
             tabs.debug(f"Tab {i}: '{label}' role=tab, aria-selected={'true' if i == 0 else 'false'}")
         tabs.info("Panel 'Overview' visible by default")
@@ -376,9 +379,9 @@ def test_tabs_switching(log, dom_env):
     assert len(tab_labels) == 4
 
 
-def test_progress_bar_states(log, dom_env):
+def test_progress_bar_states(dom_env):
     """Test progress bar renders across different states."""
-    pb = log.child("progress")
+    pb = log.getChild("progress")
 
     states = [
         (0, "empty", "#E5E7EB"),
@@ -388,11 +391,11 @@ def test_progress_bar_states(log, dom_env):
     ]
     for pct, state_name, color in states:
         with step(f"Render progress at {pct}%"):
-            pb.info(f"Setting value to {pct}%", data={"value": pct, "state": state_name})
-            pb.debug("Bar width computed", data={"width_pct": f"{pct}%", "fill_color": color})
+            pb.info(f"Setting value to {pct}%", extra={"value": pct, "state": state_name})
+            pb.debug("Bar width computed", extra={"width_pct": f"{pct}%", "fill_color": color})
             with step("Update ARIA attributes"):
-                pb.info("aria-valuenow updated", data={"aria_valuenow": pct, "aria_valuemin": 0, "aria_valuemax": 100})
-                pb.info("Screen reader announcement", data={"text": f"Progress: {pct} percent"})
+                pb.info("aria-valuenow updated", extra={"aria_valuenow": pct, "aria_valuemin": 0, "aria_valuemax": 100})
+                pb.info("Screen reader announcement", extra={"text": f"Progress: {pct} percent"})
 
     with step("Test indeterminate state"):
         pb.info("Switching to indeterminate mode")
@@ -402,9 +405,9 @@ def test_progress_bar_states(log, dom_env):
     assert True
 
 
-def test_avatar_group_overlap(log, dom_env):
+def test_avatar_group_overlap(dom_env):
     """Test avatar group renders with correct z-index stacking."""
-    avatar = log.child("avatar-group")
+    avatar = log.getChild("avatar-group")
 
     users = [
         {"name": "Alice", "color": "#EF4444"},
@@ -415,18 +418,18 @@ def test_avatar_group_overlap(log, dom_env):
     ]
 
     with step("Render avatar group"):
-        avatar.info("Rendering group", data={"count": len(users), "max_visible": 3, "size": 40})
+        avatar.info("Rendering group", extra={"count": len(users), "max_visible": 3, "size": 40})
         for i, u in enumerate(users[:3]):
             with step(f"Render avatar: {u['name']}"):
-                avatar.info(f"Avatar {i}", data={"initials": u["name"][0], "bg": u["color"], "z_index": 10 - i})
+                avatar.info(f"Avatar {i}", extra={"initials": u["name"][0], "bg": u["color"], "z_index": 10 - i})
                 avatar.debug(f"Overlap offset: {i * -8}px")
         with step("Render overflow indicator"):
-            avatar.info("Overflow badge: '+2'", data={"hidden_count": 2, "bg": "#6B7280"})
+            avatar.info("Overflow badge: '+2'", extra={"hidden_count": 2, "bg": "#6B7280"})
 
     with step("Verify stacking context"):
         avatar.info("Z-index order verified: Alice(10) > Bob(9) > Carol(8) > +2(7)")
         avatar.debug("Each avatar has border: 2px solid white for separation")
-        avatar.info("Total group width", data={"width": 3 * 40 - 2 * 8 + 40, "expected": 144})
+        avatar.info("Total group width", extra={"width": 3 * 40 - 2 * 8 + 40, "expected": 144})
 
     assert len(users) == 5
 
@@ -435,15 +438,15 @@ def test_avatar_group_overlap(log, dom_env):
 # Flaky / retry tests
 # ---------------------------------------------------------------------------
 
-def test_render_engine_connection(log, dom_env, flaky_service):
+def test_render_engine_connection(dom_env, flaky_service):
     """Render engine connection is flaky on first attempt."""
-    engine = log.child("render-engine")
+    engine = log.getChild("render-engine")
 
     with step("Connect to render engine"):
         engine.info("Attempting connection to GPU-accelerated renderer")
         engine.info("Endpoint: ws://render.internal:9222")
         result = flaky_service("render_engine_connect")
-        engine.info("Connection established", data={"result": result})
+        engine.info("Connection established", extra={"result": result})
 
     with step("Verify engine capabilities"):
         engine.info("Querying GPU info")
@@ -455,37 +458,37 @@ def test_render_engine_connection(log, dom_env, flaky_service):
     assert result.startswith("ok:")
 
 
-def test_font_service_availability(log, dom_env, flaky_service):
+def test_font_service_availability(dom_env, flaky_service):
     """Font loading service sometimes times out."""
-    font = log.child("fonts")
+    font = log.getChild("fonts")
 
     with step("Load web fonts from CDN"):
         font.info("Requesting font manifests from fonts.example.com")
         font.info("Fonts to load: Inter (400,500,600,700), JetBrains Mono (400)")
         result = flaky_service("font_cdn_load")
-        font.info("All fonts loaded", data={"result": result, "total_size_kb": 342})
+        font.info("All fonts loaded", extra={"result": result, "total_size_kb": 342})
 
     with step("Verify font rendering"):
-        font.info("Font metrics validated", data={"inter_400_x_height": 1062, "units_per_em": 2048})
+        font.info("Font metrics validated", extra={"inter_400_x_height": 1062, "units_per_em": 2048})
         font.debug("Fallback stack tested: system-ui renders at similar metrics")
         font.info("No FOUT detected in simulated render")
 
     assert result == "ok:font_cdn_load"
 
 
-def test_asset_pipeline_flaky(log, dom_env, flaky_service):
+def test_asset_pipeline_flaky(dom_env, flaky_service):
     """Asset pipeline has intermittent connectivity issues."""
-    assets = log.child("assets")
+    assets = log.getChild("assets")
 
     with step("Fetch compiled assets"):
         assets.info("Requesting asset manifest from build server")
         assets.debug("Manifest URL: https://build.internal/assets/manifest.json")
         result = flaky_service("asset_pipeline_fetch")
-        assets.info("Manifest received", data={"result": result, "assets": 47, "total_size_mb": 12.3})
+        assets.info("Manifest received", extra={"result": result, "assets": 47, "total_size_mb": 12.3})
 
     with step("Validate asset integrity"):
         assets.info("Checking content hashes for 47 assets")
-        assets.info("All hashes match", data={"verified": 47, "mismatched": 0})
+        assets.info("All hashes match", extra={"verified": 47, "mismatched": 0})
         with step("Verify source maps"):
             assets.info("Source maps present for all JS bundles")
             assets.debug("Source map validation complete")
@@ -497,32 +500,32 @@ def test_asset_pipeline_flaky(log, dom_env, flaky_service):
 # Deliberate failures
 # ---------------------------------------------------------------------------
 
-def test_contrast_ratio_failure(log, dom_env):
+def test_contrast_ratio_failure(dom_env):
     """Contrast ratio check that deliberately fails."""
-    a11y = log.child("accessibility")
+    a11y = log.getChild("accessibility")
 
     with step("Check color contrast for muted text"):
         a11y.info("Foreground: #9CA3AF (gray-400)")
         a11y.info("Background: #D1D5DB (gray-300)")
         a11y.info("Computed contrast ratio: 1.47:1")
         a11y.warning("WCAG AA requires 4.5:1 for normal text")
-        a11y.error("Contrast check FAILED", data={"ratio": 1.47, "required": 4.5, "level": "AA"})
+        a11y.error("Contrast check FAILED", extra={"ratio": 1.47, "required": 4.5, "level": "AA"})
 
     ratio = 1.47
     assert ratio >= 4.5, f"Contrast ratio {ratio}:1 does not meet WCAG AA minimum of 4.5:1"
 
 
-def test_layout_shift_threshold(log, dom_env):
+def test_layout_shift_threshold(dom_env):
     """Cumulative Layout Shift test that deliberately fails."""
-    perf = log.child("performance")
+    perf = log.getChild("performance")
 
     with step("Measure Cumulative Layout Shift (CLS)"):
         perf.info("Observing layout shifts during page load")
-        perf.info("Shift 1: image without dimensions", data={"shift_score": 0.15, "element": "img.hero"})
-        perf.info("Shift 2: font swap", data={"shift_score": 0.08, "element": "h1.title"})
-        perf.info("Shift 3: ad slot resize", data={"shift_score": 0.12, "element": "div.ad-banner"})
+        perf.info("Shift 1: image without dimensions", extra={"shift_score": 0.15, "element": "img.hero"})
+        perf.info("Shift 2: font swap", extra={"shift_score": 0.08, "element": "h1.title"})
+        perf.info("Shift 3: ad slot resize", extra={"shift_score": 0.12, "element": "div.ad-banner"})
         perf.warning("Total CLS: 0.35 (threshold: 0.1)")
-        perf.error("CLS exceeds acceptable threshold", data={"cls": 0.35, "threshold": 0.1})
+        perf.error("CLS exceeds acceptable threshold", extra={"cls": 0.35, "threshold": 0.1})
 
     cls = 0.35
     assert cls <= 0.1, f"CLS of {cls} exceeds threshold of 0.1 -- poor user experience"

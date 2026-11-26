@@ -1,4 +1,4 @@
-"""Tests for the log.table() feature."""
+"""Tests for tables logged with ``extra={"report_table": rows}``."""
 
 from __future__ import annotations
 
@@ -93,9 +93,13 @@ class TestSanitizeFilename:
 
 def test_table_from_list_of_dicts(pytester: Pytester) -> None:
     pytester.makepyfile("""
-        def test_log_table(log):
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_log_table():
             data = [{"ch": 1, "voltage": 3.3}, {"ch": 2, "voltage": 5.0}]
-            log.table(data, name="readings")
+            log.info("readings", extra={"report_table": data})
             log.info("Done")
     """)
     result = pytester.runpytest("--report-dir=reports")
@@ -115,7 +119,9 @@ def test_table_from_list_of_dicts(pytester: Pytester) -> None:
 
     # First entry is the table
     table_entry = entries[0]
-    assert table_entry["msg"] == "Table: readings"
+    assert table_entry["msg"] == "readings"
+    assert table_entry["level"] == "INFO"
+    assert table_entry["source"] == ["t"]
     assert table_entry["data"]["_type"] == "table"
     assert table_entry["data"]["name"] == "readings"
     assert table_entry["data"]["columns"] == ["ch", "voltage"]
@@ -130,8 +136,12 @@ def test_table_from_list_of_dicts(pytester: Pytester) -> None:
 
 def test_table_from_dict_of_lists(pytester: Pytester) -> None:
     pytester.makepyfile("""
-        def test_dict_table(log):
-            log.table({"x": [1, 2, 3], "y": [4, 5, 6]}, name="coords")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_dict_table():
+            log.info("coords", extra={"report_table": {"x": [1, 2, 3], "y": [4, 5, 6]}})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
@@ -153,9 +163,13 @@ def test_table_from_dict_of_lists(pytester: Pytester) -> None:
 
 def test_table_truncation(pytester: Pytester) -> None:
     pytester.makepyfile(f"""
-        def test_big_table(log):
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_big_table():
             rows = [{{"i": i, "v": i * 0.1}} for i in range({SERIALIZED_ROW_LIMIT + 50})]
-            log.table(rows, name="big")
+            log.info("big", extra={{"report_table": rows}})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
@@ -178,8 +192,12 @@ def test_table_truncation(pytester: Pytester) -> None:
 
 def test_table_artifact_written(pytester: Pytester) -> None:
     pytester.makepyfile("""
-        def test_artifact(log):
-            log.table([{"a": 1}], name="my_artifact")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_artifact():
+            log.info("my_artifact", extra={"report_table": [{"a": 1}]})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
@@ -203,8 +221,12 @@ def test_table_artifact_written(pytester: Pytester) -> None:
 
 def test_table_in_html_report(pytester: Pytester) -> None:
     pytester.makepyfile("""
-        def test_report(log):
-            log.table([{"x": 42}], name="report_table")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_report():
+            log.info("report_table", extra={"report_table": [{"x": 42}]})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
@@ -216,8 +238,12 @@ def test_table_in_html_report(pytester: Pytester) -> None:
 
 def test_table_name_sanitization(pytester: Pytester) -> None:
     pytester.makepyfile("""
-        def test_sanitize(log):
-            log.table([{"a": 1}], name="My Table (v2)!")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_sanitize():
+            log.info("My Table (v2)!", extra={"report_table": [{"a": 1}]})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
@@ -239,9 +265,13 @@ def test_table_name_sanitization(pytester: Pytester) -> None:
 
 def test_table_multiple_same_name(pytester: Pytester) -> None:
     pytester.makepyfile("""
-        def test_dedup(log):
-            log.table([{"a": 1}], name="dup")
-            log.table([{"b": 2}], name="dup")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_dedup():
+            log.info("dup", extra={"report_table": [{"a": 1}]})
+            log.info("dup", extra={"report_table": [{"b": 2}]})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
@@ -267,10 +297,14 @@ def test_table_multiple_same_name(pytester: Pytester) -> None:
 
 
 def test_table_without_report_dir(pytester: Pytester) -> None:
-    """log.table() should not crash when --report-dir is not set."""
+    """A table record does no harm when --report-dir is not set."""
     pytester.makepyfile("""
-        def test_no_dir(log):
-            log.table([{"a": 1}], name="noop")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_no_dir():
+            log.info("noop", extra={"report_table": [{"a": 1}]})
             log.info("Still works")
     """)
     result = pytester.runpytest()
@@ -280,9 +314,13 @@ def test_table_without_report_dir(pytester: Pytester) -> None:
 def test_table_child_logger(pytester: Pytester) -> None:
     """Tables logged on child loggers have correct source path."""
     pytester.makepyfile("""
-        def test_child_table(log):
-            db = log.child("db")
-            db.table([{"id": 1, "name": "Alice"}], name="users")
+        import logging
+
+        log = logging.getLogger("t")
+
+        def test_child_table():
+            db = logging.getLogger("db")
+            db.info("users", extra={"report_table": [{"id": 1, "name": "Alice"}]})
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)

@@ -381,11 +381,10 @@ def test_h1_tuple_key_serializes(pytester: Pytester) -> None:
     Warning capture: stdout parse (subprocess boundary).
     """
     pytester.makepyfile("""
-        from pytest_reporter import ReportLogger
-        import pytest
+        import logging
 
-        def test_tuple_key(log):
-            log.info("msg with tuple key", data={(1, 2): "val"})
+        def test_tuple_key():
+            logging.getLogger("t").info("msg with tuple key", extra={"data": {(1, 2): "val"}})
             assert True
     """)
 
@@ -454,8 +453,10 @@ def test_h2_script_escape_report_data(pytester: Pytester) -> None:
     Warning capture: N/A (security/correctness test).
     """
     pytester.makepyfile("""
-        def test_with_breakout(log):
-            log.info("</script><script>alert(1)</script>")
+        import logging
+
+        def test_with_breakout():
+            logging.getLogger("t").info("</script><script>alert(1)</script>")
             assert True
     """)
 
@@ -493,9 +494,11 @@ def test_m1_marker_in_log_data(pytester: Pytester) -> None:
     Warning capture: N/A (correctness test).
     """
     pytester.makepyfile("""
-        def test_marker_in_log(log):
-            log.info("/*__SYSTEM_METADATA_JSON__*/")
-            log.info("/*__REPORT_DATA__*/")
+        import logging
+
+        def test_marker_in_log():
+            logging.getLogger("t").info("/*__SYSTEM_METADATA_JSON__*/")
+            logging.getLogger("t").info("/*__REPORT_DATA__*/")
             assert True
     """)
 

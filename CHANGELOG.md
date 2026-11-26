@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** the `log` and `session_log` fixtures and the `Logger` / `ReportLogger`
+  classes. The report shows Python's standard `logging` instead (see Changed). A test that
+  still asks for `log` or `session_log` fails with a message saying what to use, and
+  importing `Logger` or `ReportLogger` raises an `ImportError` that says the same. To move
+  over: `log = logging.getLogger(__name__)`, `log.child("api")` → `log.getChild("api")`,
+  `data={...}` → `extra={...}`, `log.table(rows, name="x")` →
+  `log.info("x", extra={"report_table": rows})`.
+
 ### Changed
+
+- The phase logs show what the tests log with Python's `logging`: every record logged
+  while a test's setup, call or teardown runs (by the test, its fixtures or the code under
+  test) is in that phase's log tab and `{phase}.log.json`, with its level, logger name
+  (the entry's `source`, split on dots), time, message and exception. A record's `extra=`
+  fields are its `data` (`extra={"data": {...}}` for names logging reserves), and
+  `extra={"report_table": rows}` logs a table, inline and as an HTML artifact as before.
+  Records logged outside the tests (plugin hooks, collection, session start and finish) are
+  the session log. `print()` output is not captured. The lowest level shown is the new
+  `report_log_level` ini setting, else pytest's `log_level`, else `INFO`; while a phase
+  runs the root logger is lowered to it when higher, and set back afterwards. Records
+  travel on the phase reports (`report.reporter_log`).
 
 - Less time spent writing the run folder. A test's folder path is built once instead of for
   every file and log line, JSON files are written without asking the file system for their
@@ -18,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where writing to disk is slow; the files are the same.
 
 ### Fixed
+
+- With `--report-retries`, each phase of the first attempt now has its own log entries;
+  before, everything the first attempt logged was put in its call log.
 
 - The pass rate no longer counts skipped tests against the suite. It is passed ÷ (passed +
   failed + error + expected fails): a test marked `xfail` that failed as expected counts as

@@ -48,8 +48,10 @@ def test_no_angle_bracket_reaches_the_data_block() -> None:
 def test_report_data_round_trips_through_a_run(pytester: Pytester) -> None:
     pytester.makepyfile(
         """
-        def test_logs(log):
-            log.info("</script><!--<script>")
+        import logging
+
+        def test_logs():
+            logging.getLogger("t").info("</script><!--<script>")
         """
     )
     pytester.runpytest("--report-dir=reports").assert_outcomes(passed=1)

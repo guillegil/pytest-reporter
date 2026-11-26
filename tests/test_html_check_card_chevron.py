@@ -138,8 +138,12 @@ def test_check_card_chevron_and_aria(pytester: Pytester) -> None:
 def test_session_log_chevron_still_renders(pytester: Pytester) -> None:
     """Regression guard: session-log section must still use chevronSvg after hoist."""
     pytester.makepyfile("""
-        def test_simple(session_log):
-            session_log.info("test message")
+        import logging
+
+        logging.getLogger("collect").warning("test message")
+
+        def test_simple():
+            pass
     """)
     result = pytester.runpytest("--report-dir=reports")
     result.assert_outcomes(passed=1)
