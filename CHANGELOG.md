@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Guarded checks show every branch. A check made with pytest-verifier's `verify.guard(...)`
+  reads `Verify 'Speed by mode', depending on the condition:` on the Procedure tab, with one
+  line per branch and the default, as the test writes them: `If mode == "fast" (fast mode):
+  Verify 'Speed': speed >= 40`, …, `Otherwise: Verify 'Speed': speed == 0`. The branch the
+  run took is bold, with its outcome and result; the others are greyed out with why they
+  were not checked (`condition false`, or `not evaluated` after the branch taken). The
+  Generic view lists them with the test's names (`speed >= LIMIT`). In the Checks sub-tab, a
+  guard card shows each branch's condition as written, says `not evaluated` for a condition
+  that was not asked (it said `false`), and shows the check of a branch that was never built
+  (a lazy check, or a default the run did not reach, which was missing before). The
+  conditions and checks come from stepdoc, which reads them from the call's source;
+  `procedure.json` guard nodes get `branches` and the check's `location`.
+
 - The report shows which test ran before each test, to find failures that depend on the
   order (state one test leaves for the next). A run's Summary sub-tab has **Order**
   (`7 of 42`) and **Previous test**: the last other test function that ran before it, so the
