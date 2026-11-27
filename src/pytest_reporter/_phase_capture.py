@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -110,12 +111,48 @@ def capture_phase_logs(reporter: Reporter, report: pytest.TestReport) -> None:
         )
 
 
+PHASES = ("setup", "call", "teardown")
+
+
+def copy_failed_phase_logs(reporter: Reporter, nodeid: str, run_dir: Path) -> None:
+    """Copy a failed run's phase logs into ``failures/``.
+
+    When a phase of the run's first attempt failed (a failed call, or an error
+    in setup or teardown), its ``setup.log.json``, ``call.log.json`` and
+    ``teardown.log.json`` are copied to ``failures/<function>_<run>_<phase>.log.json``,
+    next to ``<function>_<run>_error.log``. Retry attempts are not copied.
+
+    Args:
+        reporter: The active ``Reporter`` instance.
+        nodeid: The test node ID.
+        run_dir: The run directory holding the phase logs.
+    """
+    phases = [reporter.collector.get_phase(nodeid, when) for when in PHASES]
+    if not any(phase is not None and phase.outcome == "failed" for phase in phases):
+        return
+    run_info = reporter.collector.get_run_info(nodeid)
+    prefix = f"{sanitize_path_component(run_info.function_name)}_{run_info.run_id}"
+    failures_dir = reporter.context.failures_dir
+    for when in PHASES:
+        source = run_dir / f"{when}.log.json"
+        if not source.is_file():
+            continue
+        try:
+            failures_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, failures_dir / f"{prefix}_{when}.log.json")
+        except OSError:
+            continue
+
+
 def write_run_finish_files(
     reporter: Reporter,
     nodeid: str,
     location: tuple[str, int | None, str],  # noqa: ARG001
 ) -> None:
     """Write per-run finish files (procedure.json, parameters.json, checks.json).
+
+    A failed first attempt also gets its phase logs copied into ``failures/``
+    (``copy_failed_phase_logs``).
 
     Gated on ``nodeid not in reporter._finished_runs``. Keeps the run's
     procedure (from stepdoc's steps) and its pytest-verifier checks for the
@@ -139,6 +176,7 @@ def write_run_finish_files(
     # Write parameters.json (only in main run dir, not retries)
     if nodeid not in reporter._retry_paths:
         write_parameters_json(run_dir / "parameters.json", run_info)
+        copy_failed_phase_logs(reporter, nodeid, run_dir)
 
     # Verification checks from pytest-verifier (report.verify_checks)
     checks = reporter._attempt_checks.pop(nodeid, [])

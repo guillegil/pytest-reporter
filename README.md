@@ -93,7 +93,8 @@ reports/
         ├── stepdoc.json            # stepdoc's run record (with stepdoc installed)
         ├── strategies.json         # pytest-strategies 4.3+: each test's strategies
         ├── strategies.vectors.json # ... and the rows each test ran, with outcomes
-        ├── failures/               # Per-test error logs
+        ├── failures/               # Each failed test's error log and a copy of its
+        │                           #   setup/call/teardown .log.json files
         └── tests/                  # Per-test structured data
             └── path/to/file.py/test_function/
                 ├── test.log.json   # Aggregated outcomes across runs
