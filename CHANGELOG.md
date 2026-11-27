@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `failures/` holds a copy of each failed test's phase logs next to its error log:
+  `<test>_<run>_setup.log.json`, `<test>_<run>_call.log.json` and
+  `<test>_<run>_teardown.log.json`, the same files as in the test's run folder. They are
+  copied when a phase of the run's first attempt failed (a failed call, or an error in setup
+  or teardown); a phase that did not run (the call after a setup error) has no file. Retry
+  attempts are not copied, as before.
+
 - The report shows which test ran before each test, to find failures that depend on the
   order (state one test leaves for the next). A run's Summary sub-tab has **Order**
   (`7 of 42`) and **Previous test**: the last other test function that ran before it, so the

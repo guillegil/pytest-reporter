@@ -142,11 +142,97 @@ def test_failure_logs(pytester: Pytester) -> None:
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
     run_dir = runs[0]
-    failures = list((run_dir / "failures").iterdir())
-    assert len(failures) == 1
-    assert "error.log" in failures[0].name
-    content = failures[0].read_text()
+    failures_dir = run_dir / "failures"
+    assert sorted(p.name for p in failures_dir.iterdir()) == [
+        "test_fail_default_call.log.json",
+        "test_fail_default_error.log",
+        "test_fail_default_setup.log.json",
+        "test_fail_default_teardown.log.json",
+    ]
+    content = (failures_dir / "test_fail_default_error.log").read_text()
     assert "assert 1 == 2" in content
+
+
+def test_failed_phase_logs_copied_to_failures(pytester: Pytester) -> None:
+    """A failed run's setup, call and teardown logs are copied into failures/."""
+    pytester.makepyfile("""
+        import logging
+
+        import pytest
+
+        log = logging.getLogger("bench")
+
+        @pytest.fixture
+        def psu():
+            log.info("power on")
+            yield
+            log.info("power off")
+
+        @pytest.mark.parametrize("v", [1, 2])
+        def test_volt(psu, v):
+            log.info("measured", extra={"v": v})
+            assert v == 1
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=1, failed=1)
+
+    run_dir = next((pytester.path / "reports" / "runs").iterdir())
+    failures_dir = run_dir / "failures"
+    names = sorted(p.name for p in failures_dir.iterdir())
+    # Only the failed run (02) is copied
+    assert names == [
+        "test_volt_02_call.log.json",
+        "test_volt_02_error.log",
+        "test_volt_02_setup.log.json",
+        "test_volt_02_teardown.log.json",
+    ]
+    test_dir = run_dir / "tests" / "test_failed_phase_logs_copied_to_failures.py" / "test_volt"
+    for when in ("setup", "call", "teardown"):
+        copy = failures_dir / f"test_volt_02_{when}.log.json"
+        assert copy.read_bytes() == (test_dir / "02" / f"{when}.log.json").read_bytes()
+    call = json.loads((failures_dir / "test_volt_02_call.log.json").read_text())
+    assert call["outcome"] == "failed"
+    assert [e["msg"] for e in call["entries"]] == ["measured"]
+    teardown = json.loads((failures_dir / "test_volt_02_teardown.log.json").read_text())
+    assert [e["msg"] for e in teardown["entries"]] == ["power off"]
+
+
+def test_setup_error_phase_logs_copied_to_failures(pytester: Pytester) -> None:
+    """An error in setup (or teardown) also copies the run's phase logs."""
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.fixture
+        def broken():
+            raise RuntimeError("no bench")
+
+        def test_setup_error(broken):
+            pass
+
+        @pytest.fixture
+        def bad_teardown():
+            yield
+            raise RuntimeError("stuck")
+
+        def test_teardown_error(bad_teardown):
+            pass
+
+        def test_ok():
+            pass
+    """)
+    result = pytester.runpytest("--report-dir=reports")
+    result.assert_outcomes(passed=2, errors=2)
+
+    run_dir = next((pytester.path / "reports" / "runs").iterdir())
+    names = sorted(p.name for p in (run_dir / "failures").iterdir())
+    # A setup error has no call phase, so no call log
+    assert names == [
+        "test_setup_error_default_setup.log.json",
+        "test_setup_error_default_teardown.log.json",
+        "test_teardown_error_default_call.log.json",
+        "test_teardown_error_default_setup.log.json",
+        "test_teardown_error_default_teardown.log.json",
+    ]
 
 
 def test_skip_captured(pytester: Pytester) -> None:

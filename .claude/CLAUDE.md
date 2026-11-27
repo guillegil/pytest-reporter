@@ -149,6 +149,9 @@ reports/
         ├── strategies.vectors.json  (pytest-strategies 4.3+)
         ├── failures/
         │   ├── <test>_<run>_error.log
+        │   ├── <test>_<run>_setup.log.json     (copies of a failed run's phase logs)
+        │   ├── <test>_<run>_call.log.json
+        │   ├── <test>_<run>_teardown.log.json
         │   └── <test>_<run>_screenshot.png
         └── tests/
             └── <module>/<file>.py/<function>/
@@ -508,7 +511,11 @@ else donut grid.
 - `retries/` only exists if retried. No empty placeholder.
 - Contains same files as run folder EXCEPT `parameters.json` (stored once in parent).
 - Original failure preserved in parent folder, never moved.
-- `failures/` directory: original failure only, not retry failures.
+- `failures/` directory: original failure only, not retry failures. `<test>_<run>_error.log`
+  for a failed call; for any failed phase of the first attempt (call failure, setup or
+  teardown error), copies of the run's `{phase}.log.json` files that exist as
+  `<test>_<run>_{phase}.log.json` (`_phase_capture.copy_failed_phase_logs`, from
+  `write_run_finish_files`).
 
 ### junit.xml extension for retries:
 ```xml

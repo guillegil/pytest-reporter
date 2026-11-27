@@ -190,9 +190,17 @@ def test_retry_failure_log_only_original(pytester: Pytester) -> None:
     result.assert_outcomes(failed=1)
 
     runs = list((pytester.path / "reports" / "runs").iterdir())
-    failures = list((runs[0] / "failures").iterdir())
-    # Should only have 1 failure log (original), not 3
-    assert len(failures) == 1
+    failures = sorted(p.name for p in (runs[0] / "failures").iterdir())
+    # Only the original failure (its error log and phase logs), not the retries
+    assert failures == [
+        "test_always_fail_default_call.log.json",
+        "test_always_fail_default_error.log",
+        "test_always_fail_default_setup.log.json",
+        "test_always_fail_default_teardown.log.json",
+    ]
+    run_dir = runs[0] / "tests" / "test_retry_failure_log_only_original.py" / "test_always_fail"
+    call = (runs[0] / "failures" / "test_always_fail_default_call.log.json").read_bytes()
+    assert call == (run_dir / "default" / "call.log.json").read_bytes()
 
 
 def test_retry_parametrized_independent(pytester: Pytester) -> None:
